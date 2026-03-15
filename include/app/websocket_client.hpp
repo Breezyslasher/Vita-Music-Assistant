@@ -1,0 +1,89 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include <functional>
+#include <mutex>
+#include <atomic>
+#include <thread>
+
+namespace vita_ma {
+
+// WebSocket frame opcodes
+enum class WsOpcode : uint8_t {
+    CONTINUATION = 0x0,
+    TEXT = 0x1,
+    BINARY = 0x2,
+    CLOSE = 0x8,
+    PING = 0x9,
+    PONG = 0xA
+};
+
+// WebSocket connection state
+enum class WsState {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    CLOSING
+};
+
+// Callback types
+using WsMessageCallback = std::function<void(const std::string& message)>;
+using WsErrorCallback = std::function<void(const std::string& error)>;
+using WsCloseCallback = std::function<void(int code, const std::string& reason)>;
+
+class WebSocketClient {
+public:
+    WebSocketClient();
+    ~WebSocketClient();
+
+    // Connect to a WebSocket server
+    // url format: ws://host:port/path or wss://host:port/path
+    bool connect(const std::string& url);
+    void disconnect();
+
+    // Send a text message
+    bool send(const std::string& message);
+
+    // State
+    WsState getState() const { return m_state.load(); }
+    bool isConnected() const { return m_state.load() == WsState::CONNECTED; }
+
+    // Callbacks
+    void setOnMessage(WsMessageCallback cb) { m_onMessage = std::move(cb); }
+    void setOnError(WsErrorCallback cb) { m_onError = std::move(cb); }
+    void setOnClose(WsCloseCallback cb) { m_onClose = std::move(cb); }
+
+private:
+    void receiveLoop();
+    bool performHandshake(const std::string& host, const std::string& path, int port);
+    bool sendFrame(WsOpcode opcode, const uint8_t* data, size_t len);
+    bool readFrame(std::string& payload, WsOpcode& opcode);
+    std::string generateKey();
+
+    // Socket
+    int m_socket = -1;
+    void* m_sslCtx = nullptr;    // mbedtls_ssl_context*
+    void* m_sslConf = nullptr;   // mbedtls_ssl_config*
+    void* m_ctrDrbg = nullptr;   // mbedtls_ctr_drbg_context*
+    void* m_entropy = nullptr;   // mbedtls_entropy_context*
+    void* m_netCtx = nullptr;    // mbedtls_net_context*
+    bool m_useSsl = false;
+
+    // Thread
+    std::thread m_receiveThread;
+    std::atomic<WsState> m_state{WsState::DISCONNECTED};
+    std::mutex m_sendMutex;
+
+    // Callbacks
+    WsMessageCallback m_onMessage;
+    WsErrorCallback m_onError;
+    WsCloseCallback m_onClose;
+
+    // Low-level I/O
+    int rawSend(const uint8_t* data, size_t len);
+    int rawRecv(uint8_t* data, size_t len);
+    void cleanupSocket();
+};
+
+} // namespace vita_ma
