@@ -6,6 +6,7 @@
 #pragma once
 
 #include <borealis.hpp>
+#include "app/ma_types.hpp"
 
 namespace vita_ma {
 
@@ -21,8 +22,12 @@ private:
     void createPlaybackSection();
     void createAudioSection();
     void createRemoteAccessSection();
+    void createPlayerSection();
     void createAboutSection();
     void createDebugSection();
+
+    void loadPlayerList();
+    void onPlayerSelected(int index);
 
     void onLogout();
     void onNetworkTest();
@@ -66,6 +71,12 @@ private:
     // Music section
     brls::SelectorCell* m_trackActionSelector = nullptr;
     brls::BooleanCell* m_backgroundMusicToggle = nullptr;
+
+    // Player section
+    brls::BooleanCell* m_localPlaybackToggle = nullptr;
+    brls::DetailCell* m_playerNameCell = nullptr;
+    brls::SelectorCell* m_playerSelector = nullptr;
+    std::vector<PlayerInfo> m_players;  // Cached player list from MA
 };
 
 } // namespace vita_ma

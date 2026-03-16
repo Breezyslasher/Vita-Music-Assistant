@@ -526,7 +526,11 @@ void PlayerActivity::loadFromQueue() {
     // Use player_queues/play_media to play the track via Sendspin.
     // The Sendspin client handles receiving audio from MA server and
     // feeding it to MPV via an audio pipe.
-    std::string playerId = App::instance().getPlayerId();
+    // Use the selected player ID from settings if set, otherwise use local Vita player
+    const auto& settings = App::instance().getSettings();
+    std::string playerId = settings.selectedPlayerId.empty()
+        ? App::instance().getPlayerId()
+        : settings.selectedPlayerId;
     std::string trackUri = track->uri;
     std::string trackTitle = track->title;
     auto alive = m_alive;

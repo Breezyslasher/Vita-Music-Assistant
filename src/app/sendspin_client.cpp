@@ -308,9 +308,14 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
             // Once enough audio has buffered, start MPV playback.
             // This ensures MPV has data for format probing when it connects.
+            // Skip if local playback is disabled in settings.
             if (!m_mpvStarted && m_audioServer.hasInitialData()) {
                 m_mpvStarted = true;
-                startMpvPlayback();
+                if (App::instance().getSettings().localPlayback) {
+                    startMpvPlayback();
+                } else {
+                    brls::Logger::info("Sendspin: local playback disabled, not starting MPV");
+                }
             }
 
             // Transition from buffering to streaming

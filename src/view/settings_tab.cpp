@@ -42,6 +42,7 @@ SettingsTab::SettingsTab() {
     createContentDisplaySection();
     createPlaybackSection();
     createAudioSection();
+    createPlayerSection();
     createRemoteAccessSection();
     createDebugSection();
     createAboutSection();
@@ -307,6 +308,168 @@ void SettingsTab::createAudioSection() {
             onConnectionTimeoutChanged(index);
         });
     m_contentBox->addView(m_connectionTimeoutSelector);
+}
+
+void SettingsTab::createPlayerSection() {
+    Application& app = Application::getInstance();
+    AppSettings& settings = app.getSettings();
+
+    // Section header
+    auto* header = new brls::Header();
+    header->setTitle("Player");
+    m_contentBox->addView(header);
+
+    // Local playback toggle
+    m_localPlaybackToggle = new brls::BooleanCell();
+    m_localPlaybackToggle->init("Local Playback", settings.localPlayback, [&settings](bool value) {
+        settings.localPlayback = value;
+        Application::getInstance().saveSettings();
+    });
+    m_contentBox->addView(m_localPlaybackToggle);
+
+    auto* localPlaybackInfo = new brls::Label();
+    localPlaybackInfo->setText("Play audio on this Vita. Disable to use Vita as a remote control only.");
+    localPlaybackInfo->setFontSize(14);
+    localPlaybackInfo->setMarginLeft(16);
+    localPlaybackInfo->setMarginTop(4);
+    m_contentBox->addView(localPlaybackInfo);
+
+    // Player name setting
+    m_playerNameCell = new brls::DetailCell();
+    m_playerNameCell->setText("Player Name");
+    m_playerNameCell->setDetailText(settings.sendspinPlayerName);
+    m_playerNameCell->registerClickAction([this](brls::View*) {
+        // Show a simple name picker with preset options
+        auto* dialog = new brls::Dialog("Choose Player Name");
+        auto* dialogBox = new brls::Box();
+        dialogBox->setAxis(brls::Axis::COLUMN);
+        dialogBox->setPadding(16);
+
+        std::vector<std::string> names = {"PS Vita", "Vita Player", "Bedroom Vita", "Living Room Vita", "Kitchen Vita"};
+        for (const auto& name : names) {
+            auto* btn = new brls::Button();
+            btn->setStyle(brls::ButtonStyle::BORDERLESS);
+            btn->setText(name);
+            btn->setMarginBottom(4);
+            std::string capturedName = name;
+            btn->registerClickAction([this, capturedName, dialog](brls::View*) {
+                Application& a = Application::getInstance();
+                a.getSettings().sendspinPlayerName = capturedName;
+                a.saveSettings();
+                m_playerNameCell->setDetailText(capturedName);
+                dialog->close();
+                brls::Application::notify("Player name changed. Reconnect to apply.");
+                return true;
+            });
+            dialogBox->addView(btn);
+        }
+
+        dialog->addView(dialogBox);
+        dialog->addButton("Cancel", []() {});
+        dialog->open();
+        return true;
+    });
+    m_contentBox->addView(m_playerNameCell);
+
+    auto* nameInfo = new brls::Label();
+    nameInfo->setText("Name shown in Music Assistant. Requires reconnect to take effect.");
+    nameInfo->setFontSize(14);
+    nameInfo->setMarginLeft(16);
+    nameInfo->setMarginTop(4);
+    m_contentBox->addView(nameInfo);
+
+    // Target player selector - initially shows "Loading..." until player list arrives
+    m_playerSelector = new brls::SelectorCell();
+    m_playerSelector->init("Target Player",
+        {"This Vita (Local)"},
+        0,
+        [this](int index) {
+            onPlayerSelected(index);
+        });
+    m_contentBox->addView(m_playerSelector);
+
+    auto* playerInfo = new brls::Label();
+    playerInfo->setText("Choose which Music Assistant player to control.");
+    playerInfo->setFontSize(14);
+    playerInfo->setMarginLeft(16);
+    playerInfo->setMarginTop(4);
+    m_contentBox->addView(playerInfo);
+
+    // Load available players from the server
+    loadPlayerList();
+}
+
+void SettingsTab::loadPlayerList() {
+    auto& client = MAClient::instance();
+    if (!client.isConnected()) {
+        brls::Logger::debug("SettingsTab: Not connected, skipping player list load");
+        return;
+    }
+
+    client.getPlayers([this](bool success, const Json& result) {
+        if (!success || result.type() != Json::ARRAY) {
+            brls::Logger::error("SettingsTab: Failed to load player list");
+            return;
+        }
+
+        std::vector<PlayerInfo> players;
+        for (size_t i = 0; i < result.size(); i++) {
+            const Json& p = result[i];
+            PlayerInfo info;
+            if (p.has("player_id")) info.playerId = p["player_id"].str();
+            if (p.has("name")) info.name = p["name"].str();
+            if (p.has("type")) info.type = p["type"].str();
+            if (p.has("powered")) info.powered = p["powered"].boolVal();
+            if (p.has("available")) info.available = p["available"].boolVal();
+            if (!info.playerId.empty()) {
+                players.push_back(info);
+            }
+        }
+
+        brls::sync([this, players]() {
+            m_players = players;
+
+            // Build the selector options: "This Vita (Local)" first, then all MA players
+            std::vector<std::string> options;
+            options.push_back("This Vita (Local)");
+            int selectedIndex = 0;
+            const auto& currentId = App::instance().getSettings().selectedPlayerId;
+
+            for (size_t i = 0; i < m_players.size(); i++) {
+                std::string label = m_players[i].name;
+                if (!m_players[i].available) label += " (offline)";
+                options.push_back(label);
+
+                if (m_players[i].playerId == currentId) {
+                    selectedIndex = static_cast<int>(i + 1);
+                }
+            }
+
+            brls::Logger::info("SettingsTab: Loaded {} players", m_players.size());
+
+            m_playerSelector->init("Target Player", options, selectedIndex,
+                [this](int index) { onPlayerSelected(index); });
+        });
+    });
+}
+
+void SettingsTab::onPlayerSelected(int index) {
+    Application& app = Application::getInstance();
+    AppSettings& settings = app.getSettings();
+
+    if (index == 0) {
+        // Local Vita player
+        settings.selectedPlayerId.clear();
+        brls::Logger::info("SettingsTab: Selected local Vita player");
+    } else {
+        int playerIndex = index - 1;
+        if (playerIndex >= 0 && playerIndex < static_cast<int>(m_players.size())) {
+            settings.selectedPlayerId = m_players[playerIndex].playerId;
+            brls::Logger::info("SettingsTab: Selected player '{}' ({})",
+                m_players[playerIndex].name, m_players[playerIndex].playerId);
+        }
+    }
+    app.saveSettings();
 }
 
 void SettingsTab::createRemoteAccessSection() {
