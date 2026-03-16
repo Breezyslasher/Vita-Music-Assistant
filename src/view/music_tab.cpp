@@ -364,7 +364,7 @@ void MusicTab::onPlaylistSelected(const MusicItem& playlist) {
             m_viewingPlaylist = true;
 
             if (m_contentGrid) {
-                m_contentGrid->setItems(tracks);
+                m_contentGrid->setDataSource(tracks);
             }
         });
     }, 0, capturedPlaylist.provider);
@@ -569,7 +569,7 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
 
             brls::sync([tracks]() {
                 if (!tracks.empty()) {
-                    MusicQueue::instance().addTracks(tracks);
+                    MusicQueue::getInstance().addTracks(tracks);
                     brls::Application::notify("Added " + std::to_string(tracks.size()) + " tracks to queue");
                 }
             });

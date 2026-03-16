@@ -3,6 +3,7 @@
 #include <cstring>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace vita_ma {
@@ -263,13 +264,18 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     m_serverUrl = serverUrl;
     m_authToken = authToken;
 
-    // Convert HTTP URL to WebSocket URL
+    // Convert HTTP URL to WebSocket URL (case-insensitive scheme matching)
     std::string wsUrl = serverUrl;
-    if (wsUrl.substr(0, 8) == "https://") {
+    // Build a lowercase copy of the scheme portion for comparison
+    std::string schemeLower;
+    for (size_t i = 0; i < wsUrl.size() && i < 8; i++)
+        schemeLower += static_cast<char>(std::tolower(static_cast<unsigned char>(wsUrl[i])));
+
+    if (schemeLower.substr(0, 8) == "https://") {
         wsUrl = "wss://" + wsUrl.substr(8);
-    } else if (wsUrl.substr(0, 7) == "http://") {
+    } else if (schemeLower.substr(0, 7) == "http://") {
         wsUrl = "ws://" + wsUrl.substr(7);
-    } else if (wsUrl.substr(0, 5) != "ws://" && wsUrl.substr(0, 6) != "wss://") {
+    } else if (schemeLower.substr(0, 5) != "ws://" && schemeLower.substr(0, 6) != "wss://") {
         wsUrl = "ws://" + wsUrl;
     }
 
