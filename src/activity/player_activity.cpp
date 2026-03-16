@@ -277,16 +277,6 @@ void PlayerActivity::onContentAvailable() {
         forwardBtn->addGestureRecognizer(new brls::TapGestureRecognizer(forwardBtn));
     }
 
-    // Track overlay dismiss on tap or B button
-    if (trackOverlay) {
-        trackOverlay->addGestureRecognizer(new brls::TapGestureRecognizer(
-            [this](brls::TapGestureStatus status, brls::Sound* soundToPlay) {
-                if (status.state == brls::GestureState::END) {
-                    hideTrackOverlay();
-                }
-            }));
-    }
-
     // Queue overlay dismiss on tap
     if (queueOverlay) {
         queueOverlay->addGestureRecognizer(new brls::TapGestureRecognizer(
@@ -329,12 +319,8 @@ void PlayerActivity::onContentAvailable() {
             musicNextBtn->addGestureRecognizer(new brls::TapGestureRecognizer(musicNextBtn));
         }
 
-        // In music mode: disable focusability on ALL hidden buttons
-        // so focus navigation skips them entirely
-        if (audioBtn) { audioBtn->setFocusable(false); audioBtn->setVisibility(brls::Visibility::GONE); }
-        if (subBtn) { subBtn->setFocusable(false); subBtn->setVisibility(brls::Visibility::GONE); }
-        if (videoBtn) { videoBtn->setFocusable(false); videoBtn->setVisibility(brls::Visibility::GONE); }
-        // Also disable center video controls buttons (hidden parent but still focusable)
+        // In music mode: disable focusability on center video control buttons
+        // (hidden parent but still focusable)
         if (playBtn) playBtn->setFocusable(false);
         if (rewindBtn) rewindBtn->setFocusable(false);
         if (forwardBtn) forwardBtn->setFocusable(false);
