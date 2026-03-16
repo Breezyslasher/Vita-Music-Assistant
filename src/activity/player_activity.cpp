@@ -550,37 +550,58 @@ void PlayerActivity::loadFromQueue() {
 
     // Use the rating key to get the playback URL
     m_mediaKey = track->ratingKey;
-    std::string url;
 
     // Pause image loading and invalidate stale in-flight loads from previous
     // pages before queuing any new loads for this track.
     ImageLoader::setPaused(true);
     ImageLoader::cancelAll();
 
-    {
-        m_isLocalFile = false;
-        MAClient& client = MAClient::instance();
+    m_isLocalFile = false;
+    MAClient& client = MAClient::instance();
 
-        // Get stream URL from Music Assistant
-        url = client.getStreamUrl(track->ratingKey);
+    // Load album art from server
+    if (albumArt && !track->thumb.empty()) {
+        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+        ImageLoader::setPaused(false);
+        ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+            img->setVisibility(brls::Visibility::VISIBLE);
+        }, albumArt, m_alive);
+        ImageLoader::setPaused(true);
+        albumArt->setVisibility(brls::Visibility::VISIBLE);
+    }
+
+    // Get stream URL from Music Assistant (async)
+    std::string ratingKey = track->ratingKey;
+    std::string trackTitle = track->title;
+    auto alive = m_alive;
+
+    client.getStreamUrl(ratingKey, [this, trackTitle, alive](bool success, const Json& result) {
+        if (!alive->load()) return;
+
+        std::string url;
+        if (success && result.type() == Json::STRING) {
+            url = result.str();
+        } else if (success && result.has("url")) {
+            url = result["url"].str();
+        }
+
         if (url.empty()) {
-            brls::Logger::error("Failed to get stream URL for track: {}", track->ratingKey);
-            m_loadingMedia = false;
+            brls::Logger::error("Failed to get stream URL for track: {}", trackTitle);
+            brls::sync([this]() { m_loadingMedia = false; });
             return;
         }
 
-        // Load album art from server
-        if (albumArt && !track->thumb.empty()) {
-            std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
-            ImageLoader::setPaused(false);
-            ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                img->setVisibility(brls::Visibility::VISIBLE);
-            }, albumArt, m_alive);
-            ImageLoader::setPaused(true);
-            albumArt->setVisibility(brls::Visibility::VISIBLE);
-        }
-    }
+        brls::sync([this, url, trackTitle, alive]() {
+            if (!alive->load() || m_destroying) {
+                m_loadingMedia = false;
+                return;
+            }
+            loadFromQueueWithUrl(url, trackTitle);
+        });
+    });
+}
 
+void PlayerActivity::loadFromQueueWithUrl(const std::string& url, const std::string& trackTitle) {
     MpvPlayer& player = MpvPlayer::getInstance();
 
     // Set audio-only mode BEFORE initializing
@@ -597,7 +618,7 @@ void PlayerActivity::loadFromQueue() {
     if (!player.isInitialized()) {
         // Defer MPV init + load to after activity transition completes
         m_pendingPlayUrl = url;
-        m_pendingPlayTitle = track->title;
+        m_pendingPlayTitle = trackTitle;
         m_pendingIsAudio = true;
         m_isPlaying = true;
         m_loadingMedia = false;
@@ -605,7 +626,7 @@ void PlayerActivity::loadFromQueue() {
     }
 
     // Player already initialized (track change) - load immediately
-    if (!player.loadUrl(url, track->title)) {
+    if (!player.loadUrl(url, trackTitle)) {
         brls::Logger::error("Failed to load URL: {}", url);
         m_loadingMedia = false;
         return;

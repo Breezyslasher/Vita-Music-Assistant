@@ -43,6 +43,7 @@ public:
 private:
     void loadMedia();
     void loadFromQueue();           // Load current track from queue
+    void loadFromQueueWithUrl(const std::string& url, const std::string& trackTitle);  // Continue after async URL fetch
     void updateProgress();
     void togglePlayPause();
     void seek(int seconds);
