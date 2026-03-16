@@ -2,60 +2,45 @@ name: Build VPK
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: ['**']
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-vita:
     runs-on: ubuntu-latest
     container:
       image: vitasdk/vitasdk:latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Install build requirements
+        run: |
+          apk update
+          apk add cmake ninja git zstd tar pkgconf
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
-      - name: Install build dependencies
+      - name: Install dependencies
+        env:
+          BASE_URL: https://github.com/dragonflylee/switchfin/releases/download/vita-packages
         run: |
-          apk add cmake ninja build-base git
-          vdpm zstd
-          vdpm libass
-          vdpm harfbuzz
-          vdpm fribidi
-          vdpm freetype
-          vdpm libpng
-          vdpm libwebp
-          vdpm libjpeg-turbo
-
-      - name: Download pre-built libraries
-        run: |
-          # Download pre-built mbedtls, curl, ffmpeg, mpv for Vita
-          # These should be hosted in a release or package repository
-          mkdir -p $VITASDK/arm-vita-eabi/lib
-          mkdir -p $VITASDK/arm-vita-eabi/include
-
-          # Note: You need to provide pre-built libraries for:
-          # - mbedtls (with mbedtls_net_sockets support)
-          # - libcurl (with SSL support via mbedtls)
-          # - FFmpeg (audio codecs only: flac, mp3, aac, opus, vorbis)
-          # - libmpv (built with audio-only configuration)
-          echo "Pre-built libraries should be downloaded from your release assets"
-
-      - name: Configure
-        run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
-            -DCMAKE_BUILD_TYPE=Release
+          for pkg in mbedtls-3.6.5-1 curl-8.16.0-2 ffmpeg-n6.0-3 mpv-0.36.0-3; do
+            wget "$BASE_URL/${pkg}-arm.tar.xz"
+          done
+          vdpm zstd libass harfbuzz fribidi freetype libpng libwebp $PWD/*-arm.tar.xz
+          git config --system --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Build
-        run: cmake --build build --target VitaMusicAssistant.vpk
+        run: |
+          cmake -B build -G Ninja
+          cmake --build build
 
-      - name: Upload VPK artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload VPK
+        uses: actions/upload-artifact@v5
         with:
-          name: VitaMusicAssistant.vpk
+          name: VitaMusicAssistant-${{ github.run_number }}
           path: build/VitaMusicAssistant.vpk
