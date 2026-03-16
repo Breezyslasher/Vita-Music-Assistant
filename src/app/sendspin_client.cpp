@@ -282,6 +282,12 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
     // This runs on the WebSocket receive thread - must be thread-safe
     if (size < SENDSPIN_HEADER_SIZE) return;
 
+    // Only process audio data after stream/start has been received.
+    // Without this guard, stale audio from a previous server queue
+    // leaks in and starts MPV before format info is available.
+    auto state = m_state.load();
+    if (state != SendspinState::BUFFERING && state != SendspinState::STREAMING) return;
+
     // Parse binary header: 1 byte type + 8 bytes timestamp (big-endian)
     uint8_t msgType = data[0];
 
@@ -394,6 +400,16 @@ void SendspinClient::startMpvPlayback() {
         mpv.setAudioOnly(true);
         if (!mpv.isInitialized()) {
             mpv.init();
+        } else {
+            // Stop any existing playback to clear m_commandPending and
+            // reset MPV state. Without this, a stuck LOADING state from
+            // a previous failed stream blocks all future loads.
+            auto state = mpv.getState();
+            if (state != MpvPlayerState::IDLE) {
+                brls::Logger::info("Sendspin: stopping MPV (was in state {}) before new load",
+                    static_cast<int>(state));
+                mpv.stop();
+            }
         }
         mpv.loadUrl(url);
     });
