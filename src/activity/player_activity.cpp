@@ -1017,123 +1017,7 @@ void PlayerActivity::populateTrackList(TrackSelectMode mode) {
 
 
 void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    // Check if we have Plex streams - if so, trackId is a Plex stream ID
-    bool hasAudioStreams = !m_audioStreams.empty();
-
-    switch (mode) {
-        case TrackSelectMode::AUDIO:
-            if (hasAudioStreams && m_partId > 0) {
-                // trackId is a Plex stream ID - tell Plex server to switch audio
-                std::string displayTitle = "Audio track " + std::to_string(trackId);
-                for (const auto& ps : m_audioStreams) {
-                    if (ps.id == trackId) {
-                        displayTitle = ps.displayTitle;
-                        break;
-                    }
-                }
-                MAClient::instance().setStreamSelection(m_partId, trackId, -1);
-                // Mark the newly selected stream in our cached data
-                for (auto& ps : m_audioStreams) {
-                    if (ps.streamType == 2) {
-                        ps.selected = (ps.id == trackId);
-                    }
-                }
-                // Stop the current transcode and start a new one at the same
-                // position so Plex re-muxes with the newly selected audio track.
-                // HLS only contains the selected audio, so a reload is needed,
-                // but we seek to the current position to avoid restarting.
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    MAClient& client = MAClient::instance();
-                    // Stop existing transcode session so Plex doesn't keep
-                    // serving old audio segments
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading audio at offset={}ms", offsetMs);
-                        player.showOSD("Switching: " + displayTitle, 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else {
-                // Fallback: trackId is an MPV track ID
-                player.setAudioTrack(trackId);
-                player.showOSD("Audio track " + std::to_string(trackId), 1.5);
-            }
-            break;
-
-        case TrackSelectMode::SUBTITLE:
-            if (trackId < 0) {
-                // Disable subtitles
-                if (m_partId > 0) {
-                    MAClient::instance().setStreamSelection(m_partId, -1, 0);
-                }
-                // Clear selection in cache
-                for (auto& ps : m_audioStreams) {
-                    if (ps.streamType == 3 || ps.streamType == 4) ps.selected = false;
-                }
-                // Reload transcode so Plex stops sending subtitles
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    MAClient& client = MAClient::instance();
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading subs off at offset={}ms", offsetMs);
-                        player.showOSD("Subtitles off", 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else if (hasAudioStreams && m_partId > 0) {
-                // trackId is a Plex stream ID - tell Plex server to switch subtitle
-                std::string displayTitle = "Subtitle " + std::to_string(trackId);
-                for (const auto& ps : m_audioStreams) {
-                    if (ps.id == trackId) {
-                        displayTitle = ps.displayTitle;
-                        break;
-                    }
-                }
-                MAClient::instance().setStreamSelection(m_partId, -1, trackId);
-                for (auto& ps : m_audioStreams) {
-                    if (ps.streamType == 3 || ps.streamType == 4) {
-                        ps.selected = (ps.id == trackId);
-                    }
-                }
-                // Reload transcode so Plex serves the new subtitle stream
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    MAClient& client = MAClient::instance();
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading subs at offset={}ms", offsetMs);
-                        player.showOSD("Switching: " + displayTitle, 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else {
-                // Fallback: trackId is an MPV track ID
-                player.setSubtitleTrack(trackId);
-                player.showOSD("Subtitle track " + std::to_string(trackId), 1.5);
-            }
-            break;
-
-        case TrackSelectMode::VIDEO:
-            // Video track selection not applicable for audio-only player
-            break;
-
-        default:
-            break;
-    }
-
+    // Not applicable for Music Assistant audio-only player
     hideTrackOverlay();
 }
 
@@ -1189,30 +1073,11 @@ void PlayerActivity::toggleShuffle() {
     if (!m_isQueueMode) return;
 
     MusicQueue& queue = MusicQueue::getInstance();
-    bool newShuffle = !queue.isShuffleEnabled();
-
-    // If synced to server, use server-side shuffle/unshuffle
-    if (queue.isServerSynced()) {
-        MAClient& client = MAClient::instance();
-        MAClient::PlayQueueContainer pq;
-        bool ok = newShuffle
-            ? client.shufflePlayQueue(queue.getPlayQueueID(), pq)
-            : client.unshufflePlayQueue(queue.getPlayQueueID(), pq);
-
-        if (ok && !pq.items.empty()) {
-            queue.setFromPlayQueue(pq, newShuffle);
-        } else {
-            // Server call failed - fall back to client-side
-            queue.setShuffle(newShuffle);
-        }
-    } else {
-        queue.setShuffle(newShuffle);
-    }
+    queue.setShuffle(!queue.isShuffleEnabled());
 
     updateQueueDisplay();
     updateShuffleIcon();
 
-    // Show OSD feedback
     MpvPlayer::getInstance().showOSD(
         queue.isShuffleEnabled() ? "Shuffle: ON" : "Shuffle: OFF", 1.5);
 }
@@ -2603,95 +2468,11 @@ void PlayerActivity::playFromQueue(int index) {
 // Controls visibility toggle (like Suwayomi reader settings show/hide)
 
 void PlayerActivity::updateSkipButton(double positionMs) {
-    AppSettings& settings = Application::getInstance().getSettings();
-
-    // Check if we're inside any marker region
-    std::string activeType;
-    int activeEnd = 0;
-    for (const auto& marker : m_markers) {
-        if (positionMs >= marker.startTimeMs && positionMs < marker.endTimeMs) {
-            activeType = marker.type;
-            activeEnd = marker.endTimeMs;
-            break;
-        }
-    }
-
-    if (!activeType.empty()) {
-        // We're inside a marker region
-        bool isIntro = (activeType == "intro");
-        bool autoSkip = isIntro ? settings.autoSkipIntro : settings.autoSkipCredits;
-        bool& alreadySkipped = isIntro ? m_introSkipped : m_creditsSkipped;
-
-        if (autoSkip && !alreadySkipped) {
-            // Auto-skip: seek to end of marker
-            alreadySkipped = true;
-            brls::Logger::info("PlayerActivity: Auto-skipped {} to {}ms", activeType, activeEnd);
-            // Hide skip button
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-            m_skipButtonVisible = false;
-            m_activeMarkerType.clear();
-
-            // Skip to end of marker
-            {
-                double seekToSec = (activeEnd - m_transcodeBaseOffsetMs) / 1000.0;
-                if (seekToSec > 0) {
-                    MpvPlayer::getInstance().seekTo(seekToSec);
-                }
-            }
-            return;
-        }
-
-        // Manual skip mode: show button
-        if (m_activeMarkerType != activeType) {
-            // Entering a new marker region
-            m_activeMarkerType = activeType;
-            m_activeMarkerEndMs = activeEnd;
-            m_skipButtonShowSeconds = 0;
-            m_skipButtonVisible = true;
-
-            if (skipLabel) {
-                skipLabel->setText(isIntro ? "Skip Intro" : "Skip Credits");
-            }
-            if (skipBtn) {
-                skipBtn->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            // Still in same marker region
-            m_skipButtonShowSeconds++;
-
-            // Auto-hide after 5 seconds if controls are not visible
-            if (m_skipButtonShowSeconds >= 5 && !m_controlsVisible && m_skipButtonVisible) {
-                m_skipButtonVisible = false;
-                if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-            }
-        }
-    } else {
-        // Not in any marker region - hide button
-        if (m_skipButtonVisible || !m_activeMarkerType.empty()) {
-            m_skipButtonVisible = false;
-            m_activeMarkerType.clear();
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-        }
-    }
+    // Not applicable - Music Assistant doesn't have intro/credits markers
 }
 
 void PlayerActivity::skipToMarkerEnd() {
-    if (m_activeMarkerEndMs <= 0) return;
-
-    double seekToSec = (m_activeMarkerEndMs - m_transcodeBaseOffsetMs) / 1000.0;
-    if (seekToSec > 0) {
-        MpvPlayer::getInstance().seekTo(seekToSec);
-        brls::Logger::info("PlayerActivity: Manually skipped {} to {}ms", m_activeMarkerType, m_activeMarkerEndMs);
-
-        // Mark as skipped to prevent auto-skip re-trigger
-        if (m_activeMarkerType == "intro") m_introSkipped = true;
-        else if (m_activeMarkerType == "credits") m_creditsSkipped = true;
-    }
-
-    // Hide button
-    m_skipButtonVisible = false;
-    m_activeMarkerType.clear();
-    if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
+    // Not applicable for Music Assistant
 }
 
 void PlayerActivity::toggleControls() {
@@ -2713,33 +2494,19 @@ void PlayerActivity::showControls() {
         controlsBox->setAlpha(1.0f);
         controlsBox->setVisibility(brls::Visibility::VISIBLE);
     }
-    if (centerControls) {
-        centerControls->setAlpha(1.0f);
-        centerControls->setVisibility(brls::Visibility::VISIBLE);
-    }
     if (titleLabel) {
         titleLabel->setVisibility(brls::Visibility::VISIBLE);
-    }
-    // Re-show skip button if we're still in a marker region
-    if (!m_activeMarkerType.empty() && skipBtn) {
-        m_skipButtonVisible = true;
-        m_skipButtonShowSeconds = 0;  // Reset auto-hide timer
-        skipBtn->setVisibility(brls::Visibility::VISIBLE);
     }
 }
 
 void PlayerActivity::hideControls() {
-    // Don't hide controls for photos or music mode
-    if (m_isPhoto || m_isQueueMode) return;
+    // Don't hide controls in music mode
+    if (m_isQueueMode) return;
 
     m_controlsVisible = false;
     if (controlsBox) {
         controlsBox->setAlpha(0.0f);
         controlsBox->setVisibility(brls::Visibility::GONE);
-    }
-    if (centerControls) {
-        centerControls->setAlpha(0.0f);
-        centerControls->setVisibility(brls::Visibility::GONE);
     }
 }
 
