@@ -678,58 +678,63 @@ void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t track
     MusicItem capturedTrack = track;
     size_t capturedIndex = trackIndex;
 
-    addDialogButton("Play Now (Clear Queue)", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        std::vector<MusicItem> single = {capturedTrack};
-        auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-        brls::Application::pushActivity(playerActivity);
-        return true;
-    });
-
-    addDialogButton("Play Next", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        MusicQueue& queue = MusicQueue::getInstance();
-        if (queue.isEmpty()) {
-            std::vector<MusicItem> single = {capturedTrack};
+    addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            std::vector<MusicItem> single = {track};
             auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
             brls::Application::pushActivity(playerActivity);
-        } else {
-            queue.insertTrackAfterCurrent(capturedTrack);
-            brls::Application::notify("Playing next: " + capturedTrack.name);
-        }
+        });
         return true;
     });
 
-    addDialogButton("Add to Bottom of Queue", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        MusicQueue& queue = MusicQueue::getInstance();
-        if (queue.isEmpty()) {
-            std::vector<MusicItem> single = {capturedTrack};
-            auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-            brls::Application::pushActivity(playerActivity);
-        } else {
-            queue.addTrack(capturedTrack);
-            brls::Application::notify("Added to queue: " + capturedTrack.name);
-        }
+    addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            MusicQueue& queue = MusicQueue::getInstance();
+            if (queue.isEmpty()) {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            } else {
+                queue.insertTrackAfterCurrent(track);
+                brls::Application::notify("Playing next: " + track.name);
+            }
+        });
         return true;
     });
 
-    addDialogButton("Add to Playlist", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        // TODO: Implement playlist picker using MAClient::getLibraryPlaylists()
-        // and MAClient::playMedia() or a future addToPlaylist API
-        brls::Application::notify("Add to playlist: not yet implemented");
+    addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            MusicQueue& queue = MusicQueue::getInstance();
+            if (queue.isEmpty()) {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            } else {
+                queue.addTrack(track);
+                brls::Application::notify("Added to queue: " + track.name);
+            }
+        });
+        return true;
+    });
+
+    addDialogButton("Add to Playlist", [dialog](brls::View*) {
+        dialog->close([]() {
+            brls::Application::notify("Add to playlist: not yet implemented");
+        });
         return true;
     });
 
     addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
+        dialog->close();
         return true;
     });
 
     dialog->addView(optionsBox);
     dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
+        dialog->close();
         return true;
     });
     brls::Application::pushActivity(new brls::Activity(dialog));
@@ -1119,49 +1124,55 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
         MusicItem capturedTrack = track;
 
         addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            std::vector<MusicItem> single = {capturedTrack};
-            auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-            brls::Application::pushActivity(playerActivity);
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            });
             return true;
         });
 
         addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {capturedTrack};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(capturedTrack);
-                brls::Application::notify("Playing next: " + capturedTrack.name);
-            }
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                MusicQueue& queue = MusicQueue::getInstance();
+                if (queue.isEmpty()) {
+                    std::vector<MusicItem> single = {track};
+                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                    brls::Application::pushActivity(playerActivity);
+                } else {
+                    queue.insertTrackAfterCurrent(track);
+                    brls::Application::notify("Playing next: " + track.name);
+                }
+            });
             return true;
         });
 
         addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {capturedTrack};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.addTrack(capturedTrack);
-                brls::Application::notify("Added to queue: " + capturedTrack.name);
-            }
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                MusicQueue& queue = MusicQueue::getInstance();
+                if (queue.isEmpty()) {
+                    std::vector<MusicItem> single = {track};
+                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                    brls::Application::pushActivity(playerActivity);
+                } else {
+                    queue.addTrack(track);
+                    brls::Application::notify("Added to queue: " + track.name);
+                }
+            });
             return true;
         });
 
         addDialogButton("Cancel", [dialog](brls::View*) {
-            dialog->dismiss();
+            dialog->close();
             return true;
         });
 
         dialog->addView(optionsBox);
         dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-            dialog->dismiss();
+            dialog->close();
             return true;
         });
         brls::Application::pushActivity(new brls::Activity(dialog));

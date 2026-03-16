@@ -599,14 +599,20 @@ void PlayerActivity::loadFromQueue() {
         if (!success) {
             brls::Logger::error("Failed to play track '{}': {}",
                 trackTitle, result.has("details") ? result["details"].str() : "unknown error");
-            brls::sync([this]() { m_loadingMedia = false; });
+            brls::sync([this, alive]() {
+                if (!alive->load()) return;
+                m_loadingMedia = false;
+            });
             return;
         }
 
         brls::Logger::info("Track '{}' queued for playback via Sendspin", trackTitle);
         // Audio will arrive via Sendspin binary frames and be played by MPV
         // through the audio pipe. No need to call loadFromQueueWithUrl.
-        brls::sync([this]() { m_loadingMedia = false; });
+        brls::sync([this, alive]() {
+            if (!alive->load()) return;
+            m_loadingMedia = false;
+        });
     });
 }
 
