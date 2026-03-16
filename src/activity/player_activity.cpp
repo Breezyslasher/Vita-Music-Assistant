@@ -243,41 +243,6 @@ void PlayerActivity::onContentAvailable() {
         });
     }
 
-    // Wire up touch buttons with tap gesture recognizers
-    if (playBtn) {
-        playBtn->registerClickAction([this](brls::View* view) {
-            togglePlayPause();
-            return true;
-        });
-        playBtn->addGestureRecognizer(new brls::TapGestureRecognizer(playBtn));
-    }
-
-    if (rewindBtn) {
-        rewindBtn->registerClickAction([this](brls::View* view) {
-            if (m_isQueueMode) {
-                playPrevious();
-            } else {
-                int interval = Application::getInstance().getSettings().seekInterval;
-                seek(-interval);
-            }
-            return true;
-        });
-        rewindBtn->addGestureRecognizer(new brls::TapGestureRecognizer(rewindBtn));
-    }
-
-    if (forwardBtn) {
-        forwardBtn->registerClickAction([this](brls::View* view) {
-            if (m_isQueueMode) {
-                playNext();
-            } else {
-                int interval = Application::getInstance().getSettings().seekInterval;
-                seek(interval);
-            }
-            return true;
-        });
-        forwardBtn->addGestureRecognizer(new brls::TapGestureRecognizer(forwardBtn));
-    }
-
     // Queue overlay dismiss on tap
     if (queueOverlay) {
         queueOverlay->addGestureRecognizer(new brls::TapGestureRecognizer(
@@ -290,9 +255,6 @@ void PlayerActivity::onContentAvailable() {
 
     // Show mode-specific icons and wire touch
     if (m_isQueueMode) {
-        // Music mode: hide center video controls, show music transport + info
-        if (centerControls) centerControls->setVisibility(brls::Visibility::GONE);
-
         // Show music-specific UI elements
         if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
         if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
@@ -319,12 +281,6 @@ void PlayerActivity::onContentAvailable() {
             });
             musicNextBtn->addGestureRecognizer(new brls::TapGestureRecognizer(musicNextBtn));
         }
-
-        // In music mode: disable focusability on center video control buttons
-        // (hidden parent but still focusable)
-        if (playBtn) playBtn->setFocusable(false);
-        if (rewindBtn) rewindBtn->setFocusable(false);
-        if (forwardBtn) forwardBtn->setFocusable(false);
 
         // Shuffle toggle button
         if (shuffleBtn) {
@@ -371,9 +327,6 @@ void PlayerActivity::onContentAvailable() {
         // Hide title/artist from bottom controls (shown in musicInfo instead)
         if (titleLabel) titleLabel->setVisibility(brls::Visibility::GONE);
         if (artistLabel) artistLabel->setVisibility(brls::Visibility::GONE);
-    } else {
-        // Non-queue single track mode - show basic controls
-        if (centerControls) centerControls->setVisibility(brls::Visibility::VISIBLE);
     }
 
     if (queueBtn) queueBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, queueBtn);
@@ -915,15 +868,6 @@ void PlayerActivity::updateProgress() {
 
             if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
             if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
-
-            if (timeLabel) {
-                int durMin = (int)duration / 60;
-                int durSec = (int)duration % 60;
-                char timeStr[32];
-                snprintf(timeStr, sizeof(timeStr), "%02d:%02d / %02d:%02d",
-                         posMin, posSec, durMin, durSec);
-                timeLabel->setText(timeStr);
-            }
         }
     }
 
@@ -978,10 +922,6 @@ void PlayerActivity::togglePlayPause() {
 }
 
 void PlayerActivity::updatePlayPauseLabel() {
-    if (playPauseIcon) {
-        playPauseIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
-    }
-    // Also update music transport play icon
     if (musicPlayIcon) {
         musicPlayIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
     }
@@ -1306,13 +1246,11 @@ void PlayerActivity::hideQueueOverlay() {
     if (queueOverlay) {
         queueOverlay->setVisibility(brls::Visibility::GONE);
     }
-    // Restore focus to queue button (fall back to play button if queue button unavailable)
+    // Restore focus to queue button (fall back to music play button if unavailable)
     if (queueBtn && queueBtn->getVisibility() == brls::Visibility::VISIBLE) {
         brls::Application::giveFocus(queueBtn);
-    } else if (m_isQueueMode && musicPlayBtn) {
+    } else if (musicPlayBtn) {
         brls::Application::giveFocus(musicPlayBtn);
-    } else if (playBtn) {
-        brls::Application::giveFocus(playBtn);
     }
 }
 
