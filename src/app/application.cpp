@@ -3,6 +3,7 @@
  */
 
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
@@ -53,14 +54,12 @@ void Application::run() {
     brls::Logger::info("Application::run - isLoggedIn={}, serverUrl={}",
                        isLoggedIn(), m_serverUrl.empty() ? "(empty)" : m_serverUrl);
 
-    // Check if we have saved login credentials
-    if (isLoggedIn() && !m_serverUrl.empty()) {
+    // Check if we have a saved server URL
+    if (!m_serverUrl.empty()) {
         brls::Logger::info("Restoring saved session...");
-        // Verify connection and go to main
-        MAClient::instance().setAuthToken(m_authToken);
-        // Use connectToServer to properly initialize (including Live TV check)
-        if (MAClient::instance().connectToServer(m_serverUrl)) {
-            brls::Logger::info("Restored session and connected to server");
+        // Connect to Music Assistant server
+        if (MAClient::instance().connect(m_serverUrl, m_authToken)) {
+            brls::Logger::info("Connected to server");
             pushMainActivity();
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
@@ -92,12 +91,8 @@ void Application::pushMainActivity() {
     brls::Application::pushActivity(new MainActivity());
 }
 
-void Application::pushPlayerActivity(const std::string& mediaKey, bool isLocalFile) {
-    brls::Application::pushActivity(new PlayerActivity(mediaKey, isLocalFile));
-}
-
-void Application::pushLiveTVPlayerActivity(const std::string& streamUrl, const std::string& channelTitle) {
-    brls::Application::pushActivity(PlayerActivity::createForStream(streamUrl, channelTitle));
+void Application::pushPlayerActivity(const std::string& queueId) {
+    brls::Application::pushActivity(new PlayerActivity(queueId));
 }
 
 void Application::applyTheme() {
@@ -133,12 +128,10 @@ void Application::applyLogLevel() {
 
 std::string Application::getQualityString(AudioQuality quality) {
     switch (quality) {
-        case AudioQuality::ORIGINAL: return "Original (Direct Play)";
-        case AudioQuality::QUALITY_LOSSLESS: return "Lossless (FLAC)";
-        case AudioQuality::QUALITY_HIGH: return "High (320 Kbps)";
-        case AudioQuality::QUALITY_MEDIUM: return "Medium (192 Kbps)";
-        case AudioQuality::QUALITY_LOW: return "Low (128 Kbps)";
-        case AudioQuality::QUALITY_LOWEST: return "Lowest (64 Kbps)";
+        case AudioQuality::LOSSLESS: return "Lossless (FLAC)";
+        case AudioQuality::HIGH: return "High (320 Kbps)";
+        case AudioQuality::NORMAL: return "Normal (192 Kbps)";
+        case AudioQuality::LOW: return "Low (96 Kbps)";
         default: return "Unknown";
     }
 }
