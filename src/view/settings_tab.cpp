@@ -334,39 +334,20 @@ void SettingsTab::createPlayerSection() {
     localPlaybackInfo->setMarginTop(4);
     m_contentBox->addView(localPlaybackInfo);
 
-    // Player name setting
+    // Player name setting - opens on-screen keyboard for free-form input
     m_playerNameCell = new brls::DetailCell();
     m_playerNameCell->setText("Player Name");
     m_playerNameCell->setDetailText(settings.sendspinPlayerName);
     m_playerNameCell->registerClickAction([this](brls::View*) {
-        // Show a simple name picker with preset options
-        auto* dialog = new brls::Dialog("Choose Player Name");
-        auto* dialogBox = new brls::Box();
-        dialogBox->setAxis(brls::Axis::COLUMN);
-        dialogBox->setPadding(16);
-
-        std::vector<std::string> names = {"PS Vita", "Vita Player", "Bedroom Vita", "Living Room Vita", "Kitchen Vita"};
-        for (const auto& name : names) {
-            auto* btn = new brls::Button();
-            btn->setStyle(brls::ButtonStyle::BORDERLESS);
-            btn->setText(name);
-            btn->setMarginBottom(4);
-            std::string capturedName = name;
-            btn->registerClickAction([this, capturedName, dialog](brls::View*) {
-                Application& a = Application::getInstance();
-                a.getSettings().sendspinPlayerName = capturedName;
-                a.saveSettings();
-                m_playerNameCell->setDetailText(capturedName);
-                dialog->close();
-                brls::Application::notify("Player name changed. Reconnect to apply.");
-                return true;
-            });
-            dialogBox->addView(btn);
-        }
-
-        dialog->addView(dialogBox);
-        dialog->addButton("Cancel", []() {});
-        dialog->open();
+        auto& currentName = Application::getInstance().getSettings().sendspinPlayerName;
+        brls::Application::getImeManager()->openForText([this](std::string newName) {
+            if (newName.empty()) return;
+            Application& a = Application::getInstance();
+            a.getSettings().sendspinPlayerName = newName;
+            a.saveSettings();
+            m_playerNameCell->setDetailText(newName);
+            brls::Application::notify("Player name changed. Reconnect to apply.");
+        }, "Player Name", "Enter the name shown in Music Assistant", 64, currentName);
         return true;
     });
     m_contentBox->addView(m_playerNameCell);

@@ -142,7 +142,7 @@ struct AppSettings {
     bool localPlayback = true;  // Play audio locally on Vita via Sendspin
 
     // Player Settings
-    std::string sendspinPlayerName = "PS Vita";  // Name shown in Music Assistant
+    std::string sendspinPlayerName = "Vita Music Assistant";  // Name shown in Music Assistant
     std::string selectedPlayerId;  // Player ID to control (empty = local Vita player)
 
     // Audio Settings
