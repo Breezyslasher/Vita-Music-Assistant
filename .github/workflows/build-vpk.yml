@@ -44,3 +44,9 @@ jobs:
         with:
           name: VitaMusicAssistant-${{ github.run_number }}
           path: build/VitaMusicAssistant.vpk
+
+      - name: Upload ELF (for crash debugging)
+        uses: actions/upload-artifact@v5
+        with:
+          name: VitaMusicAssistant-ELF-${{ github.run_number }}
+          path: build/VitaMusicAssistant.elf

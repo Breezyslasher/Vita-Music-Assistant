@@ -116,8 +116,9 @@ void MediaItemCell::setItem(const MusicItem& item) {
         }
     }
 
-    // Load thumbnail
-    loadThumbnail();
+    // Don't load thumbnail eagerly - RecyclingGrid::updateVisibleTextures()
+    // will call reloadThumbnail() for cells in the visible viewport.
+    // This prevents loading 500+ textures at once on large datasets.
 }
 
 void MediaItemCell::loadThumbnail() {
@@ -129,10 +130,24 @@ void MediaItemCell::loadThumbnail() {
     std::string fullUrl = MAClient::instance().getThumbnailUrl(m_item.imageUrl, 300, 300, m_item.imageProvider);
     if (fullUrl.empty()) return;
 
-    ImageLoader::loadAsync(fullUrl, [](brls::Image* image) {
+    ImageLoader::loadAsync(fullUrl, [this](brls::Image* image) {
         // Show thumbnail once texture is loaded successfully
         image->setVisibility(brls::Visibility::VISIBLE);
+        m_thumbLoaded = true;
     }, m_thumbnailImage, m_alive);
+}
+
+void MediaItemCell::unloadThumbnail() {
+    if (!m_thumbnailImage || !m_thumbLoaded) return;
+    m_thumbnailImage->clear();
+    m_thumbnailImage->setVisibility(brls::Visibility::INVISIBLE);
+    m_thumbLoaded = false;
+}
+
+void MediaItemCell::reloadThumbnail() {
+    if (!m_thumbnailImage || m_thumbLoaded) return;
+    if (m_item.imageUrl.empty()) return;
+    loadThumbnail();
 }
 
 brls::View* MediaItemCell::create() {
