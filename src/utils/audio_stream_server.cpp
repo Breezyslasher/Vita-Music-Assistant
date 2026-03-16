@@ -191,6 +191,7 @@ void AudioStreamServer::resetStream() {
     }
     m_streamEnded.store(false);
     m_hasInitialData.store(false);
+    m_codecHeader.clear();
 }
 
 void AudioStreamServer::serverLoop() {
@@ -262,7 +263,19 @@ void AudioStreamServer::handleClient(int clientSocket) {
 
     brls::Logger::debug("AudioStreamServer: sent headers ({})", contentType);
 
+    // Send codec container header first (e.g. fLaC + STREAMINFO for FLAC).
+    // MPV needs this at the start of the stream for format detection.
+    if (!m_codecHeader.empty()) {
+        brls::Logger::info("AudioStreamServer: sending codec header ({} bytes)", m_codecHeader.size());
+        if (!sendAll(clientSocket, m_codecHeader.data(), m_codecHeader.size())) {
+            brls::Logger::error("AudioStreamServer: failed to send codec header");
+            return;
+        }
+    }
+
     // Stream raw audio bytes until stream ends or connection breaks
+    size_t totalBytesSent = 0;
+    size_t chunkCount = 0;
     while (!m_shouldStop.load()) {
         std::vector<uint8_t> chunk;
 
@@ -279,12 +292,25 @@ void AudioStreamServer::handleClient(int clientSocket) {
                 m_queue.pop_front();
             } else if (m_streamEnded.load()) {
                 // No more data - close connection
+                brls::Logger::info("AudioStreamServer: stream ended, sent {} chunks ({} bytes total)",
+                    chunkCount, totalBytesSent);
                 break;
             }
         }
 
         if (!chunk.empty()) {
-            if (!sendAll(clientSocket, chunk.data(), chunk.size())) break;
+            if (!sendAll(clientSocket, chunk.data(), chunk.size())) {
+                brls::Logger::error("AudioStreamServer: send failed after {} chunks ({} bytes)",
+                    chunkCount, totalBytesSent);
+                break;
+            }
+            totalBytesSent += chunk.size();
+            chunkCount++;
+            // Log first few chunks and then periodically
+            if (chunkCount <= 3 || (chunkCount % 100 == 0)) {
+                brls::Logger::debug("AudioStreamServer: sent chunk #{} ({} bytes, total {})",
+                    chunkCount, chunk.size(), totalBytesSent);
+            }
         }
     }
 }

@@ -41,6 +41,7 @@ struct SendspinAudioFormat {
     int sample_rate = 44100;
     int channels = 2;
     int bit_depth = 16;
+    std::vector<uint8_t> codec_header;  // Container header (e.g. fLaC + STREAMINFO for FLAC)
 };
 
 // Sendspin binary message types (from protocol spec)
@@ -110,6 +111,7 @@ private:
     // Local HTTP server that bridges Sendspin audio to MPV
     AudioStreamServer m_audioServer;
     bool m_mpvStarted = false;  // Whether MPV has been started for current stream
+    size_t m_audioChunkCount = 0;  // Audio chunks received in current stream (for logging)
 
     // Callbacks
     StreamStateCallback m_stateCallback;
@@ -126,6 +128,9 @@ private:
 
     // Start MPV playback from the local HTTP stream
     void startMpvPlayback();
+
+    // Build a minimal FLAC file header (fLaC + STREAMINFO) for format detection
+    static std::vector<uint8_t> buildFlacHeader(int sampleRate, int channels, int bitDepth);
 };
 
 } // namespace vita_ma

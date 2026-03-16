@@ -48,6 +48,9 @@ public:
     // Set the codec for the current stream (determines Content-Type header)
     void setCodec(const std::string& codec) { m_codec = codec; }
 
+    // Set codec container header to prepend before audio data (e.g. FLAC header)
+    void setCodecHeader(const std::vector<uint8_t>& header) { m_codecHeader = header; }
+
     // Check if the server has buffered enough initial data for MPV to probe
     bool hasInitialData() const { return m_hasInitialData.load(); }
 
@@ -76,6 +79,7 @@ private:
     std::atomic<bool> m_hasInitialData{false};
     size_t m_bufferedBytes = 0;
     std::string m_codec = "flac";
+    std::vector<uint8_t> m_codecHeader;  // Container header to prepend (e.g. fLaC + STREAMINFO)
 };
 
 } // namespace vita_ma

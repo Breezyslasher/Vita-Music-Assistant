@@ -5,6 +5,7 @@
 #include <borealis.hpp>
 #include <cstring>
 #include <sstream>
+#include <mbedtls/base64.h>
 
 #ifdef __vita__
 #include <psp2/kernel/threadmgr.h>
@@ -174,12 +175,54 @@ void SendspinClient::onTextMessage(const std::string& message) {
         if (player.has("channels")) m_format.channels = player["channels"].intVal();
         if (player.has("bit_depth")) m_format.bit_depth = player["bit_depth"].intVal();
 
-        brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit",
-            m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth);
+        // Extract codec_header if provided (base64-encoded container header)
+        // For FLAC this contains the fLaC magic + STREAMINFO metadata block
+        // that MPV needs for format detection.
+        m_format.codec_header.clear();
+        if (player.has("codec_header")) {
+            std::string b64 = player["codec_header"].str();
+            if (!b64.empty()) {
+                size_t decoded_len = 0;
+                // First call to get required output size
+                mbedtls_base64_decode(nullptr, 0, &decoded_len,
+                    reinterpret_cast<const unsigned char*>(b64.c_str()), b64.size());
+                if (decoded_len > 0) {
+                    m_format.codec_header.resize(decoded_len);
+                    size_t actual_len = 0;
+                    int ret = mbedtls_base64_decode(m_format.codec_header.data(), decoded_len, &actual_len,
+                        reinterpret_cast<const unsigned char*>(b64.c_str()), b64.size());
+                    if (ret == 0) {
+                        m_format.codec_header.resize(actual_len);
+                        brls::Logger::info("Sendspin: got codec_header ({} bytes)", actual_len);
+                    } else {
+                        brls::Logger::error("Sendspin: failed to decode codec_header (ret={})", ret);
+                        m_format.codec_header.clear();
+                    }
+                }
+            }
+        }
+
+        // If no codec_header was provided for FLAC, synthesize one.
+        // MPV needs the fLaC magic + STREAMINFO block for format probing.
+        if (m_format.codec == "flac" && m_format.codec_header.empty()) {
+            m_format.codec_header = buildFlacHeader(
+                m_format.sample_rate, m_format.channels, m_format.bit_depth);
+            brls::Logger::info("Sendspin: synthesized FLAC header ({} bytes)", m_format.codec_header.size());
+        }
+
+        brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit (header={}B)",
+            m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth,
+            m_format.codec_header.size());
 
         // Reset the audio server for the new stream and set the codec
         m_audioServer.resetStream();
         m_audioServer.setCodec(m_format.codec);
+
+        // If we have a codec header, prepend it to the stream so MPV
+        // sees a valid container when it starts format probing.
+        if (!m_format.codec_header.empty()) {
+            m_audioServer.setCodecHeader(m_format.codec_header);
+        }
 
         setState(SendspinState::BUFFERING);
 
@@ -188,6 +231,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         // startMpvPlayback() will be called from onBinaryData() once
         // enough audio has buffered.
         m_mpvStarted = false;
+        m_audioChunkCount = 0;
     }
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
@@ -247,6 +291,11 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
         size_t audioSize = size - SENDSPIN_HEADER_SIZE;
 
         if (audioSize > 0) {
+            m_audioChunkCount++;
+            if (m_audioChunkCount <= 3) {
+                brls::Logger::debug("Sendspin: audio chunk #{} ({} bytes)", m_audioChunkCount, audioSize);
+            }
+
             // Push audio data to the local HTTP server's queue.
             // MPV reads from the HTTP server on its own thread.
             m_audioServer.pushAudioData(audioData, audioSize);
@@ -284,6 +333,56 @@ void SendspinClient::setState(SendspinState state) {
 
 std::string SendspinClient::getLocalStreamUrl() const {
     return m_audioServer.getStreamUrl(m_format.codec);
+}
+
+std::vector<uint8_t> SendspinClient::buildFlacHeader(int sampleRate, int channels, int bitDepth) {
+    // Build a minimal FLAC file header: fLaC magic + STREAMINFO metadata block.
+    // STREAMINFO is 34 bytes of data, preceded by a 4-byte metadata block header.
+    // Total: 4 (magic) + 4 (block header) + 34 (STREAMINFO data) = 42 bytes.
+    std::vector<uint8_t> header(42, 0);
+
+    // "fLaC" magic
+    header[0] = 'f'; header[1] = 'L'; header[2] = 'a'; header[3] = 'C';
+
+    // Metadata block header: bit 7 = last-metadata-block flag (1), bits 6-0 = type (0 = STREAMINFO)
+    // Byte 4: 0x80 = last block, type 0
+    header[4] = 0x80;
+    // Bytes 5-7: block data length = 34 (big-endian 24-bit)
+    header[5] = 0x00;
+    header[6] = 0x00;
+    header[7] = 34;
+
+    // STREAMINFO data (34 bytes starting at offset 8):
+    // Bytes 0-1: minimum block size (samples) - use 4096 as default
+    header[8] = 0x10; header[9] = 0x00;  // 4096
+    // Bytes 2-3: maximum block size (samples) - use 4096 as default
+    header[10] = 0x10; header[11] = 0x00; // 4096
+    // Bytes 4-6: minimum frame size (0 = unknown)
+    header[12] = 0; header[13] = 0; header[14] = 0;
+    // Bytes 7-9: maximum frame size (0 = unknown)
+    header[15] = 0; header[16] = 0; header[17] = 0;
+
+    // Bytes 10-13 (+ 4 bits of 14): sample rate (20 bits), channels-1 (3 bits), bps-1 (5 bits), total samples high (4 bits)
+    // Bits: ssssssss ssssssss ssssrrrr rbbbbbttt
+    // Wait, the layout is:
+    //   20 bits: sample rate
+    //   3 bits:  channels - 1
+    //   5 bits:  bits per sample - 1
+    //   36 bits: total samples (0 = unknown)
+    uint32_t sr = static_cast<uint32_t>(sampleRate);
+    uint32_t ch = static_cast<uint32_t>(channels - 1) & 0x07;
+    uint32_t bps = static_cast<uint32_t>(bitDepth - 1) & 0x1F;
+
+    // Pack into bytes 18-21 (offsets 10-13 within STREAMINFO)
+    header[18] = (sr >> 12) & 0xFF;
+    header[19] = (sr >> 4) & 0xFF;
+    header[20] = ((sr & 0x0F) << 4) | (ch << 1) | ((bps >> 4) & 0x01);
+    header[21] = ((bps & 0x0F) << 4); // total samples high 4 bits = 0
+
+    // Bytes 22-25: total samples low 32 bits = 0 (unknown)
+    // Bytes 26-41: MD5 signature = all zeros (unknown)
+
+    return header;
 }
 
 void SendspinClient::startMpvPlayback() {
