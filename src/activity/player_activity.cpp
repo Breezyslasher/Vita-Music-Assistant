@@ -426,16 +426,6 @@ void PlayerActivity::willDisappear(bool resetState) {
     m_pendingPlayUrl.clear();
     m_pendingPlayTitle.clear();
 
-    // Hide video view
-    if (videoView) {
-        videoView->setVideoVisible(false);
-    }
-
-    // For photos, nothing to stop
-    if (m_isPhoto) {
-        return;
-    }
-
     // Stop playback and save progress
     MpvPlayer& player = MpvPlayer::getInstance();
 
