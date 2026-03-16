@@ -128,6 +128,8 @@ target_link_libraries(${PROJECT_NAME}
     curl
     mpv
     ass
+    harfbuzz
+    fribidi
     avfilter
     avformat
     avcodec
@@ -136,6 +138,7 @@ target_link_libraries(${PROJECT_NAME}
     avutil
     avcodec
     archive
+    zstd
     freetype
     png
     bz2
