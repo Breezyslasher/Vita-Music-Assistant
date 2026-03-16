@@ -412,7 +412,7 @@ void SettingsTab::onLogout() {
 
     dialog->addButton("Logout", [this]() {
         // Clear credentials
-        MAClient::instance().logout();
+        MAClient::instance().disconnect();
         Application::getInstance().setAuthToken("");
         Application::getInstance().setServerUrl("");
         Application::getInstance().setUsername("");
