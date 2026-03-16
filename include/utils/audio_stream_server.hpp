@@ -45,6 +45,12 @@ public:
     // Reset for a new stream (clears queue, resets EOF flag).
     void resetStream();
 
+    // Set the codec for the current stream (determines Content-Type header)
+    void setCodec(const std::string& codec) { m_codec = codec; }
+
+    // Check if the server has buffered enough initial data for MPV to probe
+    bool hasInitialData() const { return m_hasInitialData.load(); }
+
     // Check if server is running
     bool isRunning() const { return m_running.load(); }
 
@@ -67,6 +73,9 @@ private:
     std::mutex m_queueMutex;
     std::condition_variable m_queueCv;
     std::atomic<bool> m_streamEnded{false};
+    std::atomic<bool> m_hasInitialData{false};
+    size_t m_bufferedBytes = 0;
+    std::string m_codec = "flac";
 };
 
 } // namespace vita_ma

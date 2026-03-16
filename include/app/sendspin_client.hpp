@@ -109,6 +109,7 @@ private:
 
     // Local HTTP server that bridges Sendspin audio to MPV
     AudioStreamServer m_audioServer;
+    bool m_mpvStarted = false;  // Whether MPV has been started for current stream
 
     // Callbacks
     StreamStateCallback m_stateCallback;

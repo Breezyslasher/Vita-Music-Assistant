@@ -168,6 +168,12 @@ void AudioStreamServer::pushAudioData(const uint8_t* data, size_t size) {
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
         m_queue.emplace_back(data, data + size);
+        m_bufferedBytes += size;
+        // Signal that we have enough data for MPV to detect the format
+        // (at least 16KB or ~4 chunks of FLAC data)
+        if (m_bufferedBytes >= 16384 && !m_hasInitialData.load()) {
+            m_hasInitialData.store(true);
+        }
     }
     m_queueCv.notify_one();
 }
@@ -181,8 +187,10 @@ void AudioStreamServer::resetStream() {
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
         m_queue.clear();
+        m_bufferedBytes = 0;
     }
     m_streamEnded.store(false);
+    m_hasInitialData.store(false);
 }
 
 void AudioStreamServer::serverLoop() {
@@ -229,15 +237,22 @@ void AudioStreamServer::handleClient(int clientSocket) {
     recv(clientSocket, reqBuf, sizeof(reqBuf), 0);
 #endif
 
+    // Determine Content-Type from codec
+    std::string contentType = "audio/flac";
+    if (m_codec == "pcm" || m_codec == "wav") contentType = "audio/wav";
+    else if (m_codec == "mp3") contentType = "audio/mpeg";
+    else if (m_codec == "opus") contentType = "audio/ogg";
+
     // Send HTTP response headers for streaming audio.
-    // Use chunked transfer encoding so we don't need Content-Length.
-    // MPV handles chunked HTTP streams natively.
+    // Use HTTP/1.0-style streaming: no Content-Length, Connection: close.
+    // The body is raw audio bytes streamed until connection closes.
+    // This avoids chunked transfer encoding which Vita's MPV may not handle.
     std::string headers =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: audio/flac\r\n"
-        "Transfer-Encoding: chunked\r\n"
+        "HTTP/1.0 200 OK\r\n"
+        "Content-Type: " + contentType + "\r\n"
         "Connection: close\r\n"
         "Cache-Control: no-cache\r\n"
+        "Accept-Ranges: none\r\n"
         "\r\n";
 
     if (!sendAll(clientSocket, headers.c_str(), headers.size())) {
@@ -245,7 +260,9 @@ void AudioStreamServer::handleClient(int clientSocket) {
         return;
     }
 
-    // Stream audio data as chunked HTTP response
+    brls::Logger::debug("AudioStreamServer: sent headers ({})", contentType);
+
+    // Stream raw audio bytes until stream ends or connection breaks
     while (!m_shouldStop.load()) {
         std::vector<uint8_t> chunk;
 
@@ -261,25 +278,15 @@ void AudioStreamServer::handleClient(int clientSocket) {
                 chunk = std::move(m_queue.front());
                 m_queue.pop_front();
             } else if (m_streamEnded.load()) {
-                // No more data - send final chunk and close
+                // No more data - close connection
                 break;
             }
         }
 
         if (!chunk.empty()) {
-            // HTTP chunked encoding: <hex size>\r\n<data>\r\n
-            char sizeHeader[32];
-            int headerLen = snprintf(sizeHeader, sizeof(sizeHeader),
-                                     "%zx\r\n", chunk.size());
-
-            if (!sendAll(clientSocket, sizeHeader, headerLen)) break;
             if (!sendAll(clientSocket, chunk.data(), chunk.size())) break;
-            if (!sendAll(clientSocket, "\r\n", 2)) break;
         }
     }
-
-    // Send final empty chunk to signal end of stream
-    sendAll(clientSocket, "0\r\n\r\n", 5);
 }
 
 bool AudioStreamServer::sendAll(int socket, const void* data, size_t len) {

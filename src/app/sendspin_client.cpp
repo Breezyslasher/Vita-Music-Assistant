@@ -177,15 +177,17 @@ void SendspinClient::onTextMessage(const std::string& message) {
         brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit",
             m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth);
 
-        // Reset the audio server for the new stream
+        // Reset the audio server for the new stream and set the codec
         m_audioServer.resetStream();
+        m_audioServer.setCodec(m_format.codec);
 
         setState(SendspinState::BUFFERING);
 
-        // Start MPV playback from the local HTTP stream server.
-        // MPV will connect to the local server and block-read audio data
-        // as it arrives from Sendspin binary frames.
-        startMpvPlayback();
+        // Don't start MPV yet - wait for initial audio data to buffer.
+        // MPV needs data available immediately for format probing.
+        // startMpvPlayback() will be called from onBinaryData() once
+        // enough audio has buffered.
+        m_mpvStarted = false;
     }
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
@@ -249,7 +251,14 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
             // MPV reads from the HTTP server on its own thread.
             m_audioServer.pushAudioData(audioData, audioSize);
 
-            // Transition from buffering to streaming on first audio data
+            // Once enough audio has buffered, start MPV playback.
+            // This ensures MPV has data for format probing when it connects.
+            if (!m_mpvStarted && m_audioServer.hasInitialData()) {
+                m_mpvStarted = true;
+                startMpvPlayback();
+            }
+
+            // Transition from buffering to streaming
             if (m_state.load() == SendspinState::BUFFERING) {
                 setState(SendspinState::STREAMING);
             }
