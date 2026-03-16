@@ -332,6 +332,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
                     mi.imageUrl = obj["image"]["path"].str();
+                    if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
                 } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
@@ -339,6 +340,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
                         if (img.has("path")) mi.imageUrl = img["path"].str();
+                        if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }
                 mi.mediaType  = MediaType::TRACK;
@@ -653,7 +655,7 @@ void LibrarySectionTab::showPlaylistContextMenu(const MusicItem& playlist) {
         deleteBtn->setMarginBottom(10);
         deleteBtn->registerClickAction([this, dialog, playlistId, playlistName](brls::View*) {
             dialog->dismiss();
-            showPlaylistOptionsDialog(MusicItem{playlistId, playlistName, "", "", "", MediaType::PLAYLIST});
+            showPlaylistOptionsDialog(MusicItem{playlistId, playlistName, "", "", "", "", MediaType::PLAYLIST});
             return true;
         });
         deleteBtn->addGestureRecognizer(new brls::TapGestureRecognizer(deleteBtn));
@@ -756,6 +758,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
                     mi.imageUrl = obj["image"]["path"].str();
+                    if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
                 } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
@@ -763,6 +766,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
                         if (img.has("path")) mi.imageUrl = img["path"].str();
+                        if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }
                 mi.mediaType  = MediaType::TRACK;

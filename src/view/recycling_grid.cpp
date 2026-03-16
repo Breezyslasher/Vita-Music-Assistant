@@ -27,6 +27,8 @@ RecyclingGrid::RecyclingGrid() {
 void RecyclingGrid::setDataSource(const std::vector<MusicItem>& items) {
     m_items = items;
     m_loading = false;
+    m_lastVisibleStart = -1;
+    m_lastVisibleEnd = -1;
     rebuildGrid();
 }
 
@@ -151,6 +153,57 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
     itemsInRow++;
     if (itemsInRow >= m_columns) {
         itemsInRow = 0;
+    }
+}
+
+void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float height,
+                          brls::Style style, brls::FrameContext* ctx) {
+    // Manage textures before drawing
+    updateVisibleTextures();
+
+    brls::ScrollingFrame::draw(vg, x, y, width, height, style, ctx);
+}
+
+void RecyclingGrid::updateVisibleTextures() {
+    if (!m_contentBox) return;
+
+    auto& rows = m_contentBox->getChildren();
+    if (rows.empty()) return;
+
+    // Determine which rows are visible based on scroll offset
+    float scrollY = -getContentOffsetY();  // Positive = scrolled down
+    float viewportH = getHeight();
+
+    // Each row is roughly 160px (150 cell height + 10 margin)
+    static constexpr float ROW_HEIGHT = 160.0f;
+
+    int firstVisible = std::max(0, (int)(scrollY / ROW_HEIGHT) - TEXTURE_BUFFER_ROWS);
+    int lastVisible = std::min((int)rows.size() - 1,
+                               (int)((scrollY + viewportH) / ROW_HEIGHT) + TEXTURE_BUFFER_ROWS);
+
+    // Skip if nothing changed
+    if (firstVisible == m_lastVisibleStart && lastVisible == m_lastVisibleEnd) return;
+
+    m_lastVisibleStart = firstVisible;
+    m_lastVisibleEnd = lastVisible;
+
+    // Unload textures for rows outside the visible range, load for visible rows
+    for (int r = 0; r < (int)rows.size(); r++) {
+        brls::Box* row = dynamic_cast<brls::Box*>(rows[r]);
+        if (!row) continue;
+
+        bool shouldLoad = (r >= firstVisible && r <= lastVisible);
+        auto& cells = row->getChildren();
+        for (auto* child : cells) {
+            MediaItemCell* cell = dynamic_cast<MediaItemCell*>(child);
+            if (!cell) continue;
+
+            if (shouldLoad) {
+                cell->reloadThumbnail();
+            } else {
+                cell->unloadThumbnail();
+            }
+        }
     }
 }
 

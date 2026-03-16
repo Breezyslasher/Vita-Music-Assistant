@@ -384,6 +384,13 @@ bool WebSocketClient::readFrame(std::string& payload, WsOpcode& opcode) {
         }
     }
 
+    // Sanity check: reject frames larger than 16MB to prevent OOM on
+    // corrupted frame headers (Vita only has 256MB RAM)
+    if (payloadLen > 16 * 1024 * 1024) {
+        brls::Logger::error("WS: frame too large ({} bytes), disconnecting", payloadLen);
+        return false;
+    }
+
     uint8_t mask[4] = {0};
     if (masked) {
         if (rawRecv(mask, 4) < 4) return false;

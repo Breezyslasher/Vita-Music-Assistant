@@ -44,6 +44,7 @@ QueueItem MusicQueue::mediaItemToQueueItem(const MusicItem& item, int index) {
     qi.artist = item.artistName;
     qi.album = item.albumName;
     qi.thumb = item.imageUrl;
+    qi.thumbProvider = item.imageProvider;
     qi.duration = item.duration;  // Already in seconds
     qi.index = index;
     return qi;

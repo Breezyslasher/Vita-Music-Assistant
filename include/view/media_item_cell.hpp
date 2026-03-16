@@ -27,11 +27,18 @@ public:
 
     static brls::View* create();
 
+    // Unload thumbnail texture to free GPU memory (off-screen cells)
+    void unloadThumbnail();
+    // Reload thumbnail from cache/network (when cell scrolls back into view)
+    void reloadThumbnail();
+    bool isThumbnailLoaded() const { return m_thumbLoaded; }
+
 private:
     void loadThumbnail();
     void updateFocusInfo(bool focused);
 
     bool m_pressed = false;  // Touch press feedback overlay
+    bool m_thumbLoaded = false;  // Whether GPU texture is currently loaded
 
     MusicItem m_item;
     std::string m_originalTitle;  // Store original truncated title

@@ -32,12 +32,17 @@ public:
     // Override to detect when user tries to scroll past the bottom
     brls::View* getNextFocus(brls::FocusDirection direction, brls::View* currentView) override;
 
+    // Override draw to manage texture loading for visible rows
+    void draw(NVGcontext* vg, float x, float y, float width, float height,
+              brls::Style style, brls::FrameContext* ctx) override;
+
     static brls::View* create();
 
 private:
     void rebuildGrid();
     void onItemClicked(int index);
     void addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index);
+    void updateVisibleTextures();
 
     std::vector<MusicItem> m_items;
     std::function<void(const MusicItem&)> m_onItemSelected;
@@ -51,6 +56,11 @@ private:
 
     bool m_hasMore = false;
     bool m_loading = false;  // Prevents duplicate fetch requests
+
+    // Texture management: only keep textures loaded for rows near the viewport
+    int m_lastVisibleStart = -1;
+    int m_lastVisibleEnd = -1;
+    static constexpr int TEXTURE_BUFFER_ROWS = 3;  // Extra rows above/below viewport to keep loaded
 };
 
 } // namespace vita_ma

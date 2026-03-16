@@ -220,7 +220,7 @@ void MediaDetailView::loadDetails() {
     // Load thumbnail
     if (m_posterImage && !imageUrl.empty()) {
         MAClient& client = MAClient::instance();
-        std::string url = client.getThumbnailUrl(imageUrl, 400, 400);
+        std::string url = client.getThumbnailUrl(imageUrl, 400, 400, m_item.imageProvider);
         ImageLoader::loadAsync(url, [](brls::Image* image) {
             image->setVisibility(brls::Visibility::VISIBLE);
         }, m_posterImage, m_alive);
@@ -267,6 +267,7 @@ void MediaDetailView::loadMusicCategories() {
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                         mi.imageUrl = item["image"]["path"].str();
+                        if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
                     } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -274,6 +275,7 @@ void MediaDetailView::loadMusicCategories() {
                         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                             const Json& img = meta["images"][static_cast<size_t>(0)];
                             if (img.has("path")) mi.imageUrl = img["path"].str();
+                            if (img.has("provider")) mi.imageProvider = img["provider"].str();
                         }
                     }
                     mi.mediaType = MediaType::ALBUM;
@@ -419,6 +421,7 @@ void MediaDetailView::loadTrackList() {
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                         mi.imageUrl = item["image"]["path"].str();
+                        if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
                     } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -426,6 +429,7 @@ void MediaDetailView::loadTrackList() {
                         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                             const Json& img = meta["images"][static_cast<size_t>(0)];
                             if (img.has("path")) mi.imageUrl = img["path"].str();
+                            if (img.has("provider")) mi.imageProvider = img["provider"].str();
                         }
                     }
                     mi.mediaType = MediaType::TRACK;
@@ -674,58 +678,63 @@ void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t track
     MusicItem capturedTrack = track;
     size_t capturedIndex = trackIndex;
 
-    addDialogButton("Play Now (Clear Queue)", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        std::vector<MusicItem> single = {capturedTrack};
-        auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-        brls::Application::pushActivity(playerActivity);
-        return true;
-    });
-
-    addDialogButton("Play Next", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        MusicQueue& queue = MusicQueue::getInstance();
-        if (queue.isEmpty()) {
-            std::vector<MusicItem> single = {capturedTrack};
+    addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            std::vector<MusicItem> single = {track};
             auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
             brls::Application::pushActivity(playerActivity);
-        } else {
-            queue.insertTrackAfterCurrent(capturedTrack);
-            brls::Application::notify("Playing next: " + capturedTrack.name);
-        }
+        });
         return true;
     });
 
-    addDialogButton("Add to Bottom of Queue", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        MusicQueue& queue = MusicQueue::getInstance();
-        if (queue.isEmpty()) {
-            std::vector<MusicItem> single = {capturedTrack};
-            auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-            brls::Application::pushActivity(playerActivity);
-        } else {
-            queue.addTrack(capturedTrack);
-            brls::Application::notify("Added to queue: " + capturedTrack.name);
-        }
+    addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            MusicQueue& queue = MusicQueue::getInstance();
+            if (queue.isEmpty()) {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            } else {
+                queue.insertTrackAfterCurrent(track);
+                brls::Application::notify("Playing next: " + track.name);
+            }
+        });
         return true;
     });
 
-    addDialogButton("Add to Playlist", [this, capturedTrack, dialog](brls::View*) {
-        dialog->dismiss();
-        // TODO: Implement playlist picker using MAClient::getLibraryPlaylists()
-        // and MAClient::playMedia() or a future addToPlaylist API
-        brls::Application::notify("Add to playlist: not yet implemented");
+    addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
+        MusicItem track = capturedTrack;
+        dialog->close([track]() {
+            MusicQueue& queue = MusicQueue::getInstance();
+            if (queue.isEmpty()) {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            } else {
+                queue.addTrack(track);
+                brls::Application::notify("Added to queue: " + track.name);
+            }
+        });
+        return true;
+    });
+
+    addDialogButton("Add to Playlist", [dialog](brls::View*) {
+        dialog->close([]() {
+            brls::Application::notify("Add to playlist: not yet implemented");
+        });
         return true;
     });
 
     addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
+        dialog->close();
         return true;
     });
 
     dialog->addView(optionsBox);
     dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
+        dialog->close();
         return true;
     });
     brls::Application::pushActivity(new brls::Activity(dialog));
@@ -773,6 +782,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -780,6 +790,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
                                 if (img.has("path")) mi.imageUrl = img["path"].str();
+                                if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }
                         mi.mediaType = MediaType::TRACK;
@@ -841,6 +852,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -848,6 +860,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
                                 if (img.has("path")) mi.imageUrl = img["path"].str();
+                                if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }
                         mi.mediaType = MediaType::TRACK;
@@ -932,6 +945,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -939,6 +953,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
                                 if (img.has("path")) mi.imageUrl = img["path"].str();
+                                if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }
                         mi.mediaType = MediaType::TRACK;
@@ -1109,49 +1124,55 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
         MusicItem capturedTrack = track;
 
         addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            std::vector<MusicItem> single = {capturedTrack};
-            auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-            brls::Application::pushActivity(playerActivity);
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                std::vector<MusicItem> single = {track};
+                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                brls::Application::pushActivity(playerActivity);
+            });
             return true;
         });
 
         addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {capturedTrack};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(capturedTrack);
-                brls::Application::notify("Playing next: " + capturedTrack.name);
-            }
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                MusicQueue& queue = MusicQueue::getInstance();
+                if (queue.isEmpty()) {
+                    std::vector<MusicItem> single = {track};
+                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                    brls::Application::pushActivity(playerActivity);
+                } else {
+                    queue.insertTrackAfterCurrent(track);
+                    brls::Application::notify("Playing next: " + track.name);
+                }
+            });
             return true;
         });
 
         addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
-            dialog->dismiss();
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {capturedTrack};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.addTrack(capturedTrack);
-                brls::Application::notify("Added to queue: " + capturedTrack.name);
-            }
+            MusicItem track = capturedTrack;
+            dialog->close([track]() {
+                MusicQueue& queue = MusicQueue::getInstance();
+                if (queue.isEmpty()) {
+                    std::vector<MusicItem> single = {track};
+                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
+                    brls::Application::pushActivity(playerActivity);
+                } else {
+                    queue.addTrack(track);
+                    brls::Application::notify("Added to queue: " + track.name);
+                }
+            });
             return true;
         });
 
         addDialogButton("Cancel", [dialog](brls::View*) {
-            dialog->dismiss();
+            dialog->close();
             return true;
         });
 
         dialog->addView(optionsBox);
         dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-            dialog->dismiss();
+            dialog->close();
             return true;
         });
         brls::Application::pushActivity(new brls::Activity(dialog));

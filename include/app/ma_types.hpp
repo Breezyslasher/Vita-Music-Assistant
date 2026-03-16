@@ -22,6 +22,7 @@ struct MAQueueItem {
     std::string artistName;
     std::string albumName;
     std::string imageUrl;
+    std::string imageProvider;
     int duration = 0;
     int trackNumber = 0;
     MediaType mediaType = MediaType::UNKNOWN;

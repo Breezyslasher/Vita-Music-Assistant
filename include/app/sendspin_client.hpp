@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/websocket_client.hpp"
+#include "utils/audio_stream_server.hpp"
 #include <string>
 #include <functional>
 #include <mutex>
@@ -15,21 +16,21 @@ namespace vita_ma {
 // frames when playback is triggered via player_queues/play_media.
 //
 // Protocol flow:
-// 1. Client connects to ws://server_ip:8927
+// 1. Client connects to ws://server_ip:8927/sendspin
 // 2. Client sends client/hello with player role and supported formats
 // 3. Server responds with server/hello - client is now a registered player
 // 4. User triggers playback via player_queues/play_media with this player's ID
 // 5. Server sends stream/start with audio format info
 // 6. Server sends binary audio frames (9-byte header + audio data)
-// 7. Client writes audio to pipe that MPV reads from
+// 7. Audio data is served to MPV via a local HTTP server for real-time playback
 
 enum class SendspinState {
     DISCONNECTED,
     CONNECTING,
     HANDSHAKING,    // Waiting for server/hello
     CONNECTED,      // Registered as player, waiting for stream
-    BUFFERING,
-    STREAMING,
+    BUFFERING,      // Receiving audio data, streaming to MPV
+    STREAMING,      // MPV is actively playing
     PAUSED,
     ERROR
 };
@@ -55,6 +56,9 @@ enum class SendspinBinaryType : uint8_t {
 // Binary frame header: 1 byte type + 8 bytes timestamp (big-endian int64)
 static constexpr size_t SENDSPIN_HEADER_SIZE = 9;
 
+// Maximum WebSocket frame payload size (16MB - prevents OOM on corrupted frames)
+static constexpr size_t MAX_WS_FRAME_SIZE = 16 * 1024 * 1024;
+
 // Callback for stream state changes
 using StreamStateCallback = std::function<void(SendspinState state)>;
 // Callback for stream metadata (track change, etc.)
@@ -65,10 +69,6 @@ public:
     static SendspinClient& instance();
 
     // Connect to the MA server's Sendspin port and register as a player.
-    // serverIp: MA server IP/hostname
-    // sendspinPort: Sendspin port (default 8927)
-    // clientId: unique identifier for this Vita player
-    // clientName: display name for this player in MA
     bool connect(const std::string& serverIp, int sendspinPort,
                  const std::string& clientId, const std::string& clientName);
 
@@ -86,14 +86,13 @@ public:
     SendspinAudioFormat getAudioFormat() const { return m_format; }
 
     // The player_id to use with player_queues/play_media
-    // This is the client_id we registered with
     const std::string& getPlayerId() const { return m_clientId; }
 
     // Callbacks
     void setStateCallback(StreamStateCallback cb) { m_stateCallback = std::move(cb); }
     void setMetadataCallback(StreamMetadataCallback cb) { m_metadataCallback = std::move(cb); }
 
-    // Get the local pipe path for MPV to consume
+    // Get the local HTTP stream URL for MPV
     std::string getLocalStreamUrl() const;
 
     // Stop current stream playback (keeps connection alive)
@@ -108,10 +107,8 @@ private:
     std::string m_clientId;
     std::string m_clientName;
 
-    // Audio pipe for feeding to MPV
-    std::string m_pipePath;
-    int m_pipeFd = -1;
-    std::mutex m_pipeMutex;
+    // Local HTTP server that bridges Sendspin audio to MPV
+    AudioStreamServer m_audioServer;
 
     // Callbacks
     StreamStateCallback m_stateCallback;
@@ -126,10 +123,8 @@ private:
     // Handshake
     void sendClientHello();
 
-    // Audio pipe management
-    bool initAudioPipe();
-    void cleanupAudioPipe();
-    void feedAudioData(const uint8_t* data, size_t size);
+    // Start MPV playback from the local HTTP stream
+    void startMpvPlayback();
 };
 
 } // namespace vita_ma

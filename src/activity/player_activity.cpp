@@ -243,41 +243,6 @@ void PlayerActivity::onContentAvailable() {
         });
     }
 
-    // Wire up touch buttons with tap gesture recognizers
-    if (playBtn) {
-        playBtn->registerClickAction([this](brls::View* view) {
-            togglePlayPause();
-            return true;
-        });
-        playBtn->addGestureRecognizer(new brls::TapGestureRecognizer(playBtn));
-    }
-
-    if (rewindBtn) {
-        rewindBtn->registerClickAction([this](brls::View* view) {
-            if (m_isQueueMode) {
-                playPrevious();
-            } else {
-                int interval = Application::getInstance().getSettings().seekInterval;
-                seek(-interval);
-            }
-            return true;
-        });
-        rewindBtn->addGestureRecognizer(new brls::TapGestureRecognizer(rewindBtn));
-    }
-
-    if (forwardBtn) {
-        forwardBtn->registerClickAction([this](brls::View* view) {
-            if (m_isQueueMode) {
-                playNext();
-            } else {
-                int interval = Application::getInstance().getSettings().seekInterval;
-                seek(interval);
-            }
-            return true;
-        });
-        forwardBtn->addGestureRecognizer(new brls::TapGestureRecognizer(forwardBtn));
-    }
-
     // Queue overlay dismiss on tap
     if (queueOverlay) {
         queueOverlay->addGestureRecognizer(new brls::TapGestureRecognizer(
@@ -290,9 +255,6 @@ void PlayerActivity::onContentAvailable() {
 
     // Show mode-specific icons and wire touch
     if (m_isQueueMode) {
-        // Music mode: hide center video controls, show music transport + info
-        if (centerControls) centerControls->setVisibility(brls::Visibility::GONE);
-
         // Show music-specific UI elements
         if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
         if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
@@ -319,12 +281,6 @@ void PlayerActivity::onContentAvailable() {
             });
             musicNextBtn->addGestureRecognizer(new brls::TapGestureRecognizer(musicNextBtn));
         }
-
-        // In music mode: disable focusability on center video control buttons
-        // (hidden parent but still focusable)
-        if (playBtn) playBtn->setFocusable(false);
-        if (rewindBtn) rewindBtn->setFocusable(false);
-        if (forwardBtn) forwardBtn->setFocusable(false);
 
         // Shuffle toggle button
         if (shuffleBtn) {
@@ -371,9 +327,6 @@ void PlayerActivity::onContentAvailable() {
         // Hide title/artist from bottom controls (shown in musicInfo instead)
         if (titleLabel) titleLabel->setVisibility(brls::Visibility::GONE);
         if (artistLabel) artistLabel->setVisibility(brls::Visibility::GONE);
-    } else {
-        // Non-queue single track mode - show basic controls
-        if (centerControls) centerControls->setVisibility(brls::Visibility::VISIBLE);
     }
 
     if (queueBtn) queueBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, queueBtn);
@@ -509,7 +462,7 @@ void PlayerActivity::loadFromQueue() {
         if (albumArt && !track->ratingKey.empty()) {
             if (!track->thumb.empty()) {
                 MAClient& client = MAClient::instance();
-                std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+                std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                     img->setVisibility(brls::Visibility::VISIBLE);
@@ -561,7 +514,7 @@ void PlayerActivity::loadFromQueue() {
 
     // Load album art from server
     if (albumArt && !track->thumb.empty()) {
-        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
         ImageLoader::setPaused(false);
         ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
             img->setVisibility(brls::Visibility::VISIBLE);
@@ -599,14 +552,20 @@ void PlayerActivity::loadFromQueue() {
         if (!success) {
             brls::Logger::error("Failed to play track '{}': {}",
                 trackTitle, result.has("details") ? result["details"].str() : "unknown error");
-            brls::sync([this]() { m_loadingMedia = false; });
+            brls::sync([this, alive]() {
+                if (!alive->load()) return;
+                m_loadingMedia = false;
+            });
             return;
         }
 
         brls::Logger::info("Track '{}' queued for playback via Sendspin", trackTitle);
         // Audio will arrive via Sendspin binary frames and be played by MPV
         // through the audio pipe. No need to call loadFromQueueWithUrl.
-        brls::sync([this]() { m_loadingMedia = false; });
+        brls::sync([this, alive]() {
+            if (!alive->load()) return;
+            m_loadingMedia = false;
+        });
     });
 }
 
@@ -757,6 +716,7 @@ void PlayerActivity::loadMedia() {
             // Extract image URL: try image object, then metadata.images array
             if (result.has("image") && result["image"].type() == Json::OBJECT && result["image"].has("path")) {
                 item.imageUrl = result["image"]["path"].str();
+                if (result["image"].has("provider")) item.imageProvider = result["image"]["provider"].str();
             } else if (result.has("image") && result["image"].type() == Json::STRING) {
                 item.imageUrl = result["image"].str();
             } else if (result.has("metadata") && result["metadata"].type() == Json::OBJECT) {
@@ -764,6 +724,7 @@ void PlayerActivity::loadMedia() {
                 if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                     const Json& img = meta["images"][static_cast<size_t>(0)];
                     if (img.has("path")) item.imageUrl = img["path"].str();
+                    if (img.has("provider")) item.imageProvider = img["provider"].str();
                 }
             }
             item.mediaType = MediaType::TRACK;
@@ -907,15 +868,6 @@ void PlayerActivity::updateProgress() {
 
             if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
             if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
-
-            if (timeLabel) {
-                int durMin = (int)duration / 60;
-                int durSec = (int)duration % 60;
-                char timeStr[32];
-                snprintf(timeStr, sizeof(timeStr), "%02d:%02d / %02d:%02d",
-                         posMin, posSec, durMin, durSec);
-                timeLabel->setText(timeStr);
-            }
         }
     }
 
@@ -970,10 +922,6 @@ void PlayerActivity::togglePlayPause() {
 }
 
 void PlayerActivity::updatePlayPauseLabel() {
-    if (playPauseIcon) {
-        playPauseIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
-    }
-    // Also update music transport play icon
     if (musicPlayIcon) {
         musicPlayIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
     }
@@ -1298,13 +1246,11 @@ void PlayerActivity::hideQueueOverlay() {
     if (queueOverlay) {
         queueOverlay->setVisibility(brls::Visibility::GONE);
     }
-    // Restore focus to queue button (fall back to play button if queue button unavailable)
+    // Restore focus to queue button (fall back to music play button if unavailable)
     if (queueBtn && queueBtn->getVisibility() == brls::Visibility::VISIBLE) {
         brls::Application::giveFocus(queueBtn);
-    } else if (m_isQueueMode && musicPlayBtn) {
+    } else if (musicPlayBtn) {
         brls::Application::giveFocus(musicPlayBtn);
-    } else if (playBtn) {
-        brls::Application::giveFocus(playBtn);
     }
 }
 
@@ -1341,7 +1287,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
     thumb->setMarginRight(14);
 
     // Defer thumbnail loading - URL resolved lazily when row becomes visible
-    m_deferredThumbs.push_back({thumb, track.thumb, track.ratingKey, false});
+    m_deferredThumbs.push_back({thumb, track.thumb, track.thumbProvider, track.ratingKey, false});
     row->addView(thumb);
 
     // Text container: title on top, artist below
@@ -1984,7 +1930,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
 
         // Load from server
         if (!dt.thumbPath.empty()) {
-            std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100);
+            std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100, dt.thumbProvider);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {
                 // Thumbnail loaded
             }, dt.image, m_alive);
@@ -2042,8 +1988,9 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         displayIdxB < (int)m_deferredThumbs.size()) {
         auto& dtA = m_deferredThumbs[displayIdxA];
         auto& dtB = m_deferredThumbs[displayIdxB];
-        // Swap deferred thumb entries (thumbPath, ratingKey, loaded state)
+        // Swap deferred thumb entries (thumbPath, thumbProvider, ratingKey, loaded state)
         std::swap(dtA.thumbPath, dtB.thumbPath);
+        std::swap(dtA.thumbProvider, dtB.thumbProvider);
         std::swap(dtA.ratingKey, dtB.ratingKey);
         std::swap(dtA.loaded, dtB.loaded);
         // Re-point image pointers to their current rows
@@ -2054,13 +2001,13 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         if (!skipThumbReload) {
             MAClient& swapClient = MAClient::instance();
             if (dtA.loaded && !dtA.thumbPath.empty()) {
-                std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100);
+                std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100, dtA.thumbProvider);
                 ImageLoader::loadAsync(urlA, [](brls::Image*) {}, thumbA, m_alive);
             } else {
                 thumbA->setImageFromRes("img/default_music.png");
             }
             if (dtB.loaded && !dtB.thumbPath.empty()) {
-                std::string urlB = swapClient.getThumbnailUrl(dtB.thumbPath, 100, 100);
+                std::string urlB = swapClient.getThumbnailUrl(dtB.thumbPath, 100, 100, dtB.thumbProvider);
                 ImageLoader::loadAsync(urlB, [](brls::Image*) {}, thumbB, m_alive);
             } else {
                 thumbB->setImageFromRes("img/default_music.png");

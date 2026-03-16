@@ -18,5 +18,7 @@ Thumbs.db
 *.self
 *.velf
 
-# Logs
+# Logs and crash dumps
 *.log
+psp2core-*
+*.psp2dmp*

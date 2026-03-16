@@ -192,7 +192,8 @@ public:
 
     // Get thumbnail URL for an image path
     // Returns a full URL suitable for image loading
-    std::string getThumbnailUrl(const std::string& imageUrl, int width = 0, int height = 0);
+    std::string getThumbnailUrl(const std::string& imageUrl, int width = 0, int height = 0,
+                               const std::string& provider = "");
 
     // Server info
     ServerInfo getServerInfo() const { return m_serverInfo; }
