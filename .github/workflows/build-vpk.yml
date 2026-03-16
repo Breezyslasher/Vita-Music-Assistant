@@ -42,5 +42,5 @@ jobs:
       - name: Upload VPK
         uses: actions/upload-artifact@v5
         with:
-          name: VitaMusicAssistant-${{ github.run_number }}
-          path: build/VitaMusicAssistant.vpk
+          name: VitaPlex-${{ github.run_number }}
+          path: build/VitaPlex.vpk
