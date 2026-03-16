@@ -1,236 +1,392 @@
 #pragma once
 
+/**
+ * VitaPlex - Plex Client for PlayStation Vita
+ * Based on switchfin architecture (https://github.com/dragonflylee/switchfin)
+ */
+
 #include <string>
 #include <vector>
-#include <functional>
-#include <mutex>
-#include <memory>
-#include <borealis.hpp>
 
-namespace vita_ma {
+#include <psp2/ctrl.h>
+#include <vita2d.h>
 
-// Media types matching Music Assistant server
+// Application version - kept in sync with include/app/application.hpp
+#define VITA_PLEX_VERSION "2.0.0"
+#define VITA_PLEX_VERSION_NUM 200
+
+// Screen dimensions (PS Vita)
+#define SCREEN_WIDTH 960
+#define SCREEN_HEIGHT 544
+
+// Plex client identification
+#define PLEX_CLIENT_ID "vita-plex-client-001"
+#define PLEX_CLIENT_NAME "VitaPlex"
+#define PLEX_CLIENT_VERSION VITA_PLEX_VERSION
+#define PLEX_PLATFORM "PlayStation Vita"
+#define PLEX_DEVICE "PS Vita"
+
+namespace vitaplex {
+
+// Application states
+enum class AppState {
+    INIT,
+    LOGIN,
+    PIN_AUTH,      // PIN/Link code authentication
+    HOME,
+    LIBRARY,
+    BROWSE,        // Browsing library content
+    SEARCH,        // Search screen
+    MEDIA_DETAIL,
+    PLAYER,
+    PHOTO_VIEW,    // Photo viewing
+    LIVE_TV,       // Live TV channels
+    SETTINGS,
+    ERROR,
+    EXIT
+};
+
+// Login method
+enum class LoginMethod {
+    CREDENTIALS,   // Username/password
+    PIN_CODE       // plex.tv/link PIN
+};
+
+// Media types
 enum class MediaType {
-    ARTIST,
-    ALBUM,
-    TRACK,
-    PLAYLIST,
-    RADIO,
-    UNKNOWN
+    UNKNOWN,
+    MOVIE,
+    SHOW,
+    SEASON,
+    EPISODE,
+    MUSIC_ARTIST,
+    MUSIC_ALBUM,
+    MUSIC_TRACK,
+    CLIP,
+    PHOTO,
+    LIVE_TV_CHANNEL,
+    LIVE_TV_PROGRAM
 };
 
-// Repeat modes
-enum class RepeatMode {
-    OFF,
-    ALL,
-    ONE
+// A single EPG program entry
+struct ChannelProgram {
+    std::string title;
+    std::string summary;
+    int64_t startTime = 0;
+    int64_t endTime = 0;
 };
 
-// Player state
-enum class PlayerState {
-    IDLE,
-    PLAYING,
-    PAUSED,
-    BUFFERING
+// Live TV Channel info
+struct LiveTVChannel {
+    std::string ratingKey;
+    std::string key;
+    std::string title;
+    std::string thumb;
+    std::string callSign;
+    int channelNumber = 0;
+    std::string currentProgram;
+    std::string nextProgram;
+    int64_t programStart = 0;
+    int64_t programEnd = 0;
+    std::vector<ChannelProgram> programs;  // All programs in EPG window, sorted by start time
 };
 
-// Image type for artwork
-enum class ImageType {
-    THUMB,
-    FANART,
-    LOGO,
-    LANDSCAPE
-};
-
-// Artist info
-struct ArtistItem {
-    std::string item_id;
-    std::string name;
-    std::string sort_name;
-    std::string image_url;
-    bool in_library = false;
-    bool is_favorite = false;
-};
-
-// Album info
-struct AlbumItem {
-    std::string item_id;
-    std::string name;
-    std::string sort_name;
-    std::string artist;
-    std::string image_url;
-    std::string year;
-    std::string album_type;
-    bool in_library = false;
-    bool is_favorite = false;
-};
-
-// Track info
-struct TrackItem {
-    std::string item_id;
-    std::string name;
-    std::string artist;
-    std::string album;
-    std::string image_url;
-    std::string uri;
-    std::string provider;
-    int duration = 0;         // seconds
-    int track_number = 0;
-    int disc_number = 0;
-    bool in_library = false;
-    bool is_favorite = false;
-};
-
-// Playlist info
-struct PlaylistItem {
-    std::string item_id;
-    std::string name;
-    std::string owner;
-    std::string image_url;
-    bool in_library = false;
-    bool is_favorite = false;
-    bool is_editable = false;
-};
-
-// Radio station info
-struct RadioItem {
-    std::string item_id;
-    std::string name;
-    std::string image_url;
-    bool in_library = false;
-    bool is_favorite = false;
-};
-
-// Generic media item (for browse results, search results)
-struct MediaItem {
-    MediaType media_type = MediaType::UNKNOWN;
-    std::string item_id;
-    std::string name;
-    std::string subtitle;    // artist name, owner, etc.
-    std::string image_url;
-    std::string uri;
-    bool in_library = false;
-    bool is_favorite = false;
-
-    // Cached texture
-    int texture_id = -1;
-};
-
-// Browse result from the server
-struct BrowseItem {
-    std::string label;
-    std::string path;
-    std::string image_url;
-    bool is_folder = false;
-    MediaType media_type = MediaType::UNKNOWN;
-    std::string item_id;
-    std::string uri;
-};
-
-// Queue item (track in the play queue)
-struct QueueItem {
-    std::string queue_item_id;
-    std::string name;
-    std::string artist;
-    std::string image_url;
-    std::string uri;
-    int duration = 0;
-    int index = 0;
-};
-
-// Current player queue state
-struct QueueState {
-    std::string queue_id;
-    std::string current_item_id;
-    int current_index = 0;
-    float elapsed_time = 0.0f;
-    float duration = 0.0f;
-    PlayerState state = PlayerState::IDLE;
-    RepeatMode repeat_mode = RepeatMode::OFF;
-    bool shuffle_enabled = false;
-    int volume = 50;
-    bool muted = false;
-    std::string current_track_name;
-    std::string current_track_artist;
-    std::string current_track_image;
-};
-
-// Server info
-struct ServerInfo {
-    std::string server_id;
-    std::string server_name;
-    std::string server_version;
-    int schema_version = 0;
-    int min_supported_schema = 0;
-};
-
-// Navigation history entry
+// Navigation stack entry for hierarchical browsing
 struct NavEntry {
-    std::string path;
-    int scroll_position = 0;
+    std::string key;
+    std::string title;
+    MediaType type;
+    int selectedItem = 0;
+    int scrollOffset = 0;
 };
 
+// Library section info
+struct LibrarySection {
+    std::string key;
+    std::string title;
+    std::string type;      // movie, show, artist, photo
+    std::string art;
+    std::string thumb;
+    int count = 0;
+};
+
+// Media item info
+struct MediaItem {
+    std::string ratingKey;
+    std::string key;           // For children navigation
+    std::string title;
+    std::string summary;
+    std::string thumb;
+    std::string art;
+    std::string type;
+    MediaType mediaType = MediaType::UNKNOWN;
+    int year = 0;
+    int duration = 0;      // in milliseconds
+    int viewOffset = 0;    // resume position
+    float rating = 0.0f;
+    std::string contentRating;
+    std::string studio;
+    bool watched = false;
+    
+    // For episodes
+    std::string grandparentTitle;  // Show name
+    std::string parentTitle;       // Season name
+    int parentIndex = 0;           // Season number
+    int index = 0;                 // Episode/track number
+    int seasonNumber = 0;
+    int episodeNumber = 0;
+    
+    // For seasons/albums
+    int leafCount = 0;             // Number of children (episodes/tracks)
+    int viewedLeafCount = 0;       // Number watched
+    
+    // Stream info
+    std::string streamUrl;
+    std::string videoCodec;
+    std::string audioCodec;
+    int videoWidth = 0;
+    int videoHeight = 0;
+    
+    // Cached texture (loaded async)
+    vita2d_texture* thumbTexture = nullptr;
+};
+
+// Plex server info
+struct PlexServer {
+    std::string name;
+    std::string address;
+    int port = 32400;
+    std::string machineIdentifier;
+    std::string accessToken;
+};
+
+// PIN authentication info
+struct PinAuth {
+    int id = 0;
+    std::string code;
+    std::string authToken;
+    bool expired = false;
+    int expiresIn = 0;
+    bool useJwt = false;  // Whether this PIN uses JWT authentication
+};
+
+// Hub (for home screen)
+struct Hub {
+    std::string title;
+    std::string type;
+    std::string hubIdentifier;
+    std::string key;
+    std::vector<MediaItem> items;
+    bool more = false;
+};
+
+// Video quality setting
+enum class VideoQuality {
+    ORIGINAL,
+    QUALITY_1080P,
+    QUALITY_720P,
+    QUALITY_480P,
+    QUALITY_360P
+};
+
+// Application settings
+struct AppSettings {
+    // Video settings
+    VideoQuality videoQuality = VideoQuality::QUALITY_720P;
+    bool autoPlay = true;
+    bool showSubtitles = true;
+    
+    // Debug settings
+    bool enableFileLogging = false;  // Log to file for debugging
+    
+    // User info
+    std::string username;
+    std::string email;
+    std::string avatarUrl;
+    
+    // Server settings  
+    std::string lastServerUrl;
+    bool rememberLogin = true;
+    
+    // Saved credentials (encrypted in future)
+    std::string savedAuthToken;
+    std::string savedServerUrl;
+    std::string savedServerName;
+};
+
+// Debug logging functions
+void initDebugLog();
+void closeDebugLog();
+void debugLog(const char* format, ...);
+void setDebugLogEnabled(bool enabled);
+
+/**
+ * Main application class
+ */
 class App {
 public:
-    static App& instance();
-
-    // Lifecycle
-    void init();
+    static App& getInstance();
+    
+    bool init();
+    void run();
     void shutdown();
-    bool isRunning() const { return m_running; }
-
-    // Server connection
-    std::string getServerUrl() const { return m_serverUrl; }
-    void setServerUrl(const std::string& url) { m_serverUrl = url; }
+    
+    // State management
+    void setState(AppState state);
+    AppState getState() const { return m_state; }
+    
+    // Authentication methods
+    bool login(const std::string& username, const std::string& password);
+    bool requestPin();                    // Request new PIN for plex.tv/link
+    bool checkPin();                      // Check if PIN has been authorized
+    bool connectToServer(const std::string& url);
+    void logout();
+    bool isLoggedIn() const { return !m_authToken.empty(); }
     std::string getAuthToken() const { return m_authToken; }
-    void setAuthToken(const std::string& token) { m_authToken = token; }
-    std::string getPlayerId() const { return m_playerId; }
-    void setPlayerId(const std::string& id) { m_playerId = id; }
-    std::string getQueueId() const { return m_queueId; }
-    void setQueueId(const std::string& id) { m_queueId = id; }
-    ServerInfo getServerInfo() const { return m_serverInfo; }
-    void setServerInfo(const ServerInfo& info) { m_serverInfo = info; }
-    bool isConnected() const { return m_connected; }
-    void setConnected(bool connected) { m_connected = connected; }
-
-    // Queue state
-    QueueState getQueueState() const;
-    void setQueueState(const QueueState& state);
-
+    const PlexServer& getCurrentServer() const { return m_currentServer; }
+    const PinAuth& getPinAuth() const { return m_pinAuth; }
+    
+    // Library operations
+    bool fetchLibrarySections();
+    bool fetchLibraryContent(const std::string& sectionKey, int metadataType = 0);
+    bool fetchChildren(const std::string& ratingKey);  // Get seasons/episodes/albums/tracks
+    bool fetchMediaDetails(const std::string& ratingKey);
+    bool fetchHubs();                     // Get home screen hubs
+    bool fetchContinueWatching();
+    bool fetchRecentlyAdded();
+    
+    // Live TV operations
+    bool fetchLiveTVChannels();
+    bool fetchLiveTVGuide(int hoursAhead = 4);
+    bool startLiveTVPlayback(const std::string& channelKey);
+    const std::vector<LiveTVChannel>& getLiveTVChannels() const { return m_liveTVChannels; }
+    bool hasLiveTV() const { return m_hasLiveTV; }
+    void parseChannelsFromResponse(const std::string& body);
+    
+    // DVR operations
+    bool fetchDVRRecordings();
+    bool scheduleDVRRecording(const std::string& programKey);
+    bool cancelDVRRecording(const std::string& recordingKey);
+    
+    // Navigation stack
+    void pushNavigation(const std::string& key, const std::string& title, MediaType type);
+    void popNavigation();
+    bool canGoBack() const { return !m_navStack.empty(); }
+    
+    // Image loading
+    bool loadThumbnail(MediaItem& item, int width = 150, int height = 225);
+    void loadVisibleThumbnails();  // Load thumbs for visible items
+    void clearThumbnails();        // Free all loaded textures
+    
+    // Search
+    bool search(const std::string& query);
+    
+    // Playback
+    bool getPlaybackUrl(const std::string& ratingKey);
+    bool updatePlayProgress(const std::string& ratingKey, int timeMs);
+    bool markAsWatched(const std::string& ratingKey);
+    bool markAsUnwatched(const std::string& ratingKey);
+    
+    // Getters for UI
+    const std::vector<LibrarySection>& getLibrarySections() const { return m_librarySections; }
+    const std::vector<MediaItem>& getMediaItems() const { return m_mediaItems; }
+    const std::vector<MediaItem>& getSearchResults() const { return m_searchResults; }
+    const std::vector<Hub>& getHubs() const { return m_hubs; }
+    const MediaItem& getCurrentMedia() const { return m_currentMedia; }
+    const AppSettings& getSettings() const { return m_settings; }
+    
     // Settings
-    void loadSettings();
-    void saveSettings();
-    std::string getSettingsPath() const;
-    std::string getDataPath() const;
-    std::string getLogPath() const;
-
-    // Background playback
-    bool isBackgroundPlaybackEnabled() const { return m_bgPlaybackEnabled; }
-    void setBackgroundPlaybackEnabled(bool enabled) { m_bgPlaybackEnabled = enabled; }
-
-    // Audio quality
-    std::string getAudioQuality() const { return m_audioQuality; }
-    void setAudioQuality(const std::string& quality) { m_audioQuality = quality; }
-
+    void setVideoQuality(VideoQuality quality) { m_settings.videoQuality = quality; }
+    void setAutoPlay(bool enabled) { m_settings.autoPlay = enabled; }
+    void setShowSubtitles(bool enabled) { m_settings.showSubtitles = enabled; }
+    
+    // Persistence - save/load settings and login
+    bool saveSettings();
+    bool loadSettings();
+    bool hasSavedLogin() const { return !m_settings.savedAuthToken.empty(); }
+    bool restoreSavedLogin();
+    
+    // Video playback
+    bool startPlayback(bool resume = false);
+    void stopPlayback();
+    bool showPhoto();  // Photo viewing
+    
+    // Error handling
+    void setError(const std::string& message);
+    std::string getLastError() const { return m_lastError; }
+    
 private:
     App() = default;
     ~App() = default;
     App(const App&) = delete;
     App& operator=(const App&) = delete;
-
+    
+    // Input handling
+    void handleLoginInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handlePinAuthInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleHomeInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleLibraryInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleBrowseInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleSearchInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleMediaDetailInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleSettingsInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handlePlayerInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handleLiveTVInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    void handlePhotoViewInput(SceCtrlData* ctrl, SceCtrlData* oldCtrl);
+    
+    // Drawing
+    void drawLoginScreen(vita2d_pgf* font);
+    void drawPinAuthScreen(vita2d_pgf* font);
+    void drawHomeScreen(vita2d_pgf* font);
+    void drawLibraryScreen(vita2d_pgf* font);
+    void drawBrowseScreen(vita2d_pgf* font);
+    void drawSearchScreen(vita2d_pgf* font);
+    void drawMediaDetailScreen(vita2d_pgf* font);
+    void drawSettingsScreen(vita2d_pgf* font);
+    void drawPlayerScreen(vita2d_pgf* font);
+    void drawLiveTVScreen(vita2d_pgf* font);
+    void drawPhotoViewScreen(vita2d_pgf* font);
+    
+    // Helper to build API URL
+    std::string buildApiUrl(const std::string& endpoint);
+    
+    // JSON parsing helpers
+    MediaType parseMediaType(const std::string& typeStr);
+    MediaItem parseMediaItemFromJson(const std::string& json, size_t& pos);
+    
     bool m_running = false;
-    bool m_connected = false;
-    bool m_bgPlaybackEnabled = true;
-
-    std::string m_serverUrl;
+    AppState m_state = AppState::INIT;
+    LoginMethod m_loginMethod = LoginMethod::CREDENTIALS;
+    std::string m_lastError;
     std::string m_authToken;
-    std::string m_playerId = "vita-music-assistant";
-    std::string m_queueId;
-    std::string m_audioQuality = "flac";
-
-    ServerInfo m_serverInfo;
-    QueueState m_queueState;
-    mutable std::mutex m_queueMutex;
+    PlexServer m_currentServer;
+    PinAuth m_pinAuth;
+    
+    // Data
+    std::vector<LibrarySection> m_librarySections;
+    std::vector<MediaItem> m_mediaItems;
+    std::vector<MediaItem> m_searchResults;
+    std::vector<MediaItem> m_continueWatching;
+    std::vector<Hub> m_hubs;
+    std::vector<NavEntry> m_navStack;  // Navigation history
+    std::vector<LiveTVChannel> m_liveTVChannels;
+    MediaItem m_currentMedia;
+    std::string m_currentSectionKey;
+    std::string m_currentSectionType;  // "movie", "show", "artist", etc.
+    std::string m_searchQuery;
+    AppSettings m_settings;
+    bool m_hasLiveTV = false;
+    
+    // Player state
+    bool m_isPlaying = false;
+    uint64_t m_playPosition = 0;
+    
+    // UI state
+    int m_selectedLibrary = 0;
+    int m_selectedItem = 0;
+    int m_scrollOffset = 0;
+    int m_hubIndex = 0;
+    int m_hubItemIndex = 0;
 };
 
-} // namespace vita_ma
+} // namespace vitaplex

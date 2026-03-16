@@ -1,9 +1,13 @@
+/**
+ * VitaPlex - Main Activity
+ * Main navigation with tabs for Home, Library, Search, Settings
+ */
+
 #pragma once
 
 #include <borealis.hpp>
-#include "view/now_playing_view.hpp"
 
-namespace vita_ma {
+namespace vitaplex {
 
 class MainActivity : public brls::Activity {
 public:
@@ -11,13 +15,12 @@ public:
 
     brls::View* createContentView() override;
 
-    void onEvent(MAEvent event, const Json& data);
+    void onContentAvailable() override;
 
 private:
-    NowPlayingView* m_nowPlaying = nullptr;
+    void loadLibrariesToSidebar();
 
-    void connectToServer();
-    void setupEventHandlers();
+    BRLS_BIND(brls::TabFrame, tabFrame, "main/tab_frame");
 };
 
-} // namespace vita_ma
+} // namespace vitaplex
