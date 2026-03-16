@@ -149,8 +149,9 @@ NowPlayingView::NowPlayingView() {
     playPauseBtn->registerClickAction([](...) {
         std::string playerId = App::instance().getPlayerId();
         if (!playerId.empty()) {
-            // Use sendCommand to toggle play/pause
-            MAClient::instance().sendCommand("player_queues/play_pause", Json(), nullptr);
+            Json args;
+            args["queue_id"] = Json(playerId);
+            MAClient::instance().sendCommand("player_queues/play_pause", args, nullptr);
         }
         return true;
     });

@@ -153,10 +153,47 @@ void HomeTab::loadContent() {
                 return;
             }
 
-            // TODO: Parse JSON result into MusicItem vector
-            // The result contains an array of music items from Music Assistant.
-            // Each item needs to be parsed into a MusicItem struct.
             std::vector<MusicItem> music;
+
+            if (result.type() == Json::ARRAY) {
+                for (size_t i = 0; i < result.size(); i++) {
+                    const Json& obj = result[i];
+                    MusicItem item;
+                    item.itemId    = obj.has("item_id")   ? obj["item_id"].str()   : "";
+                    item.name      = obj.has("name")      ? obj["name"].str()      : "";
+                    item.uri       = obj.has("uri")        ? obj["uri"].str()       : "";
+                    item.provider  = obj.has("provider")   ? obj["provider"].str()  : "";
+
+                    // Extract image URL: try image object, then metadata.images array
+                    if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+                        item.imageUrl = obj["image"]["path"].str();
+                    } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+                        item.imageUrl = obj["image"].str();
+                    } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
+                        const Json& meta = obj["metadata"];
+                        if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                            const Json& img = meta["images"][static_cast<size_t>(0)];
+                            if (img.has("path")) item.imageUrl = img["path"].str();
+                        }
+                    }
+
+                    // Determine media type from uri or media_type field
+                    std::string mediaTypeStr = obj.has("media_type") ? obj["media_type"].str() : "";
+                    if (mediaTypeStr == "track")         item.mediaType = MediaType::TRACK;
+                    else if (mediaTypeStr == "album")    item.mediaType = MediaType::ALBUM;
+                    else if (mediaTypeStr == "artist")   item.mediaType = MediaType::ARTIST;
+                    else if (mediaTypeStr == "playlist") item.mediaType = MediaType::PLAYLIST;
+                    else if (mediaTypeStr == "radio")    item.mediaType = MediaType::RADIO;
+                    else                                 item.mediaType = MediaType::TRACK;
+
+                    // Track fields
+                    if (obj.has("artist_name"))  item.artistName  = obj["artist_name"].str();
+                    if (obj.has("album_name"))   item.albumName   = obj["album_name"].str();
+                    if (obj.has("duration"))     item.duration     = obj["duration"].intVal();
+
+                    music.push_back(item);
+                }
+            }
 
             brls::Logger::info("HomeTab: Got {} recently played music items", music.size());
 

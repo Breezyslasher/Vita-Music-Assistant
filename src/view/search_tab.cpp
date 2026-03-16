@@ -28,8 +28,18 @@ static MusicItem musicItemFromJson(const Json& j) {
     if (j.has("name"))       item.name      = j["name"].str();
     if (j.has("sort_name"))  item.sortName  = j["sort_name"].str();
     if (j.has("uri"))        item.uri       = j["uri"].str();
-    if (j.has("image"))      item.imageUrl  = j["image"].str();
-    if (j.has("image_url"))  item.imageUrl  = j["image_url"].str();
+    // Extract image URL: try image object, then metadata.images array
+    if (j.has("image") && j["image"].type() == Json::OBJECT && j["image"].has("path")) {
+        item.imageUrl = j["image"]["path"].str();
+    } else if (j.has("image") && j["image"].type() == Json::STRING) {
+        item.imageUrl = j["image"].str();
+    } else if (j.has("metadata") && j["metadata"].type() == Json::OBJECT) {
+        const Json& meta = j["metadata"];
+        if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+            const Json& img = meta["images"][static_cast<size_t>(0)];
+            if (img.has("path")) item.imageUrl = img["path"].str();
+        }
+    }
 
     if (j.has("media_type")) {
         item.mediaType = parseMediaType(j["media_type"].str());

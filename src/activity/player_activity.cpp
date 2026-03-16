@@ -711,19 +711,82 @@ void PlayerActivity::loadMedia() {
         return;
     }
 
-    // Remote playback from server
-    // TODO: Implement MA API track loading via getStreamUrl
-    // For now, single-track (non-queue) playback from server is not yet implemented.
-    // Queue-based playback works via loadFromQueue() which calls getStreamUrl.
+    // Remote playback from server - fetch track details and play via queue
     m_mediaType = MediaType::TRACK;
 
     if (titleLabel) {
         titleLabel->setText("Loading...");
     }
 
-    brls::Logger::warning("PlayerActivity: Single-track server playback not yet implemented for key: {}", m_mediaKey);
+    brls::Logger::info("PlayerActivity: Loading single track from server: {}", m_mediaKey);
 
-    brls::Logger::debug("PlayerActivity: loadMedia exiting");
+    // Fetch track details from MA API, then create a single-item queue
+    auto alive = m_alive;
+    std::string trackId = m_mediaKey;
+
+    MAClient::instance().getTrack(trackId,
+        [this, trackId, alive](bool success, const Json& result) {
+            if (!alive->load()) return;
+
+            if (!success || result.type() != Json::OBJECT) {
+                brls::Logger::error("PlayerActivity: Failed to fetch track details for: {}", trackId);
+                brls::sync([this, alive]() {
+                    if (!alive->load()) return;
+                    m_loadingMedia = false;
+                    if (titleLabel) titleLabel->setText("Failed to load track");
+                });
+                return;
+            }
+
+            // Build a MusicItem from the track response
+            MusicItem item;
+            item.itemId    = result.has("item_id")    ? result["item_id"].str()    : trackId;
+            item.name      = result.has("name")       ? result["name"].str()       : "Unknown";
+            item.uri       = result.has("uri")        ? result["uri"].str()        : "";
+            item.provider  = result.has("provider")   ? result["provider"].str()   : "library";
+
+            // Extract image URL: try image object, then metadata.images array
+            if (result.has("image") && result["image"].type() == Json::OBJECT && result["image"].has("path")) {
+                item.imageUrl = result["image"]["path"].str();
+            } else if (result.has("image") && result["image"].type() == Json::STRING) {
+                item.imageUrl = result["image"].str();
+            } else if (result.has("metadata") && result["metadata"].type() == Json::OBJECT) {
+                const Json& meta = result["metadata"];
+                if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                    const Json& img = meta["images"][static_cast<size_t>(0)];
+                    if (img.has("path")) item.imageUrl = img["path"].str();
+                }
+            }
+            item.mediaType = MediaType::TRACK;
+
+            if (result.has("artist_name"))  item.artistName = result["artist_name"].str();
+            if (result.has("album_name"))   item.albumName  = result["album_name"].str();
+            if (result.has("duration"))     item.duration    = result["duration"].intVal();
+
+            brls::Logger::info("PlayerActivity: Got track: {} - {}", item.artistName, item.name);
+
+            brls::sync([this, item, alive]() {
+                if (!alive->load() || m_destroying) {
+                    m_loadingMedia = false;
+                    return;
+                }
+
+                // Create a single-item queue and switch to queue mode
+                std::vector<MusicItem> tracks = { item };
+                MusicQueue& queue = MusicQueue::getInstance();
+                queue.setQueue(tracks, 0);
+
+                // Set up track ended callback
+                queue.setTrackEndedCallback([this](const QueueItem* nextTrack) {
+                    this->onTrackEnded(nextTrack);
+                });
+
+                m_isQueueMode = true;
+                m_loadingMedia = false;  // loadFromQueue will set this again
+                loadFromQueue();
+            });
+        });
+    brls::Logger::debug("PlayerActivity: loadMedia - async track fetch started");
     m_loadingMedia = false;
 }
 

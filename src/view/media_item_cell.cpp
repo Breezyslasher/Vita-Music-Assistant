@@ -125,7 +125,11 @@ void MediaItemCell::loadThumbnail() {
 
     if (m_item.imageUrl.empty()) return;
 
-    ImageLoader::loadAsync(m_item.imageUrl, [](brls::Image* image) {
+    // Convert relative image paths to full URLs via the server
+    std::string fullUrl = MAClient::instance().getThumbnailUrl(m_item.imageUrl, 300, 300);
+    if (fullUrl.empty()) return;
+
+    ImageLoader::loadAsync(fullUrl, [](brls::Image* image) {
         // Show thumbnail once texture is loaded successfully
         image->setVisibility(brls::Visibility::VISIBLE);
     }, m_thumbnailImage, m_alive);

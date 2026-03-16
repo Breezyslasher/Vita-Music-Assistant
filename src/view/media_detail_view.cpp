@@ -247,9 +247,10 @@ void MediaDetailView::loadMusicCategories() {
     if (!m_musicCategoriesBox) return;
 
     std::string itemId = m_item.itemId;
+    std::string provider = m_item.provider;
     std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
 
-    asyncRun([this, itemId, aliveWeak]() {
+    asyncRun([this, itemId, provider, aliveWeak]() {
         MAClient& client = MAClient::instance();
 
         // Fetch artist's albums via the new MA API
@@ -263,8 +264,18 @@ void MediaDetailView::loadMusicCategories() {
                     MusicItem mi;
                     mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
                     mi.name = item.has("name") ? item["name"].str() : "";
-                    mi.imageUrl = item.has("image") ? item["image"].str() :
-                                  (item.has("image_url") ? item["image_url"].str() : "");
+                    // Extract image URL: try image object, then metadata.images array
+                    if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
+                        mi.imageUrl = item["image"]["path"].str();
+                    } else if (item.has("image") && item["image"].type() == Json::STRING) {
+                        mi.imageUrl = item["image"].str();
+                    } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
+                        const Json& meta = item["metadata"];
+                        if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                            const Json& img = meta["images"][static_cast<size_t>(0)];
+                            if (img.has("path")) mi.imageUrl = img["path"].str();
+                        }
+                    }
                     mi.mediaType = MediaType::ALBUM;
                     mi.year = item.has("year") ? item["year"].intVal() : 0;
                     mi.subtype = item.has("album_type") ? item["album_type"].str() :
@@ -279,7 +290,7 @@ void MediaDetailView::loadMusicCategories() {
                 }
             }
             done = true;
-        });
+        }, provider);
 
         // Wait for async response (simplified blocking wait for Vita)
         // TODO: Refactor to fully async callback chain
@@ -389,9 +400,10 @@ void MediaDetailView::loadTrackList() {
     if (!m_trackListBox) return;
 
     std::string itemId = m_item.itemId;
+    std::string provider = m_item.provider;
     std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
 
-    asyncRun([this, itemId, aliveWeak]() {
+    asyncRun([this, itemId, provider, aliveWeak]() {
         MAClient& client = MAClient::instance();
 
         bool done = false;
@@ -404,8 +416,18 @@ void MediaDetailView::loadTrackList() {
                     MusicItem mi;
                     mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
                     mi.name = item.has("name") ? item["name"].str() : "";
-                    mi.imageUrl = item.has("image") ? item["image"].str() :
-                                  (item.has("image_url") ? item["image_url"].str() : "");
+                    // Extract image URL: try image object, then metadata.images array
+                    if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
+                        mi.imageUrl = item["image"]["path"].str();
+                    } else if (item.has("image") && item["image"].type() == Json::STRING) {
+                        mi.imageUrl = item["image"].str();
+                    } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
+                        const Json& meta = item["metadata"];
+                        if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                            const Json& img = meta["images"][static_cast<size_t>(0)];
+                            if (img.has("path")) mi.imageUrl = img["path"].str();
+                        }
+                    }
                     mi.mediaType = MediaType::TRACK;
                     mi.trackNumber = item.has("track_number") ? item["track_number"].intVal() : 0;
                     mi.discNumber = item.has("disc_number") ? item["disc_number"].intVal() : 0;
@@ -421,7 +443,7 @@ void MediaDetailView::loadTrackList() {
                 }
             }
             done = true;
-        });
+        }, provider);
 
         // Wait for async response
         // TODO: Refactor to fully async callback chain
@@ -748,8 +770,18 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         MusicItem mi;
                         mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
                         mi.name = item.has("name") ? item["name"].str() : "";
-                        mi.imageUrl = item.has("image") ? item["image"].str() :
-                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        // Extract image URL: try image object, then metadata.images array
+                        if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
+                            mi.imageUrl = item["image"]["path"].str();
+                        } else if (item.has("image") && item["image"].type() == Json::STRING) {
+                            mi.imageUrl = item["image"].str();
+                        } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
+                            const Json& meta = item["metadata"];
+                            if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                                const Json& img = meta["images"][static_cast<size_t>(0)];
+                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                            }
+                        }
                         mi.mediaType = MediaType::TRACK;
                         mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
                         mi.uri = item.has("uri") ? item["uri"].str() : "";
@@ -758,7 +790,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                     }
                 }
                 done = true;
-            });
+            }, capturedArtist.provider);
 
             int waitMs = 0;
             while (!done && waitMs < 10000) {
@@ -806,8 +838,18 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         MusicItem mi;
                         mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
                         mi.name = item.has("name") ? item["name"].str() : "";
-                        mi.imageUrl = item.has("image") ? item["image"].str() :
-                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        // Extract image URL: try image object, then metadata.images array
+                        if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
+                            mi.imageUrl = item["image"]["path"].str();
+                        } else if (item.has("image") && item["image"].type() == Json::STRING) {
+                            mi.imageUrl = item["image"].str();
+                        } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
+                            const Json& meta = item["metadata"];
+                            if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                                const Json& img = meta["images"][static_cast<size_t>(0)];
+                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                            }
+                        }
                         mi.mediaType = MediaType::TRACK;
                         mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
                         mi.uri = item.has("uri") ? item["uri"].str() : "";
@@ -816,7 +858,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                     }
                 }
                 done = true;
-            });
+            }, capturedArtist.provider);
 
             int waitMs = 0;
             while (!done && waitMs < 10000) {
@@ -887,8 +929,18 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                         MusicItem mi;
                         mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
                         mi.name = item.has("name") ? item["name"].str() : "";
-                        mi.imageUrl = item.has("image") ? item["image"].str() :
-                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        // Extract image URL: try image object, then metadata.images array
+                        if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
+                            mi.imageUrl = item["image"]["path"].str();
+                        } else if (item.has("image") && item["image"].type() == Json::STRING) {
+                            mi.imageUrl = item["image"].str();
+                        } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
+                            const Json& meta = item["metadata"];
+                            if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                                const Json& img = meta["images"][static_cast<size_t>(0)];
+                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                            }
+                        }
                         mi.mediaType = MediaType::TRACK;
                         mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
                         mi.uri = item.has("uri") ? item["uri"].str() : "";
@@ -896,7 +948,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                     }
                 }
                 done = true;
-            });
+            }, capturedAlbum.provider);
 
             int waitMs = 0;
             while (!done && waitMs < 10000) {

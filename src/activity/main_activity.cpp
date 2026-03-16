@@ -9,7 +9,6 @@
 #include "view/search_tab.hpp"
 #include "view/settings_tab.hpp"
 #include "view/debug_tab.hpp"
-#include "view/music_tab.hpp"
 #include "app/application.hpp"
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
@@ -79,7 +78,7 @@ void MainActivity::onContentAvailable() {
                 }
             } else {
                 // Default order for music-only app
-                order = {"home", "library", "music", "search"};
+                order = {"home", "library", "search"};
             }
 
             // Add tabs in specified order
@@ -88,8 +87,6 @@ void MainActivity::onContentAvailable() {
                     tabFrame->addTab("Home", []() { return new HomeTab(); });
                 } else if (item == "library") {
                     tabFrame->addTab("Library", []() { return new LibraryTab(); });
-                } else if (item == "music") {
-                    tabFrame->addTab("Music", []() { return new MusicTab(); });
                 } else if (item == "search") {
                     tabFrame->addTab("Search", []() { return new SearchTab(); });
                 }

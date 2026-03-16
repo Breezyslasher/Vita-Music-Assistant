@@ -3,6 +3,7 @@
 #include <cstring>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace vita_ma {
@@ -263,13 +264,18 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     m_serverUrl = serverUrl;
     m_authToken = authToken;
 
-    // Convert HTTP URL to WebSocket URL
+    // Convert HTTP URL to WebSocket URL (case-insensitive scheme matching)
     std::string wsUrl = serverUrl;
-    if (wsUrl.substr(0, 8) == "https://") {
+    // Build a lowercase copy of the scheme portion for comparison
+    std::string schemeLower;
+    for (size_t i = 0; i < wsUrl.size() && i < 8; i++)
+        schemeLower += static_cast<char>(std::tolower(static_cast<unsigned char>(wsUrl[i])));
+
+    if (schemeLower.substr(0, 8) == "https://") {
         wsUrl = "wss://" + wsUrl.substr(8);
-    } else if (wsUrl.substr(0, 7) == "http://") {
+    } else if (schemeLower.substr(0, 7) == "http://") {
         wsUrl = "ws://" + wsUrl.substr(7);
-    } else if (wsUrl.substr(0, 5) != "ws://" && wsUrl.substr(0, 6) != "wss://") {
+    } else if (schemeLower.substr(0, 5) != "ws://" && schemeLower.substr(0, 6) != "wss://") {
         wsUrl = "ws://" + wsUrl;
     }
 
@@ -323,6 +329,7 @@ void MAClient::onMessage(const std::string& message) {
                 if (success) {
                     m_authenticated.store(true);
                     brls::Logger::info("MA: authenticated successfully");
+                    flushPreAuthQueue();
                     if (m_eventCallback) {
                         m_eventCallback(MAEvent::CONNECTED, Json());
                     }
@@ -420,6 +427,15 @@ MAEvent MAClient::parseEventType(const std::string& eventStr) {
 
 void MAClient::sendCommand(const std::string& command, const Json& kwargs,
                             MAResponseCallback cb) {
+    // Queue commands that arrive before authentication completes
+    // (except the "auth" command itself)
+    if (!m_authenticated.load() && command != "auth") {
+        brls::Logger::debug("MA: queuing command '{}' until auth completes", command);
+        std::lock_guard<std::mutex> lock(m_preAuthMutex);
+        m_preAuthQueue.push_back({command, kwargs, std::move(cb)});
+        return;
+    }
+
     std::string msgId = generateMessageId();
 
     Json msg;
@@ -444,6 +460,20 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
     }
 }
 
+void MAClient::flushPreAuthQueue() {
+    std::vector<QueuedCommand> queued;
+    {
+        std::lock_guard<std::mutex> lock(m_preAuthMutex);
+        queued.swap(m_preAuthQueue);
+    }
+    if (!queued.empty()) {
+        brls::Logger::info("MA: flushing {} queued commands after auth", queued.size());
+    }
+    for (auto& cmd : queued) {
+        sendCommand(cmd.command, cmd.kwargs, std::move(cmd.cb));
+    }
+}
+
 // ============================================================================
 // Library Commands
 // ============================================================================
@@ -454,25 +484,31 @@ void MAClient::getLibraryArtists(MAResponseCallback cb, const std::string& searc
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/artists/library_items", args, std::move(cb));
 }
 
-void MAClient::getArtist(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtist(const std::string& itemId, MAResponseCallback cb,
+                          const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/get", args, std::move(cb));
 }
 
-void MAClient::getArtistAlbums(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtistAlbums(const std::string& itemId, MAResponseCallback cb,
+                                const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/artist_albums", args, std::move(cb));
 }
 
-void MAClient::getArtistTracks(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtistTracks(const std::string& itemId, MAResponseCallback cb,
+                                const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/artist_tracks", args, std::move(cb));
 }
 
@@ -482,19 +518,23 @@ void MAClient::getLibraryAlbums(MAResponseCallback cb, const std::string& search
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/albums/library_items", args, std::move(cb));
 }
 
-void MAClient::getAlbum(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getAlbum(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/albums/get", args, std::move(cb));
 }
 
-void MAClient::getAlbumTracks(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getAlbumTracks(const std::string& itemId, MAResponseCallback cb,
+                               const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/albums/album_tracks", args, std::move(cb));
 }
 
@@ -504,13 +544,15 @@ void MAClient::getLibraryTracks(MAResponseCallback cb, const std::string& search
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/tracks/library_items", args, std::move(cb));
 }
 
-void MAClient::getTrack(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getTrack(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/tracks/get", args, std::move(cb));
 }
 
@@ -523,15 +565,19 @@ void MAClient::getLibraryPlaylists(MAResponseCallback cb, const std::string& sea
     sendCommand("music/playlists/library_items", args, std::move(cb));
 }
 
-void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb,
+                            const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/playlists/get", args, std::move(cb));
 }
 
-void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb, int page) {
+void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
+                                  int page, const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     args["page"] = Json(page);
     sendCommand("music/playlists/playlist_tracks", args, std::move(cb));
 }
@@ -539,7 +585,7 @@ void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback c
 void MAClient::createPlaylist(const std::string& name, MAResponseCallback cb) {
     Json args;
     args["name"] = Json(name);
-    sendCommand("music/playlists/create", args, std::move(cb));
+    sendCommand("music/playlists/create_playlist", args, std::move(cb));
 }
 
 void MAClient::getLibraryRadios(MAResponseCallback cb, const std::string& search,
@@ -567,8 +613,9 @@ void MAClient::browse(const std::string& path, MAResponseCallback cb) {
 void MAClient::addToFavorites(const std::string& mediaType, const std::string& itemId,
                                MAResponseCallback cb) {
     Json args;
-    args["media_type"] = Json(mediaType);
-    args["item_id"] = Json(itemId);
+    // API expects a URI string like "library://track/123"
+    std::string uri = "library://" + mediaType + "/" + itemId;
+    args["item"] = Json(uri);
     sendCommand("music/favorites/add_item", args, std::move(cb));
 }
 
@@ -583,7 +630,7 @@ void MAClient::removeFromFavorites(const std::string& mediaType, const std::stri
 void MAClient::getRecentlyPlayed(MAResponseCallback cb, int limit) {
     Json args;
     args["limit"] = Json(limit);
-    sendCommand("music/recently_played", args, std::move(cb));
+    sendCommand("music/recently_played_items", args, std::move(cb));
 }
 
 void MAClient::getRecommendations(MAResponseCallback cb) {
@@ -731,6 +778,22 @@ void MAClient::getPlayers(MAResponseCallback cb) {
     sendCommand("players/all", Json(), std::move(cb));
 }
 
+// Simple URL-encode for imageproxy path parameter
+static std::string urlEncode(const std::string& str) {
+    std::string encoded;
+    for (unsigned char c : str) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += static_cast<char>(c);
+        } else {
+            char hex[4];
+            std::snprintf(hex, sizeof(hex), "%%%02X", c);
+            encoded += hex;
+        }
+    }
+    return encoded;
+}
+
 std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height) {
     if (imageUrl.empty()) return "";
 
@@ -739,21 +802,24 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
         return imageUrl;
     }
 
-    // Build URL from server base + image path
-    std::string url = m_serverUrl;
-    // Ensure no double slashes
-    if (!url.empty() && url.back() == '/') url.pop_back();
-    if (!imageUrl.empty() && imageUrl.front() != '/') url += '/';
-    url += imageUrl;
+    // Build server base URL
+    std::string base = m_serverUrl;
+    if (!base.empty() && base.back() == '/') base.pop_back();
 
-    // Add size parameters if specified
-    if (width > 0 || height > 0) {
-        url += (url.find('?') != std::string::npos) ? "&" : "?";
-        if (width > 0) url += "width=" + std::to_string(width);
-        if (height > 0) {
-            url += (width > 0 ? "&" : "");
-            url += "height=" + std::to_string(height);
+    // If it starts with /, treat as a server-relative path
+    if (!imageUrl.empty() && imageUrl.front() == '/') {
+        std::string url = base + imageUrl;
+        if (width > 0 || height > 0) {
+            url += (url.find('?') != std::string::npos) ? "&" : "?";
+            if (width > 0) url += "size=" + std::to_string(width);
         }
+        return url;
+    }
+
+    // Otherwise, use the imageproxy endpoint with the path
+    std::string url = base + "/imageproxy?path=" + urlEncode(imageUrl);
+    if (width > 0) {
+        url += "&size=" + std::to_string(width);
     }
 
     return url;
@@ -762,7 +828,7 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
 void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {
     Json args;
     args["item_id"] = Json(itemId);
-    sendCommand("music/playlists/delete", args, std::move(cb));
+    sendCommand("music/playlists/remove", args, std::move(cb));
 }
 
 // App singleton implementation (legacy, used for player ID storage)
