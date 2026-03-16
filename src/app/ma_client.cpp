@@ -458,21 +458,27 @@ void MAClient::getLibraryArtists(MAResponseCallback cb, const std::string& searc
     sendCommand("music/artists/library_items", args, std::move(cb));
 }
 
-void MAClient::getArtist(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtist(const std::string& itemId, MAResponseCallback cb,
+                          const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/get", args, std::move(cb));
 }
 
-void MAClient::getArtistAlbums(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtistAlbums(const std::string& itemId, MAResponseCallback cb,
+                                const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/artist_albums", args, std::move(cb));
 }
 
-void MAClient::getArtistTracks(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getArtistTracks(const std::string& itemId, MAResponseCallback cb,
+                                const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/artists/artist_tracks", args, std::move(cb));
 }
 
@@ -486,15 +492,19 @@ void MAClient::getLibraryAlbums(MAResponseCallback cb, const std::string& search
     sendCommand("music/albums/library_items", args, std::move(cb));
 }
 
-void MAClient::getAlbum(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getAlbum(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/albums/get", args, std::move(cb));
 }
 
-void MAClient::getAlbumTracks(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getAlbumTracks(const std::string& itemId, MAResponseCallback cb,
+                               const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/albums/album_tracks", args, std::move(cb));
 }
 
@@ -508,9 +518,11 @@ void MAClient::getLibraryTracks(MAResponseCallback cb, const std::string& search
     sendCommand("music/tracks/library_items", args, std::move(cb));
 }
 
-void MAClient::getTrack(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getTrack(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/tracks/get", args, std::move(cb));
 }
 
@@ -523,15 +535,19 @@ void MAClient::getLibraryPlaylists(MAResponseCallback cb, const std::string& sea
     sendCommand("music/playlists/library_items", args, std::move(cb));
 }
 
-void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb) {
+void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb,
+                            const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     sendCommand("music/playlists/get", args, std::move(cb));
 }
 
-void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb, int page) {
+void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
+                                  int page, const std::string& provider) {
     Json args;
     args["item_id"] = Json(itemId);
+    args["provider_instance_id_or_domain"] = Json(provider);
     args["page"] = Json(page);
     sendCommand("music/playlists/playlist_tracks", args, std::move(cb));
 }
@@ -583,7 +599,7 @@ void MAClient::removeFromFavorites(const std::string& mediaType, const std::stri
 void MAClient::getRecentlyPlayed(MAResponseCallback cb, int limit) {
     Json args;
     args["limit"] = Json(limit);
-    sendCommand("music/recently_played", args, std::move(cb));
+    sendCommand("music/recently_played_items", args, std::move(cb));
 }
 
 void MAClient::getRecommendations(MAResponseCallback cb) {

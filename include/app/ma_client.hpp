@@ -100,26 +100,34 @@ public:
     // Artists
     void getLibraryArtists(MAResponseCallback cb, const std::string& search = "",
                            int limit = 50, int offset = 0);
-    void getArtist(const std::string& itemId, MAResponseCallback cb);
-    void getArtistAlbums(const std::string& itemId, MAResponseCallback cb);
-    void getArtistTracks(const std::string& itemId, MAResponseCallback cb);
+    void getArtist(const std::string& itemId, MAResponseCallback cb,
+                   const std::string& provider = "library");
+    void getArtistAlbums(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider = "library");
+    void getArtistTracks(const std::string& itemId, MAResponseCallback cb,
+                         const std::string& provider = "library");
 
     // Albums
     void getLibraryAlbums(MAResponseCallback cb, const std::string& search = "",
                           int limit = 50, int offset = 0);
-    void getAlbum(const std::string& itemId, MAResponseCallback cb);
-    void getAlbumTracks(const std::string& itemId, MAResponseCallback cb);
+    void getAlbum(const std::string& itemId, MAResponseCallback cb,
+                  const std::string& provider = "library");
+    void getAlbumTracks(const std::string& itemId, MAResponseCallback cb,
+                        const std::string& provider = "library");
 
     // Tracks
     void getLibraryTracks(MAResponseCallback cb, const std::string& search = "",
                           int limit = 50, int offset = 0);
-    void getTrack(const std::string& itemId, MAResponseCallback cb);
+    void getTrack(const std::string& itemId, MAResponseCallback cb,
+                  const std::string& provider = "library");
 
     // Playlists
     void getLibraryPlaylists(MAResponseCallback cb, const std::string& search = "",
                              int limit = 50, int offset = 0);
-    void getPlaylist(const std::string& itemId, MAResponseCallback cb);
-    void getPlaylistTracks(const std::string& itemId, MAResponseCallback cb, int page = 0);
+    void getPlaylist(const std::string& itemId, MAResponseCallback cb,
+                     const std::string& provider = "library");
+    void getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
+                           int page = 0, const std::string& provider = "library");
     void createPlaylist(const std::string& name, MAResponseCallback cb);
 
     // Radio
