@@ -434,7 +434,7 @@ void PlayerActivity::willDisappear(bool resetState) {
         double position = player.getPosition();
         double duration = 0.0;
 
-        // For music queue mode, prefer Plex API duration (full track length)
+        // For music queue mode, prefer queue metadata duration (full track length)
         // over MPV duration which may only reflect buffered/demuxed portion
         if (m_isQueueMode) {
             const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -445,23 +445,8 @@ void PlayerActivity::willDisappear(bool resetState) {
         if (duration <= 0)
             duration = player.getDuration();
 
-        if (position > 0 || m_transcodeBaseOffsetMs > 0) {
-            int timeMs = m_transcodeBaseOffsetMs + (int)(position * 1000);
-
-            if (!m_mediaKey.empty()) {
-                if (!m_isQueueMode) {
-                    MAClient::instance().updatePlayProgress(m_mediaKey, timeMs);
-                }
-                // Report stopped timeline so Plex knows playback ended with full duration
-                std::string ratingKey = m_mediaKey;
-                if (m_isQueueMode) {
-                    const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
-                    if (track) ratingKey = track->ratingKey;
-                }
-                std::string key = "/library/metadata/" + ratingKey;
-                MAClient::instance().reportTimeline(
-                    ratingKey, key, "stopped", timeMs, (int)(duration * 1000));
-            }
+        if (position > 0) {
+            brls::Logger::info("PlayerActivity: Stopped at position {:.1f}s", position);
         }
     }
 
@@ -497,11 +482,6 @@ void PlayerActivity::loadFromQueue() {
 
     brls::Logger::info("PlayerActivity: Loading track from queue: {} - {}",
                       track->artist, track->title);
-
-    // Reset streams cache for the new track
-    m_streamsLoaded = false;
-    m_audioStreams.clear();
-    m_partId = 0;
 
     // If resuming and MPV is already playing/paused, just update the UI
     // without restarting the track (user pressed circle to return to player)
@@ -540,8 +520,6 @@ void PlayerActivity::loadFromQueue() {
         // Show music UI elements
         if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
         if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
-        if (videoView) videoView->setVisibility(brls::Visibility::GONE);
-        if (photoImage) photoImage->setVisibility(brls::Visibility::GONE);
 
         updatePlayPauseLabel();
         m_loadingMedia = false;
