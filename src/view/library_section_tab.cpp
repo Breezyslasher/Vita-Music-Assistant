@@ -654,7 +654,7 @@ void LibrarySectionTab::showPlaylistContextMenu(const MusicItem& playlist) {
         deleteBtn->setMarginBottom(10);
         deleteBtn->registerClickAction([this, dialog, playlistId, playlistName](brls::View*) {
             dialog->dismiss();
-            showPlaylistOptionsDialog(MusicItem{playlistId, playlistName, "", "", "", MediaType::PLAYLIST});
+            showPlaylistOptionsDialog(MusicItem{playlistId, playlistName, "", "", "", "", MediaType::PLAYLIST});
             return true;
         });
         deleteBtn->addGestureRecognizer(new brls::TapGestureRecognizer(deleteBtn));
