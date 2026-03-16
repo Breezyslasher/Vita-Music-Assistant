@@ -1,0 +1,848 @@
+08:59:46.881 [INFO] Log file initialized: ux0:data/VitaMA/vita_ma.log
+08:59:47.595 [INFO] Vita Music Assistant 2.0.0 initializing...
+08:59:47.597 [DEBUG] sceIoMkdir result: -0x7ffeffef
+08:59:47.597 [INFO] Loading saved settings...
+08:59:47.598 [DEBUG] loadSettings: Opening ux0:data/VitaMA/settings.json
+08:59:47.600 [DEBUG] loadSettings: File size = 498
+08:59:47.602 [DEBUG] loadSettings: Read 498 bytes
+08:59:47.603 [INFO] loadSettings: authToken=(set), serverUrl=http://192.168.1.28:8095, username=nick
+08:59:47.603 [INFO] Settings loaded successfully
+08:59:47.608 [INFO] Settings load result: success
+08:59:47.614 [INFO] Applied theme: Dark
+08:59:47.619 [INFO] Debug logging enabled
+08:59:47.627 [INFO] Application::run - isLoggedIn=true, serverUrl=http://192.168.1.28:8095
+08:59:47.635 [INFO] Restoring saved session...
+08:59:47.644 [INFO] MA: connecting to ws://192.168.1.28:8095/ws
+08:59:47.655 [INFO] WS connecting to 192.168.1.28:8095/ws (ssl=false)
+08:59:47.711 [INFO] WS connected successfully
+08:59:47.722 [INFO] Connected to server
+08:59:47.727 [DEBUG] MainActivity created
+08:59:47.733 [DEBUG] Adding an inputs block token (tokens=1)
+08:59:47.774 [DEBUG] MainActivity content available
+08:59:47.786 [DEBUG] MainActivity: Dynamic sidebar width: 200px
+08:59:47.918 [DEBUG] HomeTab: Loading content...
+08:59:47.929 [DEBUG] HomeTab::loadContent - Starting async load
+08:59:47.940 [DEBUG] MA: queuing command 'music/recently_played_items' until auth completes
+08:59:48.003 [DEBUG] HomeTab: Async content loading started
+08:59:48.019 [DEBUG] Giving focus to brls::SidebarItem
+08:59:48.025 [DEBUG] Hiding brls::Box
+08:59:48.033 [DEBUG] push activity to the stack
+08:59:48.042 [DEBUG] Showing brls::Box
+08:59:48.052 [INFO] MA: server  v2.7.11 (schema 28)
+08:59:48.139 [INFO] MA: authenticated successfully
+08:59:48.150 [INFO] MA: flushing 1 queued commands after auth
+08:59:48.271 [DEBUG] Removing an inputs block token (tokens=0)
+08:59:48.638 [INFO] HomeTab: Got 0 recently played music items
+08:59:58.674 [DEBUG] LibraryTab: Initializing with Albums category
+08:59:58.689 [DEBUG] LibraryTab::loadCategoryContent - Albums
+08:59:58.716 [DEBUG] Giving focus to brls::SidebarItem
+09:00:01.116 [INFO] LibraryTab: Got 500 Albums items
+09:00:01.386 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6668%2Fthumb%2F1765270450&size=300
+09:00:01.545 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:02.056 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F8193%2Fthumb%2F1764582230&size=300
+09:00:02.277 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:02.283 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6609%2Fthumb%2F1767347917&size=300
+09:00:02.446 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:02.456 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6650%2Fthumb%2F1763976555&size=300
+09:00:02.498 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:02.509 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FFeatures115%2Fv4%2F65%2Ffb%2F84%2F65fb8432-f539-d67d-0670-b1358d16e5af%2Fcontsched.zkbwdtfj.jpg%2F1425x1425bb.jpg&size=300
+09:00:02.817 [DEBUG] HTTP response: 200 (33539 bytes)
+09:00:02.830 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F15%2Fe6%2Fe8%2F15e6e8a4-4190-6a8b-86c3-ab4a51b88288%2F190295851286.jpg%2F3000x3000bb.jpg&size=300
+09:00:03.053 [DEBUG] HTTP response: 200 (50869 bytes)
+09:00:03.062 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fa3%2F35%2F54%2Fa33554b6-4122-cdfd-29e8-d17897280263%2Fdj.yiwizfgg.jpg%2F1500x1500bb.jpg&size=300
+09:00:03.243 [DEBUG] HTTP response: 200 (36009 bytes)
+09:00:03.255 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7639%2Fthumb%2F1763370865&size=300
+09:00:03.289 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:03.301 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F33%2Fb3%2Fd3%2F33b3d31d-2727-e8f4-af9e-19233824d754%2F603497847136.jpg%2F4000x4000bb.jpg&size=300
+09:00:03.473 [DEBUG] HTTP response: 200 (47467 bytes)
+09:00:03.486 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7962%2Fthumb%2F1763370970&size=300
+09:00:03.523 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:03.529 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F89%2F4a%2F4a%2F894a4ab9-b0b0-9ea5-ca41-8da0b9b79453%2F14UMDIM03405.rgb.jpg%2F1400x1400bb.jpg&size=300
+09:00:03.610 [DEBUG] HTTP response: 200 (23457 bytes)
+09:00:03.622 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2Fc1%2F31%2F18%2Fc131181b-ca3e-d945-16b2-48ea6bcd64d4%2F23UM1IM11868.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:03.776 [DEBUG] HTTP response: 200 (33207 bytes)
+09:00:03.790 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fa2%2Fd3%2F62%2Fa2d3622d-eb35-c2cc-9c54-c7e05f56db8e%2F06UMGIM10660.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:03.926 [DEBUG] HTTP response: 200 (47293 bytes)
+09:00:03.935 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fe3%2F3a%2F4c%2Fe33a4c3c-3c23-04b5-c9d7-d8bad00e2c3a%2F00044006508320.rgb.jpg%2F1421x1410bb.jpg&size=300
+09:00:04.042 [DEBUG] HTTP response: 200 (30520 bytes)
+09:00:04.053 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F7b%2F62%2Fef%2F7b62eff4-c44f-6e20-6061-f80942569a6d%2F00198704343407_Cover.jpg%2F1400x1400bb.jpg&size=300
+09:00:04.127 [DEBUG] HTTP response: 200 (29677 bytes)
+09:00:04.141 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7596%2Fthumb%2F1764582256&size=300
+09:00:04.175 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:04.181 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F08%2F8c%2F24%2F088c2405-2e33-801b-5c38-e967f2c01e69%2F191404113974.png%2F4000x4000bb.jpg&size=300
+09:00:04.343 [DEBUG] HTTP response: 200 (28518 bytes)
+09:00:04.855 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F6e%2F2f%2F9b%2F6e2f9b58-78b1-4c1f-dce7-faee3c15678d%2F5054197150975.jpg%2F4000x4000bb.jpg&size=300
+09:00:05.393 [DEBUG] HTTP response: 200 (76460 bytes)
+09:00:05.410 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7005%2Fthumb%2F1763976620&size=300
+09:00:05.466 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:05.472 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fd3%2Fff%2F4e%2Fd3ff4ee7-63cd-bc72-a85b-9616536eeb23%2F886444326490.jpg%2F1500x1500bb.jpg&size=300
+09:00:05.563 [DEBUG] HTTP response: 200 (29874 bytes)
+09:00:05.574 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fe8%2F1b%2F44%2Fe81b44cc-9a2f-9960-1a99-e6eb4389a113%2F08UMGIM03456.rgb.jpg%2F1414x1414bb.jpg&size=300
+09:00:05.667 [DEBUG] HTTP response: 200 (42542 bytes)
+09:00:05.681 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5897%2Fthumb%2F1763370916&size=300
+09:00:05.725 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:05.731 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F88%2F8e%2F5d%2F888e5d4e-a2a4-aa18-3f5f-e259f0bb8a49%2F00606949350826.rgb.jpg%2F1421x1412bb.jpg&size=300
+09:00:05.829 [DEBUG] HTTP response: 200 (45475 bytes)
+09:00:05.841 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F9d%2Fc6%2Fa9%2F9dc6a91f-9838-862b-32a5-ac5f6c8d8bc0%2F810129988727.jpg%2F1400x1400bb.jpg&size=300
+09:00:06.040 [DEBUG] HTTP response: 200 (62367 bytes)
+09:00:06.056 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F61%2Fcc%2F9a%2F61cc9a05-616f-3280-f209-3ac9a27edf8d%2F199282329890_cover.jpg%2F1400x1400bb.jpg&size=300
+09:00:06.138 [DEBUG] HTTP response: 200 (32927 bytes)
+09:00:06.146 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F60%2Ff8%2Fa6%2F60f8a6bc-e875-238d-f2f8-f34a6034e6d2%2F14UMGIM07615.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:06.228 [DEBUG] HTTP response: 200 (20991 bytes)
+09:00:06.239 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13663%2Fthumb%2F1766655418&size=300
+09:00:06.289 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:06.299 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F41%2F41%2F50%2F41415090-c8f6-11d7-5d62-13c27af96f11%2F24UMGIM10724.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:06.401 [DEBUG] HTTP response: 200 (45566 bytes)
+09:00:06.413 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F4d%2F11%2Fa9%2F4d11a9bd-524c-cc13-8915-a68f06d9597d%2F20UMGIM56232.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:06.546 [DEBUG] HTTP response: 200 (61161 bytes)
+09:00:06.562 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F53%2F68%2Ff3%2F5368f34c-7e41-3e4c-d2c5-0f0447c23f07%2Fdj.diysopyd.jpg%2F1500x1500bb.jpg&size=300
+09:00:06.678 [DEBUG] HTTP response: 200 (34345 bytes)
+09:00:06.687 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fc2%2F33%2F64%2Fc233649b-1c8e-b1a8-d175-ee40f31fe207%2F9420058710798.jpg%2F3000x3000bb.jpg&size=300
+09:00:06.895 [DEBUG] HTTP response: 200 (51281 bytes)
+09:00:06.910 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5185%2Fthumb%2F1762679176&size=300
+09:00:06.957 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:06.963 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2Fda%2F34%2Faa%2Fda34aa4e-963d-da81-973a-c4baf699c03d%2FPCSP_03907_A.jpg%2F2400x2400bb.jpg&size=300
+09:00:07.116 [DEBUG] HTTP response: 200 (69391 bytes)
+09:00:07.130 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F9b%2F7e%2F28%2F9b7e2896-e049-1663-6791-e0111690ffc1%2F067003051361.png%2F1500x1500bb.jpg&size=300
+09:00:07.251 [DEBUG] HTTP response: 200 (58178 bytes)
+09:00:07.267 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F1f%2F82%2F52%2F1f8252d9-d3f1-3deb-2989-58155494ede4%2F067003148856.png%2F3000x3000bb.jpg&size=300
+09:00:07.398 [DEBUG] HTTP response: 200 (44121 bytes)
+09:00:07.409 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic30%2Fv4%2Fab%2F59%2F0c%2Fab590caa-5a12-0753-4a40-e1b1d3f8a3bc%2FPassenger_AllTheLittleLights_1500.jpg%2F1500x1500bb.jpg&size=300
+09:00:07.541 [DEBUG] HTTP response: 200 (58169 bytes)
+09:00:07.557 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7905%2Fthumb%2F1763370957&size=300
+09:00:07.604 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:07.610 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fef%2F46%2Fdc%2Fef46dc23-467a-7a23-aefb-c3baf4ccdbbc%2F14UMGIM25084.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:07.707 [DEBUG] HTTP response: 200 (44489 bytes)
+09:00:07.719 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fc0%2Fb0%2Fd3%2Fc0b0d3d3-7baf-1930-0b9b-bc780a001f83%2F888880547293.jpg%2F3000x3000bb.jpg&size=300
+09:00:07.815 [DEBUG] HTTP response: 200 (16183 bytes)
+09:00:07.827 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic18%2Fv4%2F3f%2Fa9%2Fc3%2F3fa9c39e-83f5-7680-8717-b911ae788c2c%2Fdj.vsozdylo.jpg%2F1500x1500bb.jpg&size=300
+09:00:07.951 [DEBUG] HTTP response: 200 (63914 bytes)
+09:00:07.965 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7536%2Fthumb%2F1765270468&size=300
+09:00:08.047 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:08.116 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7581%2Fthumb%2F1763976574&size=300
+09:00:08.159 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:08.167 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F87%2F2e%2Fd6%2F872ed62f-e723-e6c3-0836-ec13099b393a%2F093624838494.jpg%2F3000x3000bb.jpg&size=300
+09:00:08.393 [DEBUG] HTTP response: 200 (43904 bytes)
+09:00:08.408 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F1a%2F54%2F65%2F1a546518-5709-5c11-3f30-90528331fbf6%2F15UMGIM65659.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:08.551 [DEBUG] HTTP response: 200 (26289 bytes)
+09:00:08.561 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F7a%2Ffd%2F77%2F7afd77f5-a928-109c-5da5-c591b8dad4b2%2F13UABIM59293.rgb.jpg%2F1404x1404bb.jpg&size=300
+09:00:08.644 [DEBUG] HTTP response: 200 (26147 bytes)
+09:00:08.658 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2Fe3%2Fe3%2F37%2Fe3e337c7-73dd-081c-8a38-f63caabdaf32%2F193436229791_01_img001.jpg%2F3000x3000bb.jpg&size=300
+09:00:08.751 [DEBUG] HTTP response: 200 (28878 bytes)
+09:00:08.761 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F99%2F38%2Ff3%2F9938f369-5b73-22ca-b74e-0a1b36a865e5%2F193436224338_01_img001.jpg%2F3000x3000bb.jpg&size=300
+09:00:08.869 [DEBUG] HTTP response: 200 (42455 bytes)
+09:00:08.884 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5208%2Fthumb%2F1761984495&size=300
+09:00:08.929 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:08.938 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F7e%2F9d%2F0a%2F7e9d0ac3-9322-4904-4f24-e1dcc96011a6%2F859737179882_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:09.032 [DEBUG] HTTP response: 200 (31147 bytes)
+09:00:09.046 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fda%2Fe8%2F19%2Fdae8194f-24bf-708e-7cc7-f330df508695%2F00602537855636.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:09.151 [DEBUG] HTTP response: 200 (59416 bytes)
+09:00:09.163 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F2a%2F18%2Ffb%2F2a18fb92-8b23-47a1-0143-178f262a4ce9%2F25UMGIM89048.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:09.359 [DEBUG] HTTP response: 200 (58108 bytes)
+09:00:09.375 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2Fc6%2F1f%2F40%2Fc61f40ff-e9d1-1300-4425-7b38e61e3238%2F197077757873_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:09.457 [DEBUG] HTTP response: 200 (28651 bytes)
+09:00:09.467 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2Fab%2F27%2Ff6%2Fab27f603-7d92-cd1d-a9bb-fa336818e2ad%2F197773940081_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:10.373 [DEBUG] HTTP response: 200 (27276 bytes)
+09:00:10.387 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F51%2F3a%2F96%2F513a96aa-5c58-be37-8f76-58803a9911bb%2F193872368450_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:10.492 [DEBUG] HTTP response: 200 (44723 bytes)
+09:00:10.503 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic113%2Fv4%2Fd0%2Fee%2F89%2Fd0ee89b0-7e1f-e441-d117-0d396fccb523%2F195039119653_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:10.620 [DEBUG] HTTP response: 200 (34285 bytes)
+09:00:10.635 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic113%2Fv4%2F0a%2Fe4%2Fb7%2F0ae4b799-9728-8859-13a3-c40c94ef9ff8%2F195039287352_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:10.734 [DEBUG] HTTP response: 200 (27877 bytes)
+09:00:10.745 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F0a%2Fc6%2F7f%2F0ac67f99-0472-d4cd-e69a-a3a6b9903614%2F191079565566_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:11.705 [DEBUG] HTTP response: 200 (28750 bytes)
+09:00:11.720 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fae%2Fed%2Fc6%2Faeedc6fc-a13e-0d36-ef69-3028ffff92e9%2F193872876993_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:12.729 [DEBUG] HTTP response: 200 (27396 bytes)
+09:00:12.741 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2Fe6%2Fab%2Fec%2Fe6abecef-6ab5-2017-d734-2759f4da7e23%2F195729301986_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:14.267 [DEBUG] HTTP response: 200 (30063 bytes)
+09:00:14.276 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F1b%2Fc3%2F9a%2F1bc39aa3-8528-6f45-1252-76e9dc329b83%2F195729908048_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:15.292 [DEBUG] HTTP response: 200 (34176 bytes)
+09:00:15.307 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7519%2Fthumb%2F1767347933&size=300
+09:00:15.366 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:15.373 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2F11%2F2a%2F5a%2F112a5a1f-fc0d-46c5-8f08-e6b0e212a2e3%2F192650826571_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:15.487 [DEBUG] HTTP response: 200 (33454 bytes)
+09:00:15.502 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2Ff1%2F2c%2F22%2Ff12c2278-2656-005f-eb62-17bad82ebd72%2F193872023526_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:16.433 [DEBUG] HTTP response: 200 (33918 bytes)
+09:00:16.445 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13791%2Fthumb%2F1740816755&size=300
+09:00:16.481 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:16.488 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6368%2Fthumb%2F1764401534&size=300
+09:00:16.729 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:16.740 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5276%2Fthumb%2F1752994037&size=300
+09:00:16.835 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:16.842 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F2d%2F1a%2F7d%2F2d1a7d91-587e-0ceb-d434-327bd66d9e86%2F075679628312.jpg%2F3000x3000bb.jpg&size=300
+09:00:17.010 [DEBUG] HTTP response: 200 (40752 bytes)
+09:00:17.025 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F10%2Fc9%2F78%2F10c978cf-ff3e-38a9-ff99-fed10f54f09e%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:17.860 [DEBUG] HTTP response: 200 (64910 bytes)
+09:00:17.873 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fbf%2F31%2F59%2Fbf3159e0-29a2-24cb-6900-8e5dc8f0b4dc%2F1963620999187.jpg%2F3000x3000bb.jpg&size=300
+09:00:18.060 [DEBUG] HTTP response: 200 (40584 bytes)
+09:00:18.076 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F54%2F79%2F30%2F547930a5-28a8-b71e-0342-a4e1e5c1d287%2F1963621022518.jpg%2F3000x3000bb.jpg&size=300
+09:00:18.266 [DEBUG] HTTP response: 200 (40584 bytes)
+09:00:18.279 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5182%2Fthumb%2F1753518055&size=300
+09:00:18.389 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:18.396 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2Fc5%2F40%2F9e%2Fc5409e27-3f5d-9476-241d-ed8e7499ea38%2F19UMGIM20677.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:18.496 [DEBUG] HTTP response: 200 (16287 bytes)
+09:00:18.510 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F3c%2F9c%2Fcb%2F3c9ccbb2-05df-b45e-0099-ef697b8fd669%2F709401236444_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:18.582 [DEBUG] HTTP response: 200 (4452 bytes)
+09:00:18.592 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fb6%2Fef%2F09%2Fb6ef09d5-5813-b145-34d3-641002631eda%2F193436223928_01_img001.jpg%2F3000x3000bb.jpg&size=300
+09:00:19.695 [DEBUG] HTTP response: 200 (33921 bytes)
+09:00:19.704 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fd3%2F93%2F72%2Fd3937225-1d80-f3e9-119a-d0d2741e9a4a%2F810129981773.jpg%2F3000x3000bb.jpg&size=300
+09:00:20.517 [DEBUG] HTTP response: 200 (35742 bytes)
+09:00:21.035 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F80%2F9d%2F48%2F809d486d-da4b-6d56-5671-9d7e100e6b2e%2F00602537855858.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:21.974 [DEBUG] HTTP response: 200 (46947 bytes)
+09:00:21.987 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F2f%2Fb6%2F6d%2F2fb66daa-d179-98ba-2ecc-2e5e8309d25d%2F17UM1IM25268.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:22.189 [DEBUG] HTTP response: 200 (35520 bytes)
+09:00:22.198 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic128%2Fv4%2Fca%2Fb0%2F7f%2Fcab07fff-c8aa-e3ed-5051-7a91e9739b5c%2F192650630147_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:23.078 [DEBUG] HTTP response: 200 (28992 bytes)
+09:00:23.093 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6448%2Fthumb%2F1765270420&size=300
+09:00:23.167 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:23.177 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic6%2Fv4%2F38%2Faf%2F10%2F38af10b4-ff1f-879b-e1cc-072367cab8e2%2F075679951083.jpg%2F1425x1425bb.jpg&size=300
+09:00:23.327 [DEBUG] HTTP response: 200 (36387 bytes)
+09:00:23.336 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13841%2Fthumb%2F1736454186&size=300
+09:00:23.407 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:23.420 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F97%2F35%2F65%2F973565ea-fdee-3d67-799d-c7445ea60be8%2F19760.jpg%2F3000x3000bb.jpg&size=300
+09:00:23.635 [DEBUG] HTTP response: 200 (47201 bytes)
+09:00:23.648 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fa4%2F0e%2Fd8%2Fa40ed838-b4c5-ba93-5138-d9566f73b099%2F5021732749611.jpg%2F4000x4000bb.jpg&size=300
+09:00:23.829 [DEBUG] HTTP response: 200 (32251 bytes)
+09:00:23.838 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F9b%2Fca%2Fa0%2F9bcaa077-01ce-90e0-d3a4-0332af8642e3%2F5021732806857.jpg%2F4000x4000bb.jpg&size=300
+09:00:24.104 [DEBUG] HTTP response: 200 (29545 bytes)
+09:00:24.119 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fb2%2Fa8%2F02%2Fb2a8021b-4e37-8794-4694-1aa9c8700403%2F5021732778307.jpg%2F4000x4000bb.jpg&size=300
+09:00:24.281 [DEBUG] HTTP response: 200 (29635 bytes)
+09:00:24.293 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fee%2F81%2Ff0%2Fee81f0ba-26d4-d485-a03b-e4b1ecd6cf84%2F5021732778291.jpg%2F4000x4000bb.jpg&size=300
+09:00:24.470 [DEBUG] HTTP response: 200 (30935 bytes)
+09:00:24.479 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F1e%2F14%2F58%2F1e145814-281a-58e0-3ab1-145f5d1af421%2F886443673441.jpg%2F1428x1428bb.jpg&size=300
+09:00:24.563 [DEBUG] HTTP response: 200 (9658 bytes)
+09:00:24.577 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6129%2Fthumb%2F1764401534&size=300
+09:00:24.619 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:24.629 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F32%2Fbf%2F13%2F32bf1302-fbfe-945a-44bc-c0aeaee12711%2F075678375224.jpg%2F1448x1448bb.jpg&size=300
+09:00:24.724 [DEBUG] HTTP response: 200 (54490 bytes)
+09:00:24.736 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5130%2Fthumb%2F1757316344&size=300
+09:00:24.853 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:24.860 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fbb%2F8f%2F01%2Fbb8f0145-a5d6-7ca9-1cd8-76ced62b4705%2F810129975499.jpg%2F3000x3000bb.jpg&size=300
+09:00:26.441 [DEBUG] HTTP response: 200 (43834 bytes)
+09:00:26.457 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F8041%2Fthumb%2F1763976606&size=300
+09:00:26.499 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:26.510 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F63%2F45%2Fcc%2F6345cc98-aa83-ad6e-e3c9-1a36ff9838a4%2F190296614316.jpg%2F4000x4000bb.jpg&size=300
+09:00:26.777 [DEBUG] HTTP response: 200 (79543 bytes)
+09:00:26.790 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F65%2Fc4%2Fc5%2F65c4c588-0fcd-fb3c-e1b0-5a685cb13040%2Fdj.iydpynlx.jpg%2F1500x1500bb.jpg&size=300
+09:00:27.120 [DEBUG] HTTP response: 200 (41773 bytes)
+09:00:27.132 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F84%2Fb9%2F45%2F84b945a5-c7a3-a4f0-d4ec-f2db2b005f17%2F810129980325.jpg%2F3000x3000bb.jpg&size=300
+09:00:27.250 [DEBUG] HTTP response: 200 (35742 bytes)
+09:00:27.259 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FFeatures125%2Fv4%2F45%2F61%2F14%2F456114fa-1942-3c9f-635a-f3cb6b06fa22%2Fdj.lttodrvv.jpg%2F600x602bb.jpg&size=300
+09:00:27.351 [DEBUG] HTTP response: 200 (33456 bytes)
+09:00:27.367 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F3b%2Fa3%2Fdd%2F3ba3dd2b-a1a5-228a-0c0b-673fa3ea531e%2F192650715011_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:28.310 [DEBUG] HTTP response: 200 (53515 bytes)
+09:00:28.325 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F54%2Ff4%2F92%2F54f49210-e260-b519-ebbd-f4f40ee710cd%2F054391342751.jpg%2F3000x3000bb.jpg&size=300
+09:00:28.446 [DEBUG] HTTP response: 200 (21757 bytes)
+09:00:28.458 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F1c%2Fe6%2Fd0%2F1ce6d0c7-0dc7-3a18-7afe-e832c073c344%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:28.564 [DEBUG] HTTP response: 200 (33221 bytes)
+09:00:28.574 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fc1%2Fb1%2Faf%2Fc1b1af24-dd7a-7192-f84a-4771a4b25e06%2F198477734945.jpg%2F3000x3000bb.jpg&size=300
+09:00:29.629 [DEBUG] HTTP response: 200 (31559 bytes)
+09:00:29.645 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fd5%2F03%2Fbb%2Fd503bb3f-c54a-32be-42ed-b05fae9ba3d2%2F859743228567_cover.jpg%2F4800x4800bb.jpg&size=300
+09:00:32.092 [DEBUG] HTTP response: 200 (39360 bytes)
+09:00:32.106 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6424%2Fthumb%2F1749451424&size=300
+09:00:32.149 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:32.159 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13849%2Fthumb%2F1736454207&size=300
+09:00:32.206 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:32.213 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F36%2Fb5%2Fc3%2F36b5c349-e447-f080-79ae-08df419e8395%2F20259.jpg%2F3000x3000bb.jpg&size=300
+09:00:32.301 [DEBUG] HTTP response: 200 (25590 bytes)
+09:00:32.310 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fcc%2F21%2F80%2Fcc218005-cfd9-1dc7-838a-c93efe35a135%2F19UMGIM92630.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:32.472 [DEBUG] HTTP response: 200 (56909 bytes)
+09:00:32.490 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F13%2F83%2F0f%2F13830f85-12ad-38c5-c34e-4d3e138e0bc0%2F193436275446_01_img001.jpg%2F3000x3000bb.jpg&size=300
+09:00:32.714 [DEBUG] HTTP response: 200 (31457 bytes)
+09:00:32.729 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F74%2F86%2F9f%2F74869f4f-c52b-289b-31a7-9ac9fec31e2d%2F06UMGIM70785.rgb.jpg%2F1000x1000bb.jpg&size=300
+09:00:32.909 [DEBUG] HTTP response: 200 (50043 bytes)
+09:00:32.924 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F4f%2F27%2F59%2F4f27590d-6fb0-5f3a-b469-feace30aaeed%2F198467039562.jpg%2F3000x3000bb.jpg&size=300
+09:00:33.671 [DEBUG] HTTP response: 200 (20334 bytes)
+09:00:33.683 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fe8%2F17%2F90%2Fe81790b2-7be3-13ca-4484-17745c67b886%2F00077778795254.jpg%2F1500x1500bb.jpg&size=300
+09:00:33.763 [DEBUG] HTTP response: 200 (22685 bytes)
+09:00:33.772 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F5c%2F8e%2F19%2F5c8e191d-b458-fc29-54ef-bd9367835044%2F886447618547.jpg%2F3707x3707bb.jpg&size=300
+09:00:33.936 [DEBUG] HTTP response: 200 (44034 bytes)
+09:00:33.946 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F98%2F1a%2Ffb%2F981afb81-415b-c6f1-f725-147769022da6%2Fmzi.dgzjndad.jpg%2F600x600bb.jpg&size=300
+09:00:34.040 [DEBUG] HTTP response: 200 (54792 bytes)
+09:00:34.058 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7932%2Fthumb%2F1763370971&size=300
+09:00:34.105 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:34.118 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2Fa9%2F21%2F90%2Fa9219081-1d00-a27e-2712-bc8a8adfa553%2F197077758016_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:34.252 [DEBUG] HTTP response: 200 (27833 bytes)
+09:00:34.265 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fd2%2Faa%2F44%2Fd2aa4418-7e74-7e6d-4247-9b9c1cba9e64%2F06UMGIM01654.rgb.jpg%2F1451x1459bb.jpg&size=300
+09:00:34.406 [DEBUG] HTTP response: 200 (60742 bytes)
+09:00:34.420 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F0e%2Fab%2F33%2F0eab3342-172b-976a-59bf-b8e4695e5a3f%2Fcover.jpg%2F3000x3000bb.jpg&size=300
+09:00:35.474 [DEBUG] HTTP response: 200 (51762 bytes)
+09:00:35.478 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fb3%2F09%2F81%2Fb309815a-15c6-e587-6be8-1b7621ea4c73%2F40052.jpg%2F3000x3000bb.jpg&size=300
+09:00:36.870 [DEBUG] HTTP response: 200 (33386 bytes)
+09:00:36.874 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Ff4%2F13%2F03%2Ff41303e4-f449-e246-6246-341930bdf3b2%2F40978.jpg%2F3000x3000bb.jpg&size=300
+09:00:37.927 [DEBUG] HTTP response: 200 (39179 bytes)
+09:00:37.937 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Faf%2F35%2Fd3%2Faf35d339-a9c0-a565-712d-a31dd9e42a4b%2Fmzi.jyzejvil.jpg%2F600x600bb.jpg&size=300
+09:00:38.083 [DEBUG] HTTP response: 200 (28830 bytes)
+09:00:38.093 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F2c%2Fce%2F9b%2F2cce9b6d-8d83-0c4d-3840-79d0006126ce%2F06UMGIM45947.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:38.376 [DEBUG] HTTP response: 200 (42278 bytes)
+09:00:38.391 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fcb%2F3c%2F60%2Fcb3c603c-340e-2552-3017-5368c74ccf09%2F859709587141_cover.jpg%2F1400x1400bb.jpg&size=300
+09:00:38.602 [DEBUG] HTTP response: 200 (54003 bytes)
+09:00:38.611 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fb1%2Fee%2F50%2Fb1ee5084-c195-a041-f2a8-dca510f088ce%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:39.552 [DEBUG] HTTP response: 200 (8814 bytes)
+09:00:39.561 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6846%2Fthumb%2F1767347972&size=300
+09:00:39.605 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:39.615 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7888%2Fthumb%2F1763976610&size=300
+09:00:39.662 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:39.673 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F34%2F2f%2F9b%2F342f9b47-5178-4d82-7f8e-116025234c8c%2F25UMGIM60898.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:39.822 [DEBUG] HTTP response: 200 (41267 bytes)
+09:00:39.830 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fb3%2F2d%2Fab%2Fb32dabb3-a73e-524d-8f28-0eb27e79d5d3%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:39.972 [DEBUG] HTTP response: 200 (47509 bytes)
+09:00:39.984 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F7a%2F34%2F1c%2F7a341c70-f537-0088-6e71-23ef0ccd3d41%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:40.785 [DEBUG] HTTP response: 200 (15897 bytes)
+09:00:40.796 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Ffe%2Fc2%2F35%2Ffec23530-f8dc-db33-5e0e-46bebf22bb35%2F00857366006944.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:41.033 [DEBUG] HTTP response: 200 (38195 bytes)
+09:00:41.047 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F3c%2Fe3%2Fa1%2F3ce3a150-0524-8877-28a6-734292b85f24%2F21UM1IM43311.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:41.206 [DEBUG] HTTP response: 200 (46419 bytes)
+09:00:41.215 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F8e%2Fe2%2F89%2F8ee28904-0821-610d-5011-a61845f62756%2F075679926951.jpg%2F1425x1425bb.jpg&size=300
+09:00:41.320 [DEBUG] HTTP response: 200 (26354 bytes)
+09:00:41.330 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic128%2Fv4%2Fc3%2F84%2F15%2Fc38415d9-237a-6d81-970e-a16894f2328e%2F190295710460.jpg%2F3000x3000bb.jpg&size=300
+09:00:41.710 [DEBUG] HTTP response: 200 (24742 bytes)
+09:00:41.722 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2F14%2F0b%2F8e%2Fmzi.vsvfenht.jpg%2F1425x1416bb.jpg&size=300
+09:00:41.818 [DEBUG] HTTP response: 200 (58759 bytes)
+09:00:41.833 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F82%2Ff3%2Fe9%2F82f3e968-8174-c5eb-7fc5-36384d050129%2Fdj.mdauihuy.jpg%2F1500x1500bb.jpg&size=300
+09:00:42.011 [DEBUG] HTTP response: 200 (40394 bytes)
+09:00:42.020 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F33%2F87%2Fc8%2F3387c827-adaa-681d-bd10-ce7d8e888b9c%2F22UMGIM21054.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:42.156 [DEBUG] HTTP response: 200 (25247 bytes)
+09:00:42.167 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F16%2F3b%2F7a%2F163b7a8e-b36b-bed7-0415-04dd3c7fa84a%2F634164202125.png%2F3000x3000bb.jpg&size=300
+09:00:42.330 [DEBUG] HTTP response: 200 (49300 bytes)
+09:00:42.345 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F8214%2Fthumb%2F1764582210&size=300
+09:00:42.385 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:42.391 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F3c%2F30%2F28%2F3c3028c8-a1d4-c35b-c083-f40ec387d6ba%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:42.609 [DEBUG] HTTP response: 200 (32359 bytes)
+09:00:42.620 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F8b%2F4c%2F9f%2F8b4c9f7a-010c-4955-a1cc-7535c373021e%2F190296081989.jpg%2F2000x2000bb.jpg&size=300
+09:00:42.957 [DEBUG] HTTP response: 200 (34421 bytes)
+09:00:42.993 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F05%2Ff7%2Faf%2F05f7af37-526e-5e6e-e4cd-9e4bc3da0756%2F18UMGIM52528.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:43.188 [DEBUG] HTTP response: 200 (18711 bytes)
+09:00:43.196 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fe3%2F7e%2Fc5%2Fe37ec5d7-725b-695c-333c-ee0deb5adcc6%2Fdj.mveioodu.jpg%2F1416x1416bb.jpg&size=300
+09:00:43.347 [DEBUG] HTTP response: 200 (36500 bytes)
+09:00:43.359 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F6a%2Fd1%2F31%2F6ad13122-f6fb-1ed3-ae05-26450bc1be9c%2F22UM1IM16742.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:43.485 [DEBUG] HTTP response: 200 (18273 bytes)
+09:00:43.498 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fe6%2F95%2F8e%2Fe6958e1a-becd-340d-ce10-a769ec568a1a%2F8051418697230.png%2F3000x3000bb.jpg&size=300
+09:00:43.801 [DEBUG] HTTP response: 200 (38198 bytes)
+09:00:43.810 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F89%2F86%2F61%2F898661f7-8d1b-a1b7-944e-784dbfd75a80%2F00050086012770.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:43.906 [DEBUG] HTTP response: 200 (37403 bytes)
+09:00:43.918 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13633%2Fthumb%2F1740510588&size=300
+09:00:43.968 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:43.979 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5179%2Fthumb%2F1752051391&size=300
+09:00:44.022 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:44.028 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F78%2F12%2F6c%2F78126c02-d0b9-a539-d77d-1b36133e326c%2F305346.jpg%2F3000x3000bb.jpg&size=300
+09:00:44.164 [DEBUG] HTTP response: 200 (37988 bytes)
+09:00:44.176 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FFeatures115%2Fv4%2F80%2F07%2F23%2F80072391-3543-cdb9-e298-08d5f0595f41%2Fdj.uyepaoyc.jpg%2F1415x1415bb.jpg&size=300
+09:00:44.281 [DEBUG] HTTP response: 200 (62330 bytes)
+09:00:44.297 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fc3%2Fca%2F75%2Fc3ca7528-261a-18e9-18bb-76aaa469e865%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:44.429 [DEBUG] HTTP response: 200 (60001 bytes)
+09:00:44.439 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic3%2Fv4%2Ff9%2Fbc%2F34%2Ff9bc3452-16d1-dd9b-5b15-f90307977dae%2Fdj.jgxzswna.jpg%2F1500x1500bb.jpg&size=300
+09:00:44.571 [DEBUG] HTTP response: 200 (35114 bytes)
+09:00:44.583 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6194%2Fthumb%2F1766307365&size=300
+09:00:44.656 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:44.662 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2Fb7%2Fa5%2Ff9%2Fb7a5f974-c366-c0a1-4d3b-d2baaac11d53%2Fcover.jpg%2F3000x3000bb.jpg&size=300
+09:00:44.775 [DEBUG] HTTP response: 200 (25500 bytes)
+09:00:44.786 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6204%2Fthumb%2F1766915935&size=300
+09:00:44.843 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:44.855 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F7a%2F27%2Fd5%2F7a27d554-ba2a-c890-71d8-8cb58213b7bb%2F21UMGIM92734.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:44.981 [DEBUG] HTTP response: 200 (32090 bytes)
+09:00:44.990 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2Feb%2Ff3%2F00%2Febf300a7-22ab-9f61-29ef-9c86acc889b3%2F16DMGIM07683.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:45.093 [DEBUG] HTTP response: 200 (45439 bytes)
+09:00:45.107 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F5d%2Fc4%2F14%2F5dc414eb-f6ef-0713-789b-7d6da40bf72a%2F5054197332692.jpg%2F4000x4000bb.jpg&size=300
+09:00:45.200 [DEBUG] HTTP response: 200 (26382 bytes)
+09:00:45.208 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F84%2Fc0%2F9d%2F84c09d47-0ea2-cb1a-47b5-622703169735%2F192650706286_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:45.927 [DEBUG] HTTP response: 200 (19650 bytes)
+09:00:45.938 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7737%2Fthumb%2F1762247719&size=300
+09:00:45.975 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:45.987 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F51%2F68%2F3e%2F51683ee7-42a0-abe2-6001-e77bd34de2d9%2F193436061223_cover.jpg%2F3224x3224bb.jpg&size=300
+09:00:47.039 [DEBUG] HTTP response: 200 (31569 bytes)
+09:00:47.051 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F20%2F1c%2Fdb%2F201cdbaa-8329-de5b-b888-6dad65e62aaa%2F195729229761_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:47.860 [DEBUG] HTTP response: 200 (45570 bytes)
+09:00:47.875 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F67%2F08%2Fe0%2F6708e014-c1be-76b1-c520-a6567bf946a2%2F886446867755.jpg%2F3000x3000bb.jpg&size=300
+09:00:47.997 [DEBUG] HTTP response: 200 (49561 bytes)
+09:00:48.006 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F35%2F29%2Fed%2F3529ed55-359e-1a53-11d3-de8724d6ce8f%2F17UM1IM24942.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:49.083 [DEBUG] HTTP response: 200 (39642 bytes)
+09:00:49.097 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F7a%2Fbd%2Fc0%2F7abdc0c7-787f-bfa0-b0b8-a844b125040f%2F111119293129.jpg%2F1423x1414bb.jpg&size=300
+09:00:49.175 [DEBUG] HTTP response: 200 (12103 bytes)
+09:00:49.202 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fa7%2Fa0%2F30%2Fa7a03070-d0de-3558-6c31-d0d0cd2a703d%2F05099909119253.jpg%2F1500x1500bb.jpg&size=300
+09:00:49.306 [DEBUG] HTTP response: 200 (27911 bytes)
+09:00:49.317 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13324%2Fthumb%2F1740816882&size=300
+09:00:49.364 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:49.375 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F06%2F85%2F97%2F068597d7-0074-f60d-ad4d-c8662b2eea30%2F602527814063.jpg%2F1500x1500bb.jpg&size=300
+09:00:49.466 [DEBUG] HTTP response: 200 (52878 bytes)
+09:00:49.479 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F63%2Fd2%2F01%2F63d2015b-58e2-d71f-3080-5a55f88d9a1b%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:49.628 [DEBUG] HTTP response: 200 (39961 bytes)
+09:00:49.641 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6421%2Fthumb%2F1765010946&size=300
+09:00:49.687 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:49.697 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13851%2Fthumb%2F1736454227&size=300
+09:00:49.737 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:49.748 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2Ffe%2F38%2F07%2Ffe380785-acc2-1e96-19ed-60deef894f36%2F20532.jpg%2F3000x3000bb.jpg&size=300
+09:00:49.843 [DEBUG] HTTP response: 200 (29413 bytes)
+09:00:49.855 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F05%2F5e%2F68%2F055e68ef-95d7-2621-d487-f5bade61cd8f%2F196872547214.jpg%2F3000x3000bb.jpg&size=300
+09:00:50.037 [DEBUG] HTTP response: 200 (45051 bytes)
+09:00:50.051 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F1e%2F10%2F85%2F1e108596-a0cd-529d-8a2b-316d2e1886d7%2F19UMGIM42661.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:50.212 [DEBUG] HTTP response: 200 (44311 bytes)
+09:00:50.224 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5248%2Fthumb%2F1764582213&size=300
+09:00:50.273 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.284 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6878%2Fthumb%2F1763976611&size=300
+09:00:50.341 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.351 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F2d%2F7a%2F43%2F2d7a4339-d612-f656-6174-b93876217c99%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:50.518 [DEBUG] HTTP response: 200 (47169 bytes)
+09:00:50.532 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2Fe1%2F07%2F82%2Fe1078266-ec57-449f-430e-e10242215e14%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:50.623 [DEBUG] HTTP response: 200 (38962 bytes)
+09:00:50.636 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7379%2Fthumb%2F1734485904&size=300
+09:00:50.673 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.684 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7377%2Fthumb%2F1734485896&size=300
+09:00:50.727 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.737 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7360%2Fthumb%2F1734485864&size=300
+09:00:50.797 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.808 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7340%2Fthumb%2F1734485811&size=300
+09:00:50.841 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.851 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7356%2Fthumb%2F1734485852&size=300
+09:00:50.913 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.924 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7339%2Fthumb%2F1766655364&size=300
+09:00:50.960 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:50.970 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F54%2Fbd%2Fcd%2F54bdcdc7-6ac8-e555-a641-e5994614edca%2F22UMGIM88224.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:00:51.106 [DEBUG] HTTP response: 200 (31771 bytes)
+09:00:51.114 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F6f%2Fc3%2Fc2%2F6fc3c209-d52d-5bf2-291b-2f878cbe6736%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:51.958 [DEBUG] HTTP response: 200 (12063 bytes)
+09:00:51.971 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic117%2Fv4%2F91%2Fb2%2F6f%2F91b26f61-accf-6bd4-e88c-06a982004515%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:53.094 [DEBUG] HTTP response: 200 (53362 bytes)
+09:00:53.105 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fd5%2Fad%2F05%2Fd5ad0586-8108-8da1-6017-3e915f26ad0b%2F14UMGIM44520.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:00:53.209 [DEBUG] HTTP response: 200 (44850 bytes)
+09:00:53.224 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Ff9%2Fa0%2Fd3%2Ff9a0d373-180f-1a63-444b-e51ee7a7b22d%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:54.118 [DEBUG] HTTP response: 200 (11110 bytes)
+09:00:54.128 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7794%2Fthumb%2F1764582242&size=300
+09:00:54.195 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:54.201 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7776%2Fthumb%2F1763370908&size=300
+09:00:54.311 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:54.322 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F17088%2Fthumb%2F1766776492&size=300
+09:00:54.424 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:54.431 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F1b%2F41%2F2b%2F1b412bef-ba81-3173-6d26-41128c0f366c%2F780163581720.jpg%2F3000x3000bb.jpg&size=300
+09:00:54.771 [DEBUG] HTTP response: 200 (47160 bytes)
+09:00:54.786 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F56%2F4c%2F7a%2F564c7a5a-c812-cc40-5c22-b46c3cbc1b14%2F859783549219_cover.jpg%2F1400x1400bb.jpg&size=300
+09:00:54.925 [DEBUG] HTTP response: 200 (30964 bytes)
+09:00:54.936 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F71%2F16%2F4c%2F71164c98-c3fa-fe29-8c36-aca30f91005f%2F843041037013.jpg%2F3000x3000bb.jpg&size=300
+09:00:55.234 [DEBUG] HTTP response: 200 (51888 bytes)
+09:00:55.260 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2Fbe%2F80%2Fbc%2Fbe80bcbf-be8f-5bb0-6c56-36a330a6ab91%2Fcover_859714354554.jpg%2F3000x3000bb.jpg&size=300
+09:00:56.575 [DEBUG] HTTP response: 200 (53885 bytes)
+09:00:56.589 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7872%2Fthumb%2F1763976612&size=300
+09:00:56.638 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:56.645 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F02%2F19%2F8a%2F02198a0d-f44e-5b2e-b87f-4c6d1761dc38%2Fmzi.vxhecgtb.jpg%2F1425x1425bb.jpg&size=300
+09:00:56.742 [DEBUG] HTTP response: 200 (43221 bytes)
+09:00:56.757 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7918%2Fthumb%2F1764582319&size=300
+09:00:56.803 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:56.810 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2Fce%2Ff6%2Ff1%2Fcef6f1b3-55dd-e642-7e3b-9f6f37f7b7b0%2F081132c3-5a16-4fc0-936f-3e946e786e47.jpg%2F3000x3000bb.jpg&size=300
+09:00:57.474 [DEBUG] HTTP response: 200 (22115 bytes)
+09:00:57.488 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fb9%2Ff2%2F2b%2Fb9f22b26-d962-70de-6d85-674139ded7cc%2F842812190988_Cover.jpg%2F1400x1400bb.jpg&size=300
+09:00:57.590 [DEBUG] HTTP response: 200 (48678 bytes)
+09:00:57.603 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F74%2Fc0%2F04%2F74c004ff-85f5-9912-ed3f-05849cdf77d2%2F1963621789916_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:57.780 [DEBUG] HTTP response: 200 (12988 bytes)
+09:00:57.788 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13217%2Fthumb%2F1754814868&size=300
+09:00:57.833 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:57.846 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F9d%2F7c%2F25%2F9d7c25d7-a760-7bbb-23da-359246da54f0%2F603497819805.jpg%2F4000x4000bb.jpg&size=300
+09:00:58.035 [DEBUG] HTTP response: 200 (44735 bytes)
+09:00:58.048 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2Fae%2Fe0%2F40%2Faee040d7-75be-7b47-4e54-de865bc0d820%2F5057805565994_cover.jpg%2F3000x3000bb.jpg&size=300
+09:00:58.200 [DEBUG] HTTP response: 200 (42432 bytes)
+09:00:58.211 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7974%2Fthumb%2F1765270512&size=300
+09:00:58.255 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:58.268 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F4793%2Fthumb%2F1765270462&size=300
+09:00:58.330 [DEBUG] HTTP response: 404 (0 bytes)
+09:00:58.341 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Ff1%2F27%2F6f%2Ff1276f79-9558-64db-d71f-12f044156a60%2F074646569429.jpg%2F3000x3000bb.jpg&size=300
+09:00:58.508 [DEBUG] HTTP response: 200 (61551 bytes)
+09:00:58.519 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic3%2Fv4%2F6c%2Fdd%2F65%2F6cdd6511-08cd-4a6e-5064-4a1371c53188%2FHyVVs.png%2F1500x1500bb.jpg&size=300
+09:00:58.646 [DEBUG] HTTP response: 200 (53481 bytes)
+09:00:58.662 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic128%2Fv4%2F31%2F5c%2F2c%2F315c2c26-f055-de5a-d52a-e6f663b64a16%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:00:59.429 [DEBUG] HTTP response: 200 (33656 bytes)
+09:00:59.442 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F14%2F3d%2F04%2F143d047e-adca-f876-7174-3abe4ea4146a%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:00.289 [DEBUG] HTTP response: 200 (18364 bytes)
+09:01:00.298 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2F54%2F97%2F2a%2F54972a11-b7ba-75b1-51a3-d0be75077b18%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:01.001 [DEBUG] HTTP response: 200 (23664 bytes)
+09:01:01.015 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fa6%2F7c%2F6e%2Fa67c6eb1-eeb7-974b-7956-23fe79c5bd8e%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:01.782 [DEBUG] HTTP response: 200 (23618 bytes)
+09:01:01.794 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F7b%2Fa5%2F9b%2F7ba59b98-a9ae-04d0-d962-a304785830d7%2F21UM1IM23268.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:01.936 [DEBUG] HTTP response: 200 (50414 bytes)
+09:01:01.947 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F2c%2F41%2Fae%2F2c41ae90-a3ad-f279-fa55-84aa30cd6360%2F14UMGIM16027.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:01:02.062 [DEBUG] HTTP response: 200 (50297 bytes)
+09:01:02.079 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F66%2F12%2F8e%2F66128e8e-10e7-f7a5-44af-dc41c625e579%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:02.807 [DEBUG] HTTP response: 200 (47150 bytes)
+09:01:02.823 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5270%2Fthumb%2F1740509798&size=300
+09:01:02.856 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:02.866 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13302%2Fthumb%2F1762679168&size=300
+09:01:02.902 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:02.909 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic111%2Fv4%2Ff2%2F9c%2F24%2Ff29c244c-b6de-a2c2-0060-e4cc359bc957%2F191061582199.jpg%2F1400x1400bb.jpg&size=300
+09:01:03.018 [DEBUG] HTTP response: 200 (32931 bytes)
+09:01:03.033 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F11%2Fae%2Ff2%2F11aef294-f57c-bab9-c9fc-529162984e62%2F24UMGIM85348.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:03.149 [DEBUG] HTTP response: 200 (37759 bytes)
+09:01:03.164 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2Fe6%2Fc0%2F57%2Fe6c057cb-3457-3372-e70c-f048f733d993%2F859772078614_cover.jpg%2F1400x1400bb.jpg&size=300
+09:01:03.308 [DEBUG] HTTP response: 200 (55593 bytes)
+09:01:03.322 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5085%2Fthumb%2F1759994323&size=300
+09:01:03.375 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:03.383 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Ffd%2F4a%2F77%2Ffd4a77db-0ebc-d043-41a2-f32fa1bb0fb4%2Fdj.qrikkdwj.jpg%2F4000x4000bb.jpg&size=300
+09:01:03.550 [DEBUG] HTTP response: 200 (25421 bytes)
+09:01:03.565 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F92%2Fd7%2F8f%2F92d78fb1-df3d-049e-c81d-7022808b151f%2F19UMGIM02973.rgb.jpg%2F4388x4388bb.jpg&size=300
+09:01:03.740 [DEBUG] HTTP response: 200 (24432 bytes)
+09:01:03.754 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F3f%2F24%2F64%2F3f246431-43ae-3df2-c181-4b13661d2d00%2F19UMGIM90850.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:03.875 [DEBUG] HTTP response: 200 (30239 bytes)
+09:01:03.887 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F9f%2F58%2F7c%2F9f587c97-f0e9-e335-d8e2-60b8e2d62bad%2F19UMGIM90850.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:04.021 [DEBUG] HTTP response: 200 (30239 bytes)
+09:01:04.031 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F2c%2F13%2F18%2F2c131801-00af-58b1-3cc2-13abf4ad5416%2F093624919162.jpg%2F1425x1425bb.jpg&size=300
+09:01:04.113 [DEBUG] HTTP response: 200 (45535 bytes)
+09:01:04.129 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F2c%2F1f%2F07%2F2c1f0792-ae45-c6d9-0963-76f7d47dd804%2Fdj.swpfhwke.jpg%2F1524x1524bb.jpg&size=300
+09:01:04.287 [DEBUG] HTTP response: 200 (66603 bytes)
+09:01:04.304 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F8e%2F71%2Fb6%2F8e71b6fa-d045-9dc0-8f29-4f8b6968ce7c%2F990591684799.png%2F3000x3000bb.jpg&size=300
+09:01:06.080 [DEBUG] HTTP response: 200 (28109 bytes)
+09:01:06.093 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fef%2F57%2F67%2Fef5767ad-28c2-0442-dc2b-4686af8d1053%2F859709206134_cover.jpg%2F1400x1400bb.jpg&size=300
+09:01:06.183 [DEBUG] HTTP response: 200 (28866 bytes)
+09:01:06.192 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F75%2F31%2Fb3%2F7531b386-5e73-123e-f6df-ed7867ebb1b3%2F859717918494_cover.jpg%2F1600x1600bb.jpg&size=300
+09:01:06.346 [DEBUG] HTTP response: 200 (39547 bytes)
+09:01:06.355 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5203%2Fthumb%2F1757926550&size=300
+09:01:06.409 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:06.422 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F15836%2Fthumb%2F1763370918&size=300
+09:01:06.470 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:06.482 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7560%2Fthumb%2F1763370877&size=300
+09:01:06.531 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:06.541 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F07%2F37%2F8e%2F07378ef3-7950-ba76-4280-9acb0e5d032a%2F15UMGIM42534.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:01:06.686 [DEBUG] HTTP response: 200 (33732 bytes)
+09:01:06.696 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5820%2Fthumb%2F1765270474&size=300
+09:01:06.771 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:06.778 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F37%2F03%2F46%2F370346b0-d8dd-e9d6-c377-2e7fc1c303d9%2F055855680495.png%2F3000x3000bb.jpg&size=300
+09:01:08.746 [DEBUG] HTTP response: 200 (26196 bytes)
+09:01:08.761 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5894%2Fthumb%2F1765270475&size=300
+09:01:08.924 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:08.938 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fe5%2F39%2Fe2%2Fe539e2dd-f944-6a7a-28a2-e6957cce93b8%2F30cb1d0f-9f3e-4b43-9414-0a0af36a5c95.jpg%2F1400x1400bb.jpg&size=300
+09:01:09.494 [DEBUG] HTTP response: 200 (35437 bytes)
+09:01:09.508 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fda%2F8b%2F77%2Fda8b7731-6f4f-eacf-5e74-8b23389eefa1%2F20UMGIM03371.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:09.671 [DEBUG] HTTP response: 200 (38489 bytes)
+09:01:09.684 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F7a%2F1c%2F65%2F7a1c6571-34e9-bb77-32be-90c72ba003c0%2F075679920355.jpg%2F1500x1500bb.jpg&size=300
+09:01:09.788 [DEBUG] HTTP response: 200 (39434 bytes)
+09:01:09.798 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fca%2F6a%2Ff2%2Fca6af203-81fe-0477-2c09-3b2d8258a299%2F25UM1IM37531.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:10.551 [DEBUG] HTTP response: 200 (27040 bytes)
+09:01:10.560 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F18%2F4f%2Fe2%2F184fe2ad-1e12-65d7-3bce-ba594b54fd10%2F859753491326_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:11.881 [DEBUG] HTTP response: 200 (42539 bytes)
+09:01:11.898 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F5a%2Fc1%2F5a%2F5ac15a4a-ff40-c2b6-4099-ef08e7ce6bcb%2F075678595929.jpg%2F3600x3600bb.jpg&size=300
+09:01:12.080 [DEBUG] HTTP response: 200 (25123 bytes)
+09:01:12.095 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F15864%2Fthumb%2F1764582343&size=300
+09:01:12.149 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:12.150 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic128%2Fv4%2Fc0%2F7e%2Fb7%2Fc07eb761-9fda-3b3f-3093-30b62dac5fdd%2F00602527999616.rgb.jpg%2F1495x1495bb.jpg&size=300
+09:01:12.423 [DEBUG] HTTP response: 200 (29263 bytes)
+09:01:12.426 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F31%2F63%2Ffe%2F3163fef6-2da3-6a2e-fb81-fb77d73c9ed3%2F00602557392234.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:12.762 [DEBUG] HTTP response: 200 (39270 bytes)
+09:01:12.770 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6187%2Fthumb%2F1764582214&size=300
+09:01:12.814 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:12.822 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13042%2Fthumb%2F1754814868&size=300
+09:01:12.869 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:12.881 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2F92%2F7f%2F5c%2F927f5c6f-e24a-8db5-e165-38d8b9314d8d%2F14UMGIM16041.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:01:13.182 [DEBUG] HTTP response: 200 (44420 bytes)
+09:01:13.190 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6417%2Fthumb%2F1766915936&size=300
+09:01:13.279 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:13.286 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7705%2Fthumb%2F1763976558&size=300
+09:01:13.912 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:13.921 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F4836%2Fthumb%2F1764582245&size=300
+09:01:13.996 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:14.007 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F4906%2Fthumb%2F1742802375&size=300
+09:01:14.136 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:14.141 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F4813%2Fthumb%2F1763370910&size=300
+09:01:14.523 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:14.529 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2Fv4%2Ff1%2Fc9%2F0c%2Ff1c90c7d-10b1-ad96-890a-74360b8a504b%2Fender_dragons_temp_album.jpg%2F2500x2500bb.jpg&size=300
+09:01:15.239 [DEBUG] HTTP response: 200 (46910 bytes)
+09:01:15.252 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F12%2Fce%2Fe1%2F12cee166-97bc-f63c-5677-15415c2475f8%2F6981.jpg%2F3000x3000bb.jpg&size=300
+09:01:18.608 [DEBUG] HTTP response: 200 (39334 bytes)
+09:01:18.623 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13229%2Fthumb%2F1766915936&size=300
+09:01:18.671 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:18.676 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F4c%2F67%2F5f%2F4c675f02-4133-b835-3922-2e9fd96e79b3%2F193436279529_sinnoncoverartjanuary.jpg%2F3000x3000bb.jpg&size=300
+09:01:19.767 [DEBUG] HTTP response: 200 (33896 bytes)
+09:01:19.776 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6412%2Fthumb%2F1755420528&size=300
+09:01:19.937 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:19.946 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6346%2Fthumb%2F1766915937&size=300
+09:01:19.999 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:20.010 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Ff0%2F7a%2F54%2Ff07a54ab-3ebc-6813-e515-86200b8138fc%2Fdj.uthntyfe.jpg%2F1500x1500bb.jpg&size=300
+09:01:20.515 [DEBUG] HTTP response: 200 (37963 bytes)
+09:01:20.523 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fb7%2F86%2F45%2Fb786452a-a723-eaed-8170-cdc261367eb7%2F886443575578.jpg%2F1429x1412bb.jpg&size=300
+09:01:22.208 [DEBUG] HTTP response: 200 (38358 bytes)
+09:01:22.218 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fe3%2F43%2F90%2Fe34390e9-6063-acf9-2f07-7bbeefaef9f2%2F886444485722.jpg%2F3000x3000bb.jpg&size=300
+09:01:22.693 [DEBUG] HTTP response: 200 (50316 bytes)
+09:01:22.706 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic1%2Fv4%2F54%2F87%2F13%2F54871368-4fb8-2f3d-567e-298daa6a1f94%2Fdj.azsnvoqy.jpg%2F1494x1494bb.jpg&size=300
+09:01:22.988 [DEBUG] HTTP response: 200 (47142 bytes)
+09:01:23.003 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F76%2F08%2F65%2F76086567-c0bb-b948-14c4-7b80ec462e2d%2F614223200729.jpg%2F1534x1534bb.jpg&size=300
+09:01:23.399 [DEBUG] HTTP response: 200 (40154 bytes)
+09:01:23.408 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fed%2F45%2F6a%2Fed456a3c-76f4-c7be-6471-f96c6899d412%2F194152617565.png%2F3000x3000bb.jpg&size=300
+09:01:25.096 [DEBUG] HTTP response: 200 (28843 bytes)
+09:01:25.108 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F9e%2Fbb%2Fac%2F9ebbac67-1b11-fee4-4a7c-99e00aeea1ec%2F198704619854_Cover.jpg%2F1400x1400bb.jpg&size=300
+09:01:25.594 [DEBUG] HTTP response: 200 (47489 bytes)
+09:01:25.609 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fa8%2Fa4%2F23%2Fa8a423e8-643b-79d0-81e4-00b3ca683b8c%2F00050087104436.rgb.jpg%2F892x900bb.jpg&size=300
+09:01:26.230 [DEBUG] HTTP response: 200 (61706 bytes)
+09:01:26.240 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2F39%2F95%2F1c%2F39951c14-0ae6-e2ff-f161-3ed2bca1a325%2F00843930010424.rgb.jpg%2F2400x2400bb.jpg&size=300
+09:01:26.624 [DEBUG] HTTP response: 200 (38366 bytes)
+09:01:26.636 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7164%2Fthumb%2F1765270532&size=300
+09:01:26.691 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:26.703 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F9a%2Fae%2F1a%2F9aae1ab9-3509-e50e-a3f6-b026cffa3177%2F075679857217.jpg%2F1425x1425bb.jpg&size=300
+09:01:26.891 [DEBUG] HTTP response: 200 (20872 bytes)
+09:01:26.899 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6779%2Fthumb%2F1764582283&size=300
+09:01:26.947 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:26.957 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2Fc4%2F25%2Fbf%2Fc425bf7c-f3d8-6baf-7397-40868971f77f%2F06UMGIM43473.rgb.jpg%2F1417x1419bb.jpg&size=300
+09:01:27.395 [DEBUG] HTTP response: 200 (49930 bytes)
+09:01:27.411 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fc6%2F35%2F33%2Fc6353341-30ab-16f9-84de-9ec481f1b04b%2F075679607966.jpg%2F3000x3000bb.jpg&size=300
+09:01:27.787 [DEBUG] HTTP response: 200 (30628 bytes)
+09:01:27.795 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fa6%2F91%2Fda%2Fa691dac7-4cb7-82f5-0eda-e37b96f63f55%2F075679610720.jpg%2F1425x1425bb.jpg&size=300
+09:01:28.028 [DEBUG] HTTP response: 200 (23629 bytes)
+09:01:28.039 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5201%2Fthumb%2F1760686201&size=300
+09:01:28.090 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:28.102 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fe2%2F64%2Fd1%2Fe264d18c-2b20-051d-3fc3-68b3424f8cde%2F603497880249.jpg%2F2356x2400bb.jpg&size=300
+09:01:28.558 [DEBUG] HTTP response: 200 (40627 bytes)
+09:01:28.568 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2F72%2Fa9%2F6b%2F72a96b8a-7d8f-b123-cd06-58158ed8b9c7%2F4b83a116-4c13-4efa-91f4-7e3c68e5384f.jpg%2F3000x3000bb.jpg&size=300
+09:01:29.891 [DEBUG] HTTP response: 200 (37969 bytes)
+09:01:29.905 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F10%2F4c%2F21%2F104c21e6-9ef0-4d3a-d1bd-d47167f121e5%2F00601501406300.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:01:30.317 [DEBUG] HTTP response: 200 (43433 bytes)
+09:01:30.326 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic113%2Fv4%2F4f%2F2d%2F13%2F4f2d1362-c78e-73de-3e70-077126ca3c21%2F3fc3787a-fa04-422f-a442-0bad9dee0995.jpg%2F3000x3000bb.jpg&size=300
+09:01:31.568 [DEBUG] HTTP response: 200 (46628 bytes)
+09:01:31.580 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F93%2Ffb%2Fa7%2F93fba7fe-4e0d-cf79-6ad5-d48647a1a261%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:31.746 [DEBUG] HTTP response: 200 (53088 bytes)
+09:01:31.761 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5225%2Fthumb%2F1763370883&size=300
+09:01:31.798 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:31.805 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2Fd3%2Fb3%2Fd4%2Fd3b3d4d8-6587-e9fe-b9b9-42272186da31%2Fcover_4062851080699.jpg%2F3000x3000bb.jpg&size=300
+09:01:31.873 [DEBUG] Giving focus to brls::Button
+09:01:32.286 [DEBUG] Giving focus to brls::Button
+09:01:32.778 [DEBUG] Giving focus to brls::Button
+09:01:32.823 [DEBUG] HTTP response: 200 (31746 bytes)
+09:01:32.833 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5652%2Fthumb%2F1765270475&size=300
+09:01:32.911 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:32.923 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fb4%2F5f%2F70%2Fb45f70a8-b4d4-133e-b01b-3be8ff8b899b%2F075679623485.jpg%2F3000x3000bb.jpg&size=300
+09:01:33.043 [DEBUG] HTTP response: 200 (17165 bytes)
+09:01:33.051 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fc3%2Fd0%2F1c%2Fc3d01c88-73e7-187e-fd62-e1744de979a6%2F21UMGIM09915.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:33.173 [DEBUG] HTTP response: 200 (35235 bytes)
+09:01:33.175 [DEBUG] Giving focus to brls::Button
+09:01:33.186 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5087%2Fthumb%2F1737097679&size=300
+09:01:33.249 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:33.255 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F79%2Fd1%2Fd6%2F79d1d6b5-f54e-96f3-861d-f8a57ce22236%2F4050538304138.jpg%2F1500x1500bb.jpg&size=300
+09:01:33.353 [DEBUG] HTTP response: 200 (45262 bytes)
+09:01:33.367 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F17%2F69%2F09%2F1769094c-9042-9210-d15f-c48e270d13d1%2F859740564316_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:33.525 [DEBUG] HTTP response: 200 (42435 bytes)
+09:01:33.534 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F1c%2F4a%2Fd2%2F1c4ad2bd-efc3-0084-980f-003c01e4cfcd%2F24UMGIM24769.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:33.643 [DEBUG] HTTP response: 200 (47548 bytes)
+09:01:33.655 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5892%2Fthumb%2F1763370919&size=300
+09:01:33.702 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:33.714 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6890%2Fthumb%2F1764582324&size=300
+09:01:33.744 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:33.750 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F16%2Fe5%2Fd0%2F16e5d036-7f8e-586a-8537-22820b7485bd%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:34.741 [DEBUG] HTTP response: 200 (35785 bytes)
+09:01:34.755 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2Fdb%2Fd1%2Fcb%2Fdbd1cb3e-9ca9-f523-cbff-0a7c59536ef9%2F859723006048_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:35.145 [DEBUG] Giving focus to vita_ma::MediaItemCell
+09:01:35.792 [DEBUG] HTTP response: 200 (56104 bytes)
+09:01:35.805 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F15453%2Fthumb%2F1740819387&size=300
+09:01:35.956 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:35.961 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2Fbe%2Fd0%2Fae%2Fbed0ae58-7fd9-3b7d-c0c1-b3f5c61bfa36%2F20036.jpg%2F3000x3000bb.jpg&size=300
+09:01:36.238 [DEBUG] Giving focus to vita_ma::MediaItemCell
+09:01:36.733 [DEBUG] Adding an inputs block token (tokens=1)
+09:01:36.743 [DEBUG] Pushing vita_ma::MediaItemCell to the focus stack
+09:01:36.766 [DEBUG] Hiding vita_ma::MediaDetailView
+09:01:36.772 [DEBUG] push activity to the stack
+09:01:36.781 [DEBUG] Showing vita_ma::MediaDetailView
+09:01:36.898 [DEBUG] HTTP response: 200 (38659 bytes)
+09:01:36.913 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5124%2Fthumb%2F1767347902&size=300
+09:01:36.964 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:36.973 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6127%2Fthumb%2F1764401538&size=300
+09:01:37.023 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:37.036 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7515%2Fthumb%2F1762679262&size=300
+09:01:37.084 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:37.093 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fcc%2Fc8%2F80%2Fccc880b1-f353-2483-131a-2dc12a4fbb2d%2F00602557718584.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:37.210 [DEBUG] HTTP response: 200 (38053 bytes)
+09:01:37.225 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F1e%2Ff5%2F4f%2F1ef54f85-444d-ba4d-0c29-3c1f3d12f078%2F08UMGIM27993.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:37.348 [DEBUG] HTTP response: 200 (26719 bytes)
+09:01:37.359 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic113%2Fv4%2F41%2F66%2F9e%2F41669e3d-7079-ef1e-4d4e-699163dcbbe9%2Fd6c149ea-325e-41f9-8c48-758e9c171bb2.jpg%2F3000x3000bb.jpg&size=300
+09:01:37.430 [DEBUG] Removing an inputs block token (tokens=0)
+09:01:38.035 [DEBUG] HTTP response: 200 (46468 bytes)
+09:01:38.045 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fe1%2Fd8%2Ff8%2Fe1d8f8c9-e540-38ef-9ba1-27a21fb22d48%2F3d54939e-8cfb-4eef-b5d9-e1f0c778ab32.jpg%2F3000x3000bb.jpg&size=300
+09:01:38.851 [DEBUG] HTTP response: 200 (43853 bytes)
+09:01:39.368 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F87%2F19%2F87%2F871987c7-8151-8140-8f64-29b85f214547%2F2580.jpg%2F3000x3000bb.jpg&size=300
+09:01:40.690 [DEBUG] HTTP response: 200 (22710 bytes)
+09:01:40.698 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2Ff9%2Fad%2F9f%2Ff9ad9f75-07a3-69d0-fec8-4b2c7c67fe28%2F22UMGIM83371.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:41.102 [DEBUG] HTTP response: 200 (19920 bytes)
+09:01:41.114 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7950%2Fthumb%2F1763370971&size=300
+09:01:41.642 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:41.649 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F14%2Fe4%2F98%2F14e49846-57a9-dc8d-6fa3-5e03ccf3606c%2Fdj.ljogvxod.jpg%2F1500x1500bb.jpg&size=300
+09:01:41.819 [DEBUG] HTTP response: 200 (46224 bytes)
+09:01:41.833 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2F40%2F02%2F61%2Fmzi.tuqkeirp.jpg%2F1425x1425bb.jpg&size=300
+09:01:41.920 [DEBUG] HTTP response: 200 (35923 bytes)
+09:01:41.929 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2F40%2F02%2F61%2Fmzi.ijmaaqxo.jpg%2F1425x1425bb.jpg&size=300
+09:01:42.018 [DEBUG] HTTP response: 200 (35923 bytes)
+09:01:42.033 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F32%2Fac%2Ff5%2F32acf5b9-82b9-6c24-8fa8-e889be9101fd%2Fartwork.jpg%2F1000x1000bb.jpg&size=300
+09:01:42.538 [DEBUG] HTTP response: 200 (30878 bytes)
+09:01:42.548 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13958%2Fthumb%2F1764582335&size=300
+09:01:42.598 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:42.611 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic123%2Fv4%2Fef%2F51%2Fb3%2Fef51b3bf-b435-63fe-d097-f829d0ecb5ad%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:43.562 [DEBUG] HTTP response: 200 (31037 bytes)
+09:01:43.577 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F82%2F8b%2F7c%2F828b7c14-878e-a071-2ad5-d85b7d479b86%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:43.825 [DEBUG] HTTP response: 200 (43422 bytes)
+09:01:43.834 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5173%2Fthumb%2F1759301266&size=300
+09:01:43.880 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:43.892 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F4d%2Ff0%2F8f%2F4df08f4c-7c70-dbfa-c839-a02788f5a84f%2F198674199950.jpg%2F3000x3000bb.jpg&size=300
+09:01:44.010 [DEBUG] HTTP response: 200 (20658 bytes)
+09:01:44.018 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F83%2Fb2%2F2c%2F83b22c5a-e2ad-3ce6-66ae-4cc77fa041ca%2F190296329036.jpg%2F1600x1600bb.jpg&size=300
+09:01:44.109 [DEBUG] HTTP response: 200 (40283 bytes)
+09:01:44.124 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic122%2Fv4%2Fb2%2F27%2Ff4%2Fb227f473-75fd-f557-17ac-90fb92fc2c49%2F06UMGIM11830.rgb.jpg%2F1427x1408bb.jpg&size=300
+09:01:44.207 [DEBUG] HTTP response: 200 (36824 bytes)
+09:01:44.219 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F66%2Fcf%2F70%2F66cf7012-98ed-b201-21ed-b1ee0e9ad26f%2F19UM1IM00155.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:44.284 [DEBUG] Giving focus to brls::Box
+09:01:44.332 [DEBUG] HTTP response: 200 (41797 bytes)
+09:01:44.342 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic128%2Fv4%2Fb4%2F42%2Fd6%2Fb442d6d6-62c4-2ed5-f36e-4009dfed4bf7%2F192650824843_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:45.468 [DEBUG] HTTP response: 200 (35616 bytes)
+09:01:45.483 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2Fe6%2F8a%2F68%2Fe68a688e-129e-cb9d-938f-bc3ee37059ae%2F075679930910.jpg%2F1425x1425bb.jpg&size=300
+09:01:45.960 [DEBUG] Giving focus to brls::Box
+09:01:46.075 [DEBUG] HTTP response: 200 (41908 bytes)
+09:01:46.091 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F08%2F40%2F42%2F08404205-b30b-7e3a-eec1-b05322ba01f9%2F4050538693584.jpg%2F1500x1500bb.jpg&size=300
+09:01:46.238 [DEBUG] HTTP response: 200 (46472 bytes)
+09:01:46.249 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F92%2Ff7%2F88%2F92f7884b-d115-5d5f-1eb5-85128af2d58f%2F081227882365.png%2F1500x1500bb.jpg&size=300
+09:01:46.340 [DEBUG] Giving focus to brls::Box
+09:01:46.371 [DEBUG] HTTP response: 200 (41825 bytes)
+09:01:46.380 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Fc2%2F23%2F0b%2Fc2230b5f-e753-e9b0-c032-b9ea0713450f%2F016998513262.png%2F1500x1500bb.jpg&size=300
+09:01:46.473 [DEBUG] HTTP response: 200 (41825 bytes)
+09:01:46.489 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13362%2Fthumb%2F1764840257&size=300
+09:01:46.603 [DEBUG] Giving focus to brls::Box
+09:01:46.838 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:46.851 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F2a%2Fb8%2Fae%2F2ab8ae50-e6b7-6320-e131-b0ee4e739486%2Fcover_4062851141857.jpg%2F3000x3000bb.jpg&size=300
+09:01:47.085 [DEBUG] Giving focus to brls::Box
+09:01:47.190 [DEBUG] Giving focus to brls::Box
+09:01:47.290 [DEBUG] Giving focus to brls::Box
+09:01:47.391 [DEBUG] Giving focus to brls::Box
+09:01:47.412 [DEBUG] Giving focus to brls::Box
+09:01:47.436 [DEBUG] Giving focus to brls::Box
+09:01:47.452 [DEBUG] HTTP response: 200 (41801 bytes)
+09:01:47.455 [DEBUG] Giving focus to brls::Box
+09:01:47.465 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FFeatures125%2Fv4%2F60%2F90%2Fad%2F6090adc3-8863-861d-afcc-23c55c6fe5da%2Fdj.vmtulfyu.jpg%2F1426x1426bb.jpg&size=300
+09:01:47.554 [DEBUG] HTTP response: 200 (29814 bytes)
+09:01:47.567 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2F19%2F4a%2F62%2F194a62a4-804b-6f08-5cfc-77e7026485ba%2F192650471504_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:47.721 [DEBUG] Giving focus to brls::Box
+09:01:47.973 [DEBUG] Giving focus to brls::Box
+09:01:47.995 [DEBUG] Giving focus to brls::Box
+09:01:48.031 [DEBUG] Giving focus to brls::Box
+09:01:48.048 [DEBUG] Giving focus to brls::Box
+09:01:48.372 [DEBUG] HTTP response: 200 (39164 bytes)
+09:01:48.388 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F76%2Fff%2F5e%2F76ff5ee0-7ab4-2ac2-2598-486a9ccc06e1%2F886444516877.jpg%2F1424x1415bb.jpg&size=300
+09:01:48.478 [DEBUG] HTTP response: 200 (42724 bytes)
+09:01:48.491 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F4f%2F7f%2F97%2F4f7f97cb-6b27-1dbd-f726-645cbf2c59f8%2F886446140391.jpg%2F1500x1500bb.jpg&size=300
+09:01:48.579 [DEBUG] HTTP response: 200 (40394 bytes)
+09:01:48.589 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F1a%2F7e%2F42%2F1a7e428a-4449-b613-46c3-5fa75d83047a%2F00602567702023.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:48.713 [DEBUG] HTTP response: 200 (61284 bytes)
+09:01:48.730 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5170%2Fthumb%2F1765270437&size=300
+09:01:48.769 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:48.779 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F50%2Fc2%2Fcc%2F50c2cc95-3658-9417-0d4b-831abde44ba1%2F24UM1IM28978.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:48.883 [DEBUG] HTTP response: 200 (25968 bytes)
+09:01:48.892 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2Fc5%2F9d%2F92%2Fc59d92c3-4361-0544-829c-e774d2be4ab7%2F192914871279.jpg%2F1400x1400bb.jpg&size=300
+09:01:49.104 [DEBUG] Giving focus to brls::Box
+09:01:49.211 [DEBUG] HTTP response: 200 (55914 bytes)
+09:01:49.222 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F94%2F66%2Fc1%2F9466c146-e530-8972-89a7-abe2c66680ba%2F193436239882_01_img001.jpg%2F3000x3000bb.jpg&size=300
+09:01:49.596 [DEBUG] Giving focus to brls::Box
+09:01:49.862 [DEBUG] Giving focus to brls::Box
+09:01:49.976 [DEBUG] Giving focus to brls::Box
+09:01:50.011 [DEBUG] HTTP response: 200 (41396 bytes)
+09:01:50.025 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5167%2Fthumb%2F1752908846&size=300
+09:01:50.076 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:50.088 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F46%2F9d%2F39%2F469d39a4-6492-31b1-64e3-122cd9bd98a5%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:50.258 [DEBUG] Giving focus to brls::Box
+09:01:50.361 [DEBUG] Giving focus to brls::Box
+09:01:50.384 [DEBUG] Giving focus to brls::Box
+09:01:50.402 [DEBUG] Giving focus to brls::Box
+09:01:50.423 [DEBUG] Giving focus to brls::Box
+09:01:50.445 [DEBUG] Giving focus to brls::Box
+09:01:50.464 [DEBUG] Giving focus to brls::Box
+09:01:50.478 [DEBUG] Giving focus to brls::Box
+09:01:51.035 [DEBUG] HTTP response: 200 (39426 bytes)
+09:01:51.048 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F7f%2F6e%2Fa0%2F7f6ea0ee-8b8f-9f9d-eb6e-9fa8b45cdc6b%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:51.290 [DEBUG] Giving focus to brls::Box
+09:01:51.562 [DEBUG] Giving focus to brls::Box
+09:01:51.596 [DEBUG] Giving focus to brls::Box
+09:01:51.850 [DEBUG] HTTP response: 200 (12583 bytes)
+09:01:51.861 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F41%2Fa1%2Fb8%2F41a1b824-62b8-0d2b-90c8-ca4d1635f6a5%2F191079552122_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:53.017 [DEBUG] HTTP response: 200 (59886 bytes)
+09:01:53.028 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2Fb4%2Fed%2Fa6%2Fb4eda6b4-4cfb-1f85-d077-da4ec513fe61%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:53.141 [DEBUG] HTTP response: 200 (39816 bytes)
+09:01:53.156 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F8c%2F32%2F78%2F8c327836-f69c-a8aa-79f1-2fa65f1fa9ab%2F06UMGIM01288.rgb.jpg%2F1000x1000bb.jpg&size=300
+09:01:53.262 [DEBUG] HTTP response: 200 (54647 bytes)
+09:01:53.277 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F7617%2Fthumb%2F1763976618&size=300
+09:01:53.280 [DEBUG] Giving focus to brls::Box
+09:01:53.333 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:53.346 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F8070%2Fthumb%2F1764582236&size=300
+09:01:53.426 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:53.436 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F1d%2Fda%2F9e%2F1dda9e42-4856-110f-4d0f-41017cd5b986%2F886447325964.jpg%2F3000x3000bb.jpg&size=300
+09:01:53.615 [DEBUG] HTTP response: 200 (44363 bytes)
+09:01:53.625 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F5723%2Fthumb%2F1764582263&size=300
+09:01:53.670 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:53.682 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F16920%2Fthumb%2F1764562211&size=300
+09:01:53.734 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:53.747 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F3c%2F96%2Fb3%2F3c96b3cb-59c0-9641-cfad-a33346ab87f9%2F24UMGIM83177.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:53.787 [DEBUG] Giving focus to brls::Box
+09:01:53.842 [DEBUG] HTTP response: 200 (33518 bytes)
+09:01:53.857 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic221%2Fv4%2F9d%2Fb8%2F7c%2F9db87c53-dac3-9e6a-6063-2437588d17d5%2F08PNDIM05233.rgb.jpg%2F1415x1415bb.jpg&size=300
+09:01:53.970 [DEBUG] HTTP response: 200 (46016 bytes)
+09:01:53.985 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2Fb4%2F0c%2F98%2Fmzi.vhowcacb.jpg%2F1425x1425bb.jpg&size=300
+09:01:54.082 [DEBUG] HTTP response: 200 (33658 bytes)
+09:01:54.094 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fc6%2F8b%2F0b%2Fc68b0b2d-de10-262a-7b2a-4413a453da67%2F075679877116.jpg%2F1425x1425bb.jpg&size=300
+09:01:54.210 [DEBUG] HTTP response: 200 (55071 bytes)
+09:01:54.221 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F3a%2Ffe%2Fc6%2F3afec6bf-af6b-e625-e2fa-5b4ae0d820fd%2F075679865519.jpg%2F1425x1425bb.jpg&size=300
+09:01:54.323 [DEBUG] HTTP response: 200 (57348 bytes)
+09:01:54.333 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2F62%2Ff4%2F8e%2F62f48e81-31f6-2991-9955-8f00120382d3%2F20UMGIM67906.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:54.774 [DEBUG] HTTP response: 200 (32093 bytes)
+09:01:54.789 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic114%2Fv4%2Fea%2F1f%2F9f%2Fea1f9f2b-458e-e097-7d51-395a224db2aa%2F859731326343_cover.jpg%2F1600x1600bb.jpg&size=300
+09:01:54.898 [DEBUG] HTTP response: 200 (49046 bytes)
+09:01:54.914 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13272%2Fthumb%2F1736453478&size=300
+09:01:54.956 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:54.967 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic116%2Fv4%2F50%2F5d%2Fae%2F505dae71-627d-cc12-5cdf-344e50056fc6%2F5054197879388.jpg%2F3000x3000bb.jpg&size=300
+09:01:55.453 [DEBUG] HTTP response: 200 (28222 bytes)
+09:01:55.466 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic%2F5a%2Fd6%2F3c%2Fmzi.gkdvgkge.jpg%2F600x600bb.jpg&size=300
+09:01:55.647 [DEBUG] HTTP response: 200 (35092 bytes)
+09:01:55.657 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2Ff1%2F44%2F91%2Ff1449169-1efb-3bfc-73f4-bf06826adc1b%2F24UM1IM09526.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:55.723 [DEBUG] Giving focus to brls::Box
+09:01:56.053 [DEBUG] HTTP response: 200 (42704 bytes)
+09:01:56.066 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F13855%2Fthumb%2F1736454165&size=300
+09:01:56.117 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:56.126 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2Fb7%2Fbd%2F65%2Fb7bd65cd-bc46-bdde-0c73-82e0c0a779de%2Fartwork.jpg%2F3000x3000bb.jpg&size=300
+09:01:56.191 [DEBUG] Giving focus to brls::Box
+09:01:56.660 [ERROR] Cannot set texture: 0
+09:01:56.690 [ERROR] Cannot set texture: 0
+09:01:56.703 [ERROR] Cannot set texture: 0
+09:01:56.713 [ERROR] Cannot set texture: 0
+09:01:56.727 [ERROR] Cannot set texture: 0
+09:01:56.736 [ERROR] Cannot set texture: 0
+09:01:56.865 [DEBUG] HTTP response: 200 (15461 bytes)
+09:01:56.874 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic112%2Fv4%2F21%2F64%2F69%2F2164692e-27d6-7c25-ef78-749746aa74b4%2F19763.jpg%2F3000x3000bb.jpg&size=300
+09:01:56.974 [DEBUG] Adding an inputs block token (tokens=1)
+09:01:56.987 [DEBUG] Pushing brls::Box to the focus stack
+09:01:57.006 [DEBUG] Giving focus to brls::Button
+09:01:57.017 [DEBUG] HTTP response: 200 (41290 bytes)
+09:01:57.031 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F6091%2Fthumb%2F1766915939&size=300
+09:01:57.049 [DEBUG] Hiding brls::Dialog
+09:01:57.050 [DEBUG] push activity to the stack
+09:01:57.050 [DEBUG] Showing brls::Dialog
+09:01:57.083 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:57.084 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic124%2Fv4%2F3e%2F0e%2F1f%2F3e0e1fe7-91ba-536a-5c56-6a6526aab488%2F00888072351684.rgb.jpg%2F1500x1500bb.jpg&size=300
+09:01:57.196 [DEBUG] HTTP response: 200 (44093 bytes)
+09:01:57.206 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic118%2Fv4%2Fdc%2F73%2F95%2Fdc739503-c59f-6ff4-67cb-de8889df5481%2F075679877109.jpg%2F1425x1425bb.jpg&size=300
+09:01:57.323 [DEBUG] HTTP response: 200 (27920 bytes)
+09:01:57.332 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F04%2F69%2F85%2F0469856e-f31b-bdac-a934-f67cd18da233%2Fmzi.acykoblo.jpg%2F600x600bb.jpg&size=300
+09:01:57.417 [DEBUG] HTTP response: 200 (49816 bytes)
+09:01:57.429 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2Fbd%2F16%2F12%2Fbd161229-f5c7-d21d-caed-ed9302d52168%2F19UMGIM38391.rgb.jpg%2F3000x3000bb.jpg&size=300
+09:01:57.559 [DEBUG] Removing an inputs block token (tokens=0)
+09:01:57.691 [DEBUG] HTTP response: 200 (36185 bytes)
+09:01:57.705 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic211%2Fv4%2F96%2F0c%2F65%2F960c654e-685f-5a5d-cb49-2d6b9f133233%2F810129973600.jpg%2F1400x1400bb.jpg&size=300
+09:01:57.786 [DEBUG] HTTP response: 200 (33035 bytes)
+09:01:57.794 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic125%2Fv4%2F30%2F35%2F72%2F303572da-6ff9-5938-7705-aae04243b635%2F193872871684_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:58.779 [DEBUG] Adding an inputs block token (tokens=1)
+09:01:58.787 [DEBUG] Hiding vita_ma::MediaDetailView
+09:01:58.796 [DEBUG] Showing vita_ma::MediaDetailView
+09:01:58.806 [DEBUG] Giving focus to brls::Box, and removing it from the focus stack
+09:01:58.817 [DEBUG] Giving focus to brls::Box
+09:01:58.874 [DEBUG] Hiding brls::Dialog
+09:01:58.879 [DEBUG] HTTP response: 200 (41499 bytes)
+09:01:58.884 [DEBUG] PlayerActivity created for media: 
+09:01:58.893 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=%2Flibrary%2Fmetadata%2F8254%2Fthumb%2F1764582204&size=300
+09:01:58.896 [INFO] MusicQueue: Set queue with 1 tracks, starting at 0
+09:01:58.912 [INFO] PlayerActivity created with queue of 1 tracks, starting at 0
+09:01:58.938 [DEBUG] HTTP response: 404 (0 bytes)
+09:01:58.949 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic126%2Fv4%2F9f%2F82%2F4f%2F9f824f7b-2936-832e-2cf4-ae690634cf82%2F195729159082_cover.jpg%2F3000x3000bb.jpg&size=300
+09:01:58.969 [DEBUG] Adding an inputs block token (tokens=2)
+09:01:58.979 [DEBUG] Pushing brls::Box to the focus stack
+09:01:59.033 [DEBUG] HTTP response: 200 (33664 bytes)
+09:01:59.044 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FFeatures125%2Fv4%2Fea%2Fa7%2F76%2Feaa77690-bb3d-5766-4333-5fead6d05109%2Fdj.croicmdg.jpg%2F1425x1425bb.jpg&size=300
+09:01:59.133 [DEBUG] HTTP response: 200 (23602 bytes)
+09:01:59.147 [DEBUG] HTTP GET http://192.168.1.28:8095/imageproxy?path=https%3A%2F%2Fis1-ssl.mzstatic.com%2Fimage%2Fthumb%2FMusic115%2Fv4%2F6d%2F6c%2F94%2F6d6c94b1-dc63-df9b-40b1-f9732e463d4c%2F190295403003.jpg%2F4000x4000bb.jpg&size=300
+09:01:59.265 [DEBUG] PlayerActivity content available
+09:01:59.335 [INFO] PlayerActivity: Loading track from queue: Ed Sheeran - Eraser
+09:01:59.365 [INFO] ImageLoader: Paused - new thumbnail loads disabled
+09:01:59.375 [INFO] ImageLoader: Resumed - thumbnail loads re-enabled
+09:01:59.380 [INFO] ImageLoader: Paused - new thumbnail loads disabled
