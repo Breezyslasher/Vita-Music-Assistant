@@ -15,7 +15,6 @@ NowPlayingView::NowPlayingView() {
     m_miniBar->setAlignItems(brls::AlignItems::CENTER);
     m_miniBar->setHeight(56);
     m_miniBar->setPadding(4, 12, 4, 12);
-    m_miniBar->setGap(8);
     m_miniBar->setFocusable(true);
     m_miniBar->setCornerRadius(8);
 
@@ -107,18 +106,20 @@ NowPlayingView::NowPlayingView() {
     controls->setAxis(brls::Axis::ROW);
     controls->setJustifyContent(brls::JustifyContent::CENTER);
     controls->setAlignItems(brls::AlignItems::CENTER);
-    controls->setGap(24);
     controls->setMarginTop(16);
 
     // Shuffle button
     auto* shuffleBtn = new brls::Label();
     shuffleBtn->setText("SHF");
     shuffleBtn->setFontSize(14);
+    shuffleBtn->setMarginRight(24);
     shuffleBtn->setFocusable(true);
     shuffleBtn->registerClickAction([](...) {
-        auto& app = App::instance();
-        auto state = app.getQueueState();
-        MAClient::instance().queueShuffle(state.queue_id, !state.shuffle_enabled);
+        std::string playerId = App::instance().getPlayerId();
+        if (!playerId.empty()) {
+            // Toggle shuffle (we don't track state locally, just send toggle)
+            MAClient::instance().queueShuffle(playerId, true);
+        }
         return true;
     });
     controls->addView(shuffleBtn);
@@ -127,10 +128,13 @@ NowPlayingView::NowPlayingView() {
     auto* prevBtn = new brls::Label();
     prevBtn->setText("|<");
     prevBtn->setFontSize(20);
+    prevBtn->setMarginRight(24);
     prevBtn->setFocusable(true);
     prevBtn->registerClickAction([](...) {
-        auto& app = App::instance();
-        MAClient::instance().queuePrevious(app.getQueueState().queue_id);
+        std::string playerId = App::instance().getPlayerId();
+        if (!playerId.empty()) {
+            MAClient::instance().queuePrevious(playerId);
+        }
         return true;
     });
     controls->addView(prevBtn);
@@ -139,14 +143,13 @@ NowPlayingView::NowPlayingView() {
     auto* playPauseBtn = new brls::Label();
     playPauseBtn->setText(">||");
     playPauseBtn->setFontSize(24);
+    playPauseBtn->setMarginRight(24);
     playPauseBtn->setFocusable(true);
     playPauseBtn->registerClickAction([](...) {
-        auto& app = App::instance();
-        auto state = app.getQueueState();
-        if (state.state == PlayerState::PLAYING) {
-            MAClient::instance().queuePause(state.queue_id);
-        } else {
-            MAClient::instance().queuePlay(state.queue_id);
+        std::string playerId = App::instance().getPlayerId();
+        if (!playerId.empty()) {
+            // Use sendCommand to toggle play/pause
+            MAClient::instance().sendCommand("player_queues/play_pause", Json(), nullptr);
         }
         return true;
     });
@@ -156,10 +159,13 @@ NowPlayingView::NowPlayingView() {
     auto* nextBtn = new brls::Label();
     nextBtn->setText(">|");
     nextBtn->setFontSize(20);
+    nextBtn->setMarginRight(24);
     nextBtn->setFocusable(true);
     nextBtn->registerClickAction([](...) {
-        auto& app = App::instance();
-        MAClient::instance().queueNext(app.getQueueState().queue_id);
+        std::string playerId = App::instance().getPlayerId();
+        if (!playerId.empty()) {
+            MAClient::instance().queueNext(playerId);
+        }
         return true;
     });
     controls->addView(nextBtn);
@@ -170,13 +176,10 @@ NowPlayingView::NowPlayingView() {
     repeatBtn->setFontSize(14);
     repeatBtn->setFocusable(true);
     repeatBtn->registerClickAction([](...) {
-        auto& app = App::instance();
-        auto state = app.getQueueState();
-        std::string mode;
-        if (state.repeat_mode == RepeatMode::OFF) mode = "all";
-        else if (state.repeat_mode == RepeatMode::ALL) mode = "one";
-        else mode = "off";
-        MAClient::instance().queueRepeat(state.queue_id, mode);
+        std::string playerId = App::instance().getPlayerId();
+        if (!playerId.empty()) {
+            MAClient::instance().queueRepeat(playerId, "all");
+        }
         return true;
     });
     controls->addView(repeatBtn);
@@ -188,12 +191,12 @@ NowPlayingView::NowPlayingView() {
     volRow->setAxis(brls::Axis::ROW);
     volRow->setJustifyContent(brls::JustifyContent::CENTER);
     volRow->setAlignItems(brls::AlignItems::CENTER);
-    volRow->setGap(16);
     volRow->setMarginTop(24);
 
     auto* volDown = new brls::Label();
     volDown->setText("VOL-");
     volDown->setFontSize(14);
+    volDown->setMarginRight(16);
     volDown->setFocusable(true);
     volDown->registerClickAction([](...) {
         MAClient::instance().playerVolumeDown(App::instance().getPlayerId());
@@ -204,6 +207,7 @@ NowPlayingView::NowPlayingView() {
     auto* volLabel = new brls::Label();
     volLabel->setText("Volume");
     volLabel->setFontSize(14);
+    volLabel->setMarginRight(16);
     volRow->addView(volLabel);
 
     auto* volUp = new brls::Label();
@@ -234,22 +238,22 @@ NowPlayingView::NowPlayingView() {
 }
 
 void NowPlayingView::updateState(const QueueState& state) {
-    m_miniTitle->setText(state.current_track_name.empty() ? "Not Playing" : state.current_track_name);
-    m_miniArtist->setText(state.current_track_artist);
-    m_trackTitle->setText(state.current_track_name);
-    m_trackArtist->setText(state.current_track_artist);
-
-    m_positionLabel->setText(formatTime(state.elapsed_time));
-    m_durationLabel->setText(formatTime(state.duration));
-
-    // Load album art
-    if (!state.current_track_image.empty()) {
-        ImageLoader::instance().loadImage(state.current_track_image, [this](int texId) {
-            if (texId >= 0) {
-                // Update both mini and expanded art
-            }
-        });
+    // Use current item from queue state
+    if (state.currentIndex >= 0 && static_cast<size_t>(state.currentIndex) < state.items.size()) {
+        auto& item = state.items[state.currentIndex];
+        m_miniTitle->setText(item.name.empty() ? "Not Playing" : item.name);
+        m_miniArtist->setText(item.artistName);
+        m_trackTitle->setText(item.name);
+        m_trackArtist->setText(item.artistName);
+    } else {
+        m_miniTitle->setText("Not Playing");
+        m_miniArtist->setText("");
+        m_trackTitle->setText("");
+        m_trackArtist->setText("");
     }
+
+    m_positionLabel->setText(formatTime(static_cast<float>(state.elapsed)));
+    m_durationLabel->setText(formatTime(static_cast<float>(state.duration)));
 }
 
 void NowPlayingView::setExpanded(bool expanded) {

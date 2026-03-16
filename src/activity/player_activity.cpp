@@ -2101,8 +2101,7 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
             break;
 
         case TrackSelectMode::VIDEO:
-            player.setVideoTrack(trackId);
-            player.showOSD("Video track " + std::to_string(trackId), 1.5);
+            // Video track selection not applicable for audio-only player
             break;
 
         default:
