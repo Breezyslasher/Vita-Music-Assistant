@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Recycling Grid implementation
+ * Vita Music Assistant - Recycling Grid implementation
  * Infinite scroll: automatically fetches next page when user navigates
  * to the last row. Server-side pagination keeps memory low.
  */
@@ -8,7 +8,7 @@
 #include "view/media_item_cell.hpp"
 #include "view/media_detail_view.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 RecyclingGrid::RecyclingGrid() {
     this->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
@@ -24,13 +24,13 @@ RecyclingGrid::RecyclingGrid() {
     m_visibleRows = 3;
 }
 
-void RecyclingGrid::setDataSource(const std::vector<MediaItem>& items) {
+void RecyclingGrid::setDataSource(const std::vector<MusicItem>& items) {
     m_items = items;
     m_loading = false;
     rebuildGrid();
 }
 
-void RecyclingGrid::appendItems(const std::vector<MediaItem>& newItems) {
+void RecyclingGrid::appendItems(const std::vector<MusicItem>& newItems) {
     if (newItems.empty()) {
         m_loading = false;
         return;
@@ -58,11 +58,11 @@ void RecyclingGrid::appendItems(const std::vector<MediaItem>& newItems) {
     m_loading = false;
 }
 
-void RecyclingGrid::setOnItemSelected(std::function<void(const MediaItem&)> callback) {
+void RecyclingGrid::setOnItemSelected(std::function<void(const MusicItem&)> callback) {
     m_onItemSelected = callback;
 }
 
-void RecyclingGrid::setOnItemStartAction(std::function<void(const MediaItem&)> callback) {
+void RecyclingGrid::setOnItemStartAction(std::function<void(const MusicItem&)> callback) {
     m_onItemStartAction = callback;
 }
 
@@ -113,8 +113,8 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
     cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
 
     // Register START button action for album items
-    if (m_items[index].mediaType == MediaType::MUSIC_ALBUM && m_onItemStartAction) {
-        MediaItem capturedItem = m_items[index];
+    if (m_items[index].mediaType == MediaType::ALBUM && m_onItemStartAction) {
+        MusicItem capturedItem = m_items[index];
         cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
             [this, capturedItem](brls::View* view) {
                 if (m_onItemStartAction) {
@@ -124,39 +124,9 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
             });
     }
 
-    // Register START button action for movies
-    if (m_items[index].mediaType == MediaType::MOVIE) {
-        MediaItem capturedItem = m_items[index];
-        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-            [capturedItem](brls::View* view) {
-                MediaDetailView::showMovieContextMenuStatic(capturedItem);
-                return true;
-            });
-    }
-
-    // Register START button action for TV shows
-    if (m_items[index].mediaType == MediaType::SHOW) {
-        MediaItem capturedItem = m_items[index];
-        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-            [capturedItem](brls::View* view) {
-                MediaDetailView::showShowContextMenuStatic(capturedItem);
-                return true;
-            });
-    }
-
-    // Register START button action for seasons
-    if (m_items[index].mediaType == MediaType::SEASON) {
-        MediaItem capturedItem = m_items[index];
-        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-            [capturedItem](brls::View* view) {
-                MediaDetailView::showSeasonContextMenuStatic(capturedItem);
-                return true;
-            });
-    }
-
     // Register START button action for artists
-    if (m_items[index].mediaType == MediaType::MUSIC_ARTIST) {
-        MediaItem capturedItem = m_items[index];
+    if (m_items[index].mediaType == MediaType::ARTIST) {
+        MusicItem capturedItem = m_items[index];
         cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
             [capturedItem](brls::View* view) {
                 MediaDetailView::showArtistContextMenuStatic(capturedItem);
@@ -165,8 +135,8 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
     }
 
     // Register START button action for playlists
-    if (m_items[index].type == "playlist" && m_onItemStartAction) {
-        MediaItem capturedItem = m_items[index];
+    if (m_items[index].mediaType == MediaType::PLAYLIST && m_onItemStartAction) {
+        MusicItem capturedItem = m_items[index];
         cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
             [this, capturedItem](brls::View* view) {
                 if (m_onItemStartAction) {
@@ -210,4 +180,4 @@ brls::View* RecyclingGrid::create() {
     return new RecyclingGrid();
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

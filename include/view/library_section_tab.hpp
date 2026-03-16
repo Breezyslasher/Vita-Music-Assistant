@@ -1,7 +1,7 @@
 /**
- * VitaPlex - Library Section Tab
- * Shows content for a single library section (for sidebar mode)
- * Collections, categories (genres) appear as browsable content within the tab
+ * Vita Music Assistant - Library Section Tab
+ * Shows content for a single music library section (for sidebar mode)
+ * Playlists appear as browsable content within the tab
  */
 
 #pragma once
@@ -9,18 +9,16 @@
 #include <borealis.hpp>
 #include <memory>
 #include <vector>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 // View mode for the library section
 enum class LibraryViewMode {
     ALL_ITEMS,      // Show all items in the library
-    COLLECTIONS,    // Show collections as browsable items
-    CATEGORIES,     // Show categories/genres as browsable items
-    PLAYLISTS,      // Show playlists (music sections only)
-    FILTERED        // Showing items filtered by collection or category
+    PLAYLISTS,      // Show playlists
+    FILTERED        // Showing items filtered by selection
 };
 
 class LibrarySectionTab : public brls::Box {
@@ -33,21 +31,15 @@ public:
 
 private:
     void loadContent();
-    void loadCollections();
-    void loadGenres();
     void loadPlaylists();
     void showAllItems();
-    void showCollections();
-    void showCategories();
     void showPlaylists();
-    void onItemSelected(const MediaItem& item);
-    void onCollectionSelected(const MediaItem& collection);
-    void onGenreSelected(const GenreItem& genre);
-    void onPlaylistSelected(const Playlist& playlist);
-    void showPlaylistContextMenu(const Playlist& playlist);
-    void showPlaylistOptionsDialog(const Playlist& playlist);
+    void onItemSelected(const MusicItem& item);
+    void onPlaylistSelected(const MusicItem& playlist);
+    void showPlaylistContextMenu(const MusicItem& playlist);
+    void showPlaylistOptionsDialog(const MusicItem& playlist);
     void playPlaylistWithQueue(const std::string& playlistId, int startIndex);
-    void showPlaylistTrackList(std::vector<MediaItem>&& tracks, const std::string& playlistTitle, const std::string& playlistId);
+    void showPlaylistTrackList(std::vector<MusicItem>&& tracks, const std::string& playlistTitle, const std::string& playlistId);
     void appendTrackListPage();
     void performPlaylistTrackAction(size_t trackIndex);
     void updateViewModeButtons();
@@ -58,15 +50,13 @@ private:
 
     std::string m_sectionKey;
     std::string m_title;
-    std::string m_sectionType;  // "movie", "show", "artist"
+    std::string m_sectionType;  // "artist", "album", "track", "playlist"
 
     brls::Label* m_titleLabel = nullptr;
 
     // View mode selector buttons
     brls::Box* m_viewModeBox = nullptr;
     brls::Button* m_allBtn = nullptr;
-    brls::Button* m_collectionsBtn = nullptr;
-    brls::Button* m_categoriesBtn = nullptr;
     brls::Button* m_playlistsBtn = nullptr;
     brls::Button* m_backBtn = nullptr;  // Back button when in filtered view
 
@@ -84,13 +74,11 @@ private:
     static constexpr size_t PAGE_SIZE = 60;
 
     // Data
-    std::vector<MediaItem> m_items;
-    std::vector<MediaItem> m_collections;
-    std::vector<GenreItem> m_genres;
-    std::vector<Playlist> m_playlists;
+    std::vector<MusicItem> m_items;
+    std::vector<MusicItem> m_playlists;
 
     // Current playlist track list (stored as member to avoid per-row copies)
-    std::vector<MediaItem> m_playlistTracks;
+    std::vector<MusicItem> m_playlistTracks;
     std::string m_currentPlaylistId;
     size_t m_trackListRendered = 0;  // How many track rows rendered so far
     brls::Button* m_trackListLoadMoreBtn = nullptr;
@@ -98,10 +86,8 @@ private:
     static constexpr size_t TRACK_LIST_PAGE_SIZE = 50;
 
     LibraryViewMode m_viewMode = LibraryViewMode::ALL_ITEMS;
-    std::string m_filterTitle;  // Title of current filter (collection/genre name)
+    std::string m_filterTitle;  // Title of current filter
     bool m_loaded = false;
-    bool m_collectionsLoaded = false;
-    bool m_genresLoaded = false;
     bool m_playlistsLoaded = false;
 
     // Shared pointer to track if this object is still alive
@@ -109,4 +95,4 @@ private:
     std::shared_ptr<bool> m_alive;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

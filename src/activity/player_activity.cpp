@@ -1,16 +1,15 @@
 /**
- * VitaPlex - Player Activity implementation
+ * Vita Music Assistant - Player Activity implementation
  */
 
 #include "activity/player_activity.hpp"
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
-#include "app/downloads_manager.hpp"
+#include "app/ma_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
-#include "view/video_view.hpp"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -20,7 +19,7 @@
 #include <psp2/power.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Base temp file path for streaming audio (MPV's HTTP handling crashes on Vita)
 // Extension will be added dynamically based on the actual file type
@@ -31,22 +30,9 @@ PlayerActivity::PlayerActivity(const std::string& mediaKey)
     brls::Logger::debug("PlayerActivity created for media: {}", mediaKey);
 }
 
-PlayerActivity::PlayerActivity(const std::string& mediaKey, bool isLocalFile)
-    : m_mediaKey(mediaKey), m_isLocalFile(isLocalFile) {
-    brls::Logger::debug("PlayerActivity created for {} media: {}",
-                       isLocalFile ? "local" : "remote", mediaKey);
-}
-
-PlayerActivity* PlayerActivity::createForDirectFile(const std::string& filePath) {
-    PlayerActivity* activity = new PlayerActivity("", false);
-    activity->m_isDirectFile = true;
-    activity->m_directFilePath = filePath;
-    brls::Logger::debug("PlayerActivity created for direct file: {}", filePath);
-    return activity;
-}
 
 PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, const std::string& title) {
-    PlayerActivity* activity = new PlayerActivity("", false);
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isDirectFile = true;  // Use direct file path for stream URLs too
     activity->m_directFilePath = streamUrl;
     activity->m_streamTitle = title;
@@ -54,66 +40,28 @@ PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, co
     return activity;
 }
 
-PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MediaItem>& tracks, int startIndex) {
-    PlayerActivity* activity = new PlayerActivity("", false);
+PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tracks, int startIndex) {
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isQueueMode = true;
 
     MusicQueue& queue = MusicQueue::getInstance();
 
-    // Try to create a server-side play queue when online
-    // Uses the parent ratingKey (album/season) or the first track's ratingKey
-    bool serverOk = false;
-    if (!tracks.empty() && !PlexClient::getInstance().getServerUrl().empty()) {
-        PlexClient& client = PlexClient::getInstance();
-        PlexClient::PlayQueueContainer pq;
-
-        // Determine queue type
-        std::string queueType = "audio";
-        if (!tracks.empty() && (tracks[0].mediaType == MediaType::EPISODE ||
-                                 tracks[0].mediaType == MediaType::MOVIE)) {
-            queueType = "video";
-        }
-
-        // Build URI from parent ratingKey (album/season) if available,
-        // otherwise from first track
-        std::string uri;
-        if (!tracks[0].parentRatingKey.empty()) {
-            uri = client.buildPlayQueueDirectoryURI(tracks[0].parentRatingKey);
-        } else if (tracks.size() == 1) {
-            uri = client.buildPlayQueueURI(tracks[0].ratingKey);
-        } else {
-            // Multiple tracks without parent - use first track's URI
-            uri = client.buildPlayQueueURI(tracks[0].ratingKey);
-        }
-
-        std::string startKey = (startIndex >= 0 && startIndex < (int)tracks.size())
-            ? tracks[startIndex].ratingKey : "";
-
-        serverOk = client.createPlayQueue(uri, queueType, pq, startKey);
-        if (serverOk && !pq.items.empty()) {
-            queue.setFromPlayQueue(pq, pq.playQueueShuffled);
-            brls::Logger::info("PlayerActivity: Server play queue {} created ({} items)",
-                               pq.playQueueID, pq.playQueueTotalCount);
-        }
-    }
-
-    if (!serverOk) {
-        // Offline or server failed - use client-side queue
-        queue.setQueue(tracks, startIndex);
-    }
+    // Set up client-side queue
+    // TODO: Integrate with Music Assistant server-side queue via playMedia API
+    queue.setQueue(tracks, startIndex);
 
     // Set up track ended callback
     queue.setTrackEndedCallback([activity](const QueueItem* nextTrack) {
         activity->onTrackEnded(nextTrack);
     });
 
-    brls::Logger::info("PlayerActivity created with queue of {} tracks, starting at {} (server={})",
-                      tracks.size(), startIndex, serverOk);
+    brls::Logger::info("PlayerActivity created with queue of {} tracks, starting at {}",
+                      tracks.size(), startIndex);
     return activity;
 }
 
 PlayerActivity* PlayerActivity::createResumeQueue() {
-    PlayerActivity* activity = new PlayerActivity("", false);
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isQueueMode = true;
     activity->m_isResuming = true;  // Don't restart playback
 
@@ -157,17 +105,7 @@ void PlayerActivity::onContentAvailable() {
     if (!m_isQueueMode) {
         MusicQueue& existingQueue = MusicQueue::getInstance();
         if (!existingQueue.isEmpty()) {
-            brls::Logger::info("PlayerActivity: Stopping background music for video playback");
-
-            // Report stopped timeline for the current music track
-            const QueueItem* track = existingQueue.getCurrentTrack();
-            if (track && !track->ratingKey.empty()) {
-                std::string key = "/library/metadata/" + track->ratingKey;
-                int pqItemID = track->playQueueItemID;
-                PlexClient::getInstance().reportTimeline(
-                    track->ratingKey, key, "stopped", 0, track->duration * 1000, pqItemID);
-            }
-
+            brls::Logger::info("PlayerActivity: Stopping background music for new playback");
             MpvPlayer::getInstance().stop();
             existingQueue.clear();
         }
@@ -190,7 +128,7 @@ void PlayerActivity::onContentAvailable() {
             // Seek to position
             MpvPlayer& player = MpvPlayer::getInstance();
             double duration = 0.0;
-            // For music queue mode, prefer Plex API duration (full track length)
+            // For music queue mode, prefer queue metadata duration (full track length)
             // over MPV duration which may only reflect buffered/demuxed portion
             if (m_isQueueMode) {
                 const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -199,12 +137,7 @@ void PlayerActivity::onContentAvailable() {
             }
             if (duration <= 0)
                 duration = player.getDuration();
-            // Slider represents full video duration (including resume offset).
-            // Convert slider position back to MPV-relative seek position.
-            double baseOffsetSec = m_transcodeBaseOffsetMs / 1000.0;
-            double absDuration = baseOffsetSec + duration;
-            double seekPos = std::max(0.0, absDuration * progress - baseOffsetSec);
-            player.seekTo(seekPos);
+            player.seekTo(duration * progress);
         });
     }
 
@@ -247,11 +180,6 @@ void PlayerActivity::onContentAvailable() {
 
     this->registerAction("Back", brls::ControllerButton::BUTTON_B, [this](brls::View* view) {
         resetControlsIdleTimer();
-        // If track overlay is showing, dismiss it instead of leaving player
-        if (m_trackSelectMode != TrackSelectMode::NONE) {
-            hideTrackOverlay();
-            return true;
-        }
         // If queue overlay is showing, dismiss it instead of leaving player
         if (m_queueOverlayVisible) {
             hideQueueOverlay();
@@ -313,23 +241,6 @@ void PlayerActivity::onContentAvailable() {
             seek(interval);
             return true;
         });
-
-        // X = cycle audio track (when controls visible), pause/unpause (when hidden)
-        this->registerAction("Audio Track", brls::ControllerButton::BUTTON_X, [this](brls::View* view) {
-            if (!m_controlsVisible) {
-                togglePlayPause();
-            } else {
-                resetControlsIdleTimer();
-                cycleAudioTrack();
-            }
-            return true;
-        });
-
-        this->registerAction("Subtitle", brls::ControllerButton::BUTTON_Y, [this](brls::View* view) {
-            resetControlsIdleTimer();
-            cycleSubtitleTrack();
-            return true;
-        });
     }
 
     // Wire up touch buttons with tap gesture recognizers
@@ -365,16 +276,6 @@ void PlayerActivity::onContentAvailable() {
             return true;
         });
         forwardBtn->addGestureRecognizer(new brls::TapGestureRecognizer(forwardBtn));
-    }
-
-    // Track overlay dismiss on tap or B button
-    if (trackOverlay) {
-        trackOverlay->addGestureRecognizer(new brls::TapGestureRecognizer(
-            [this](brls::TapGestureStatus status, brls::Sound* soundToPlay) {
-                if (status.state == brls::GestureState::END) {
-                    hideTrackOverlay();
-                }
-            }));
     }
 
     // Queue overlay dismiss on tap
@@ -419,12 +320,8 @@ void PlayerActivity::onContentAvailable() {
             musicNextBtn->addGestureRecognizer(new brls::TapGestureRecognizer(musicNextBtn));
         }
 
-        // In music mode: disable focusability on ALL hidden buttons
-        // so focus navigation skips them entirely
-        if (audioBtn) { audioBtn->setFocusable(false); audioBtn->setVisibility(brls::Visibility::GONE); }
-        if (subBtn) { subBtn->setFocusable(false); subBtn->setVisibility(brls::Visibility::GONE); }
-        if (videoBtn) { videoBtn->setFocusable(false); videoBtn->setVisibility(brls::Visibility::GONE); }
-        // Also disable center video controls buttons (hidden parent but still focusable)
+        // In music mode: disable focusability on center video control buttons
+        // (hidden parent but still focusable)
         if (playBtn) playBtn->setFocusable(false);
         if (rewindBtn) rewindBtn->setFocusable(false);
         if (forwardBtn) forwardBtn->setFocusable(false);
@@ -475,79 +372,11 @@ void PlayerActivity::onContentAvailable() {
         if (titleLabel) titleLabel->setVisibility(brls::Visibility::GONE);
         if (artistLabel) artistLabel->setVisibility(brls::Visibility::GONE);
     } else {
-        // Video mode: seek icons matching the configured interval
-        int seekSec = Application::getInstance().getSettings().seekInterval;
-        std::string rewindRes = "icons/rewind-" + std::to_string(seekSec) + ".png";
-        std::string fwdRes = "icons/fast-forward-" + std::to_string(seekSec) + ".png";
-        if (rewindIcon) rewindIcon->setImageFromRes(rewindRes);
-        if (forwardIcon) forwardIcon->setImageFromRes(fwdRes);
-
-        // Audio track button - shows track selection overlay
-        if (audioBtn) {
-            audioBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (audioIcon) {
-                audioIcon->setImageFromRes("icons/translate.png");
-            }
-            audioBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::AUDIO);
-                return true;
-            });
-            audioBtn->addGestureRecognizer(new brls::TapGestureRecognizer(audioBtn));
-        }
-
-        // Subtitle track button - shows track selection overlay
-        if (subBtn) {
-            subBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (subtitleIcon) {
-                subtitleIcon->setImageFromRes("icons/subtitles.png");
-            }
-            subBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::SUBTITLE);
-                return true;
-            });
-            subBtn->addGestureRecognizer(new brls::TapGestureRecognizer(subBtn));
-        }
-
-        // Video track button - shows track selection overlay
-        if (videoBtn) {
-            videoBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (videoIcon) {
-                videoIcon->setImageFromRes("icons/video-image.png");
-            }
-            videoBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::VIDEO);
-                return true;
-            });
-            videoBtn->addGestureRecognizer(new brls::TapGestureRecognizer(videoBtn));
-        }
+        // Non-queue single track mode - show basic controls
+        if (centerControls) centerControls->setVisibility(brls::Visibility::VISIBLE);
     }
 
-    // Block upward D-pad navigation from center transport controls so focus
-    // doesn't escape to off-screen elements (absolutely-positioned overlays)
-    if (!m_isQueueMode) {
-        if (playBtn) playBtn->setCustomNavigationRoute(brls::FocusDirection::UP, playBtn);
-        if (rewindBtn) rewindBtn->setCustomNavigationRoute(brls::FocusDirection::UP, rewindBtn);
-        if (forwardBtn) forwardBtn->setCustomNavigationRoute(brls::FocusDirection::UP, forwardBtn);
-    }
-
-    // Block downward D-pad navigation from the bottom button row so focus
-    // doesn't escape to off-screen elements (absolutely-positioned overlays)
-    // Only set on focusable buttons — in music mode audioBtn/subBtn/videoBtn are non-focusable
     if (queueBtn) queueBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, queueBtn);
-    if (!m_isQueueMode) {
-        if (audioBtn) audioBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, audioBtn);
-        if (subBtn) subBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, subBtn);
-        if (videoBtn) videoBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, videoBtn);
-    }
-
-    // Wire up skip button for intro/credits
-    if (skipBtn) {
-        skipBtn->registerClickAction([this](brls::View* view) {
-            skipToMarkerEnd();
-            return true;
-        });
-        skipBtn->addGestureRecognizer(new brls::TapGestureRecognizer(skipBtn));
-    }
 
     // Start update timer
     m_updateTimer.setCallback([this]() {
@@ -557,7 +386,7 @@ void PlayerActivity::onContentAvailable() {
 
     // Start with controls hidden if auto-hide is enabled
     int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
-    if (autoHide > 0 && !m_isPhoto) {
+    if (autoHide > 0 && !m_isQueueMode) {
         hideControls();
     }
 }
@@ -598,16 +427,6 @@ void PlayerActivity::willDisappear(bool resetState) {
     m_pendingPlayUrl.clear();
     m_pendingPlayTitle.clear();
 
-    // Hide video view
-    if (videoView) {
-        videoView->setVideoVisible(false);
-    }
-
-    // For photos, nothing to stop
-    if (m_isPhoto) {
-        return;
-    }
-
     // Stop playback and save progress
     MpvPlayer& player = MpvPlayer::getInstance();
 
@@ -616,7 +435,7 @@ void PlayerActivity::willDisappear(bool resetState) {
         double position = player.getPosition();
         double duration = 0.0;
 
-        // For music queue mode, prefer Plex API duration (full track length)
+        // For music queue mode, prefer queue metadata duration (full track length)
         // over MPV duration which may only reflect buffered/demuxed portion
         if (m_isQueueMode) {
             const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -627,28 +446,8 @@ void PlayerActivity::willDisappear(bool resetState) {
         if (duration <= 0)
             duration = player.getDuration();
 
-        if (position > 0 || m_transcodeBaseOffsetMs > 0) {
-            int timeMs = m_transcodeBaseOffsetMs + (int)(position * 1000);
-
-            if (m_isLocalFile) {
-                // Save progress for downloaded media
-                DownloadsManager::getInstance().updateProgress(m_mediaKey, timeMs);
-                DownloadsManager::getInstance().saveState();
-                brls::Logger::info("PlayerActivity: Saved local progress {}ms for {}", timeMs, m_mediaKey);
-            } else if (!m_mediaKey.empty()) {
-                if (!m_isQueueMode) {
-                    PlexClient::getInstance().updatePlayProgress(m_mediaKey, timeMs);
-                }
-                // Report stopped timeline so Plex knows playback ended with full duration
-                std::string ratingKey = m_mediaKey;
-                if (m_isQueueMode) {
-                    const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
-                    if (track) ratingKey = track->ratingKey;
-                }
-                std::string key = "/library/metadata/" + ratingKey;
-                PlexClient::getInstance().reportTimeline(
-                    ratingKey, key, "stopped", timeMs, (int)(duration * 1000));
-            }
+        if (position > 0) {
+            brls::Logger::info("PlayerActivity: Stopped at position {:.1f}s", position);
         }
     }
 
@@ -685,11 +484,6 @@ void PlayerActivity::loadFromQueue() {
     brls::Logger::info("PlayerActivity: Loading track from queue: {} - {}",
                       track->artist, track->title);
 
-    // Reset streams cache for the new track
-    m_streamsLoaded = false;
-    m_plexStreams.clear();
-    m_partId = 0;
-
     // If resuming and MPV is already playing/paused, just update the UI
     // without restarting the track (user pressed circle to return to player)
     MpvPlayer& resumePlayer = MpvPlayer::getInstance();
@@ -711,16 +505,10 @@ void PlayerActivity::loadFromQueue() {
         }
         updateQueueDisplay();
 
-        // Load album art - prefer local file for downloaded tracks
+        // Load album art from server
         if (albumArt && !track->ratingKey.empty()) {
-            DownloadItem resumeDlItem;
-            if (DownloadsManager::getInstance().getDownloadCopy(track->ratingKey, resumeDlItem) &&
-                resumeDlItem.state == DownloadState::COMPLETED && !resumeDlItem.thumbPath.empty()) {
-                if (ImageLoader::loadFromFile(resumeDlItem.thumbPath, albumArt)) {
-                    albumArt->setVisibility(brls::Visibility::VISIBLE);
-                }
-            } else if (!track->thumb.empty()) {
-                PlexClient& client = PlexClient::getInstance();
+            if (!track->thumb.empty()) {
+                MAClient& client = MAClient::instance();
                 std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
@@ -733,8 +521,6 @@ void PlayerActivity::loadFromQueue() {
         // Show music UI elements
         if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
         if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
-        if (videoView) videoView->setVisibility(brls::Visibility::GONE);
-        if (photoImage) photoImage->setVisibility(brls::Visibility::GONE);
 
         updatePlayPauseLabel();
         m_loadingMedia = false;
@@ -764,54 +550,58 @@ void PlayerActivity::loadFromQueue() {
 
     // Use the rating key to get the playback URL
     m_mediaKey = track->ratingKey;
-    std::string url;
 
     // Pause image loading and invalidate stale in-flight loads from previous
     // pages before queuing any new loads for this track.
     ImageLoader::setPaused(true);
     ImageLoader::cancelAll();
 
-    // Check if this track is downloaded locally - play from local file if available
-    DownloadsManager& downloads = DownloadsManager::getInstance();
-    DownloadItem dlItem;
-    bool useLocalFile = false;
-    if (downloads.getDownloadCopy(track->ratingKey, dlItem) && dlItem.state == DownloadState::COMPLETED) {
-        url = dlItem.localPath;
-        useLocalFile = true;
-        m_isLocalFile = true;  // Suppress timeline reports when offline
-        brls::Logger::info("PlayerActivity: Using downloaded file for track: {}", url);
+    m_isLocalFile = false;
+    MAClient& client = MAClient::instance();
 
-        // Load cover art from local file if available (preferred over server URL)
-        if (albumArt && !dlItem.thumbPath.empty()) {
-            if (ImageLoader::loadFromFile(dlItem.thumbPath, albumArt)) {
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
+    // Load album art from server
+    if (albumArt && !track->thumb.empty()) {
+        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+        ImageLoader::setPaused(false);
+        ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+            img->setVisibility(brls::Visibility::VISIBLE);
+        }, albumArt, m_alive);
+        ImageLoader::setPaused(true);
+        albumArt->setVisibility(brls::Visibility::VISIBLE);
+    }
+
+    // Get stream URL from Music Assistant (async)
+    std::string ratingKey = track->ratingKey;
+    std::string trackTitle = track->title;
+    auto alive = m_alive;
+
+    client.getStreamUrl(ratingKey, [this, trackTitle, alive](bool success, const Json& result) {
+        if (!alive->load()) return;
+
+        std::string url;
+        if (success && result.type() == Json::STRING) {
+            url = result.str();
+        } else if (success && result.has("url")) {
+            url = result["url"].str();
         }
-    } else {
-        // Stream from server
-        m_isLocalFile = false;  // Reset in case previous track was local
-        PlexClient& client = PlexClient::getInstance();
-        if (!client.getTranscodeUrl(track->ratingKey, url, 0)) {
-            brls::Logger::error("Failed to get transcode URL for track: {}", track->ratingKey);
-            m_loadingMedia = false;
+
+        if (url.empty()) {
+            brls::Logger::error("Failed to get stream URL for track: {}", trackTitle);
+            brls::sync([this]() { m_loadingMedia = false; });
             return;
         }
 
-        // Load album art from server - temporarily unpause so loadAsync
-        // accepts the request, then re-pause to block other page loads.
-        // The async worker no longer checks pause, so the load will complete.
-        if (albumArt && !track->thumb.empty()) {
-            PlexClient& artClient = PlexClient::getInstance();
-            std::string thumbUrl = artClient.getThumbnailUrl(track->thumb, 300, 300);
-            ImageLoader::setPaused(false);
-            ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                img->setVisibility(brls::Visibility::VISIBLE);
-            }, albumArt, m_alive);
-            ImageLoader::setPaused(true);
-            albumArt->setVisibility(brls::Visibility::VISIBLE);
-        }
-    }
+        brls::sync([this, url, trackTitle, alive]() {
+            if (!alive->load() || m_destroying) {
+                m_loadingMedia = false;
+                return;
+            }
+            loadFromQueueWithUrl(url, trackTitle);
+        });
+    });
+}
 
+void PlayerActivity::loadFromQueueWithUrl(const std::string& url, const std::string& trackTitle) {
     MpvPlayer& player = MpvPlayer::getInstance();
 
     // Set audio-only mode BEFORE initializing
@@ -828,7 +618,7 @@ void PlayerActivity::loadFromQueue() {
     if (!player.isInitialized()) {
         // Defer MPV init + load to after activity transition completes
         m_pendingPlayUrl = url;
-        m_pendingPlayTitle = track->title;
+        m_pendingPlayTitle = trackTitle;
         m_pendingIsAudio = true;
         m_isPlaying = true;
         m_loadingMedia = false;
@@ -836,7 +626,7 @@ void PlayerActivity::loadFromQueue() {
     }
 
     // Player already initialized (track change) - load immediately
-    if (!player.loadUrl(url, track->title)) {
+    if (!player.loadUrl(url, trackTitle)) {
         brls::Logger::error("Failed to load URL: {}", url);
         m_loadingMedia = false;
         return;
@@ -916,255 +706,30 @@ void PlayerActivity::loadMedia() {
             return;
         }
 
-        // Show video view only for video files
-        if (videoView && !isAudioFile) {
-            videoView->setVisibility(brls::Visibility::VISIBLE);
-            videoView->setVideoVisible(true);
-        }
-
         m_isPlaying = true;
         m_loadingMedia = false;
         return;
     }
 
-    // Handle local file playback (downloaded media)
-    if (m_isLocalFile) {
-        DownloadsManager& downloads = DownloadsManager::getInstance();
-        DownloadItem dlItem;
+    // Remote playback from server
+    // TODO: Implement MA API track loading via getStreamUrl
+    // For now, single-track (non-queue) playback from server is not yet implemented.
+    // Queue-based playback works via loadFromQueue() which calls getStreamUrl.
+    m_mediaType = MediaType::TRACK;
 
-        if (!downloads.getDownloadCopy(m_mediaKey, dlItem) || dlItem.state != DownloadState::COMPLETED) {
-            brls::Logger::error("PlayerActivity: Downloaded media not found or incomplete");
-            m_loadingMedia = false;
-            return;
-        }
-
-        brls::Logger::info("PlayerActivity: Playing local file: {}", dlItem.localPath);
-
-        // Detect if this is a music track
-        bool isAudioTrack = (dlItem.mediaType == "track");
-
-        if (isAudioTrack) {
-            // Set up music UI labels
-            if (musicTitleLabel) musicTitleLabel->setText(dlItem.title);
-            if (musicArtistLabel) musicArtistLabel->setText(dlItem.parentTitle);
-            if (titleLabel) titleLabel->setText(dlItem.title);
-            if (artistLabel) {
-                artistLabel->setText(dlItem.parentTitle);
-                artistLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            // Load cover art from downloaded file if available
-            if (albumArt && !dlItem.thumbPath.empty()) {
-                // Load local cover art image directly
-                ImageLoader::loadFromFile(dlItem.thumbPath, albumArt);
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            // Show music UI, hide video view
-            if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
-            if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
-            if (videoView) videoView->setVisibility(brls::Visibility::GONE);
-            if (photoImage) photoImage->setVisibility(brls::Visibility::GONE);
-        } else {
-            if (titleLabel) {
-                std::string title = dlItem.title;
-                if (!dlItem.parentTitle.empty()) {
-                    title = dlItem.parentTitle + " - " + dlItem.title;
-                }
-                titleLabel->setText(title);
-            }
-        }
-
-        // Pause image loading and free cache to reclaim memory for MPV
-        ImageLoader::setPaused(true);
-        ImageLoader::cancelAll();
-        ImageLoader::clearCache();
-
-        MpvPlayer& player = MpvPlayer::getInstance();
-
-        // Set audio-only mode for music tracks (skip render context)
-        player.setAudioOnly(isAudioTrack);
-
-        // Resume from saved viewOffset if resumePlayback is enabled
-        // If near the end (>= 95% watched), start from beginning instead
-        if (Application::getInstance().getSettings().resumePlayback && dlItem.viewOffset > 0) {
-            bool nearEnd = (dlItem.duration > 0 && dlItem.viewOffset >= dlItem.duration * 0.95);
-            if (!nearEnd) {
-                m_pendingSeek = dlItem.viewOffset / 1000.0;
-            }
-        }
-
-        if (!player.isInitialized()) {
-            // Defer MPV init + load to after activity transition completes
-            m_pendingPlayUrl = dlItem.localPath;
-            m_pendingPlayTitle = dlItem.title;
-            m_pendingIsAudio = isAudioTrack;
-            m_loadingMedia = false;
-            return;
-        }
-
-        // Player already initialized - load immediately
-        if (!player.loadUrl(dlItem.localPath, dlItem.title)) {
-            brls::Logger::error("Failed to load local file: {}", dlItem.localPath);
-            m_loadingMedia = false;
-            return;
-        }
-
-        // Show video view only for non-audio content
-        if (!isAudioTrack && videoView) {
-            videoView->setVisibility(brls::Visibility::VISIBLE);
-            videoView->setVideoVisible(true);
-        }
-
-        m_isPlaying = true;
-        m_loadingMedia = false;
-        return;
+    if (titleLabel) {
+        titleLabel->setText("Loading...");
     }
 
-    // Remote playback from Plex server
-    PlexClient& client = PlexClient::getInstance();
-    MediaItem item;
-
-    if (client.fetchMediaDetails(m_mediaKey, item)) {
-        // Store media type and episode info for auto-play-next
-        m_mediaType = item.mediaType;
-        if (item.mediaType == MediaType::EPISODE) {
-            m_episodeIndex = item.index;
-            m_parentRatingKey = item.parentRatingKey;
-            m_grandparentRatingKey = item.grandparentRatingKey;
-        }
-
-        // Store markers for intro/credits skip
-        m_markers = item.markers;
-        if (!m_markers.empty()) {
-            brls::Logger::info("PlayerActivity: Loaded {} markers for {}", m_markers.size(), item.title);
-        }
-        if (titleLabel) {
-            std::string title = item.title;
-            if (item.mediaType == MediaType::EPISODE) {
-                title = item.grandparentTitle + " - " + item.title;
-            }
-            titleLabel->setText(title);
-        }
-
-        // Handle photos differently - display image instead of playing
-        if (item.mediaType == MediaType::PHOTO) {
-            brls::Logger::info("Displaying photo: {}", item.title);
-            m_isPhoto = true;
-            m_loadingMedia = false;
-
-            // Load the full-size photo
-            if (!item.thumb.empty()) {
-                std::string photoUrl = client.getThumbnailUrl(item.thumb, 960, 544);
-                brls::Logger::debug("Photo URL: {}", photoUrl);
-
-                // Load photo into the view (photoImage is defined in player.xml)
-                if (photoImage) {
-                    photoImage->setVisibility(brls::Visibility::VISIBLE);
-                    ImageLoader::loadAsync(photoUrl, [](brls::Image* image) {
-                        // Photo loaded
-                    }, photoImage, m_alive);
-                }
-
-                // Hide player controls for photos
-                if (progressSlider) {
-                    progressSlider->setVisibility(brls::Visibility::GONE);
-                }
-                if (timeLabel) {
-                    timeLabel->setVisibility(brls::Visibility::GONE);
-                }
-            }
-            return;
-        }
-
-        // Detect if this is audio content
-        bool isAudioContent = (item.mediaType == MediaType::MUSIC_TRACK);
-        brls::Logger::info("PlayerActivity: Media type detection - audio: {}, type: {}",
-                          isAudioContent, (int)item.mediaType);
-
-        // Show album art for audio content (before we pause the image loader)
-        if (isAudioContent && albumArt) {
-            // Try track thumb, then album (parent) thumb, then artist (grandparent) thumb
-            std::string artPath = item.thumb;
-            if (artPath.empty()) artPath = item.parentThumb;
-            if (artPath.empty()) artPath = item.grandparentThumb;
-
-            if (!artPath.empty()) {
-                std::string thumbUrl = client.getThumbnailUrl(artPath, 300, 300);
-                ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {
-                    // Art loaded
-                }, albumArt, m_alive);
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
-        }
-
-        // Get transcode URL for video/audio (forces Plex to convert to Vita-compatible format)
-        // Only resume from viewOffset if resumePlayback is enabled
-        // If near the end (>= 95% watched), start from beginning instead
-        int resumeOffset = 0;
-        if (Application::getInstance().getSettings().resumePlayback && item.viewOffset > 0) {
-            bool nearEnd = (item.duration > 0 && item.viewOffset >= item.duration * 0.95);
-            if (!nearEnd) {
-                resumeOffset = item.viewOffset;
-            }
-        }
-        m_transcodeBaseOffsetMs = resumeOffset;
-        std::string url;
-        if (client.getTranscodeUrl(m_mediaKey, url, resumeOffset)) {
-            // Pause image loading and free cache memory before initializing MPV.
-            // This stops background thumbnail fetches from competing with media
-            // streaming, and frees memory (Vita only has 256MB).
-            ImageLoader::setPaused(true);
-            ImageLoader::cancelAll();
-            ImageLoader::clearCache();
-
-            MpvPlayer& player = MpvPlayer::getInstance();
-
-            // Set audio-only mode BEFORE initializing
-            player.setAudioOnly(isAudioContent);
-
-            // Stream directly via MPV (transcode API returns mp4/mp3 stream)
-            if (!player.isInitialized()) {
-                // Defer MPV init + load to after activity transition completes.
-                // initRenderContext() creates GXM resources (framebuffer, render target)
-                // and loadUrl() spawns decoder threads that use the shared GXM context
-                // via hwdec=vita-copy. Both conflict with NanoVG drawing during the
-                // borealis activity show phase, causing a consistent SIGSEGV.
-                brls::Logger::info("PlayerActivity: Deferring MPV init to after activity transition");
-                m_pendingPlayUrl = url;
-                m_pendingPlayTitle = item.title;
-                m_pendingIsAudio = isAudioContent;
-            } else {
-                // Player already initialized (e.g., mode didn't change) - load immediately
-                brls::Logger::debug("PlayerActivity: Calling player.loadUrl...");
-                if (!player.loadUrl(url, item.title)) {
-                    brls::Logger::error("Failed to load URL: {}", url);
-                    m_loadingMedia = false;
-                    return;
-                }
-
-                // Show video view only for video content
-                if (videoView && !isAudioContent) {
-                    videoView->setVisibility(brls::Visibility::VISIBLE);
-                    videoView->setVideoVisible(true);
-                    brls::Logger::debug("Video view enabled");
-                }
-
-                m_isPlaying = true;
-                brls::Logger::debug("PlayerActivity: loadMedia completed successfully for Plex stream");
-            }
-        } else {
-            brls::Logger::error("Failed to get transcode URL for: {}", m_mediaKey);
-        }
-    }
+    brls::Logger::warning("PlayerActivity: Single-track server playback not yet implemented for key: {}", m_mediaKey);
 
     brls::Logger::debug("PlayerActivity: loadMedia exiting");
     m_loadingMedia = false;
 }
 
 void PlayerActivity::updateProgress() {
-    // Don't update if destroying or showing photo
-    if (m_destroying || m_isPhoto) return;
+    // Don't update if destroying
+    if (m_destroying) return;
 
     // Deferred MPV initialization (Phase 1 of 2):
     // Create MPV and its GXM render context, but do NOT call loadUrl yet.
@@ -1204,11 +769,6 @@ void PlayerActivity::updateProgress() {
             MpvPlayer& player = MpvPlayer::getInstance();
 
             if (player.loadUrl(url, title)) {
-                if (videoView && !isAudio) {
-                    videoView->setVisibility(brls::Visibility::VISIBLE);
-                    videoView->setVideoVisible(true);
-                    brls::Logger::debug("Video view enabled (deferred)");
-                }
                 m_isPlaying = true;
                 updatePlayPauseLabel();
                 brls::Logger::info("PlayerActivity: Deferred load started successfully");
@@ -1242,7 +802,7 @@ void PlayerActivity::updateProgress() {
     double position = player.getPosition();
     double duration = 0.0;
 
-    // For music queue mode, prefer Plex API duration (full track length)
+    // For music queue mode, prefer queue metadata duration (full track length)
     // over MPV duration which may only reflect buffered/demuxed portion
     if (m_isQueueMode) {
         const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -1254,23 +814,16 @@ void PlayerActivity::updateProgress() {
         duration = player.getDuration();
 
     if (duration > 0) {
-        // For transcoded streams with a resume offset, MPV position/duration are
-        // relative to the stream start (offset point). Compute absolute values
-        // for correct UI display.
-        double baseOffsetSec = m_transcodeBaseOffsetMs / 1000.0;
-        double absPosition = baseOffsetSec + position;
-        double absDuration = baseOffsetSec + duration;
-
         if (progressSlider) {
             m_updatingSlider = true;
-            progressSlider->setProgress((float)(absPosition / absDuration));
+            progressSlider->setProgress((float)(position / duration));
             m_updatingSlider = false;
         }
 
         // Update time labels: elapsed on left, remaining on right
         {
-            int posMin = (int)absPosition / 60;
-            int posSec = (int)absPosition % 60;
+            int posMin = (int)position / 60;
+            int posSec = (int)position % 60;
             int remaining = std::max(0, (int)(duration - position));
             int remMin = remaining / 60;
             int remSec = remaining % 60;
@@ -1283,10 +836,9 @@ void PlayerActivity::updateProgress() {
             if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
             if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
 
-            // Keep legacy time label updated for video mode
             if (timeLabel) {
-                int durMin = (int)absDuration / 60;
-                int durSec = (int)absDuration % 60;
+                int durMin = (int)duration / 60;
+                int durSec = (int)duration % 60;
                 char timeStr[32];
                 snprintf(timeStr, sizeof(timeStr), "%02d:%02d / %02d:%02d",
                          posMin, posSec, durMin, durSec);
@@ -1295,52 +847,12 @@ void PlayerActivity::updateProgress() {
         }
     }
 
-    // Update skip intro/credits button
-    if (!m_markers.empty() && duration > 0) {
-        double posMs = (m_transcodeBaseOffsetMs + position * 1000.0);
-        updateSkipButton(posMs);
-    }
-
     // Auto-hide controls after inactivity
     int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
-    if (autoHide > 0 && m_controlsVisible && !m_isPhoto) {
+    if (autoHide > 0 && m_controlsVisible) {
         m_controlsIdleSeconds++;
         if (m_controlsIdleSeconds >= autoHide) {
             hideControls();
-        }
-    }
-
-    // Report timeline to Plex server periodically and on state changes
-    // This sends duration so Plex shows the full track/video length
-    if (!m_mediaKey.empty() && !m_isLocalFile && !m_isDirectFile) {
-        std::string currentState = player.isPlaying() ? "playing" :
-                                   player.isPaused()  ? "paused"  : "stopped";
-
-        bool stateChanged = (currentState != m_lastTimelineState);
-        m_timelineCounter++;
-
-        if (stateChanged || m_timelineCounter >= 10) {
-            m_timelineCounter = 0;
-            m_lastTimelineState = currentState;
-
-            int timeMs = m_transcodeBaseOffsetMs + (int)(position * 1000);
-            int durationMs = (int)(duration * 1000);
-
-            std::string ratingKey = m_mediaKey;
-            int pqItemID = 0;
-            // In queue mode, use the current track's ratingKey and playQueueItemID
-            if (m_isQueueMode) {
-                MusicQueue& queue = MusicQueue::getInstance();
-                const QueueItem* track = queue.getCurrentTrack();
-                if (track) {
-                    ratingKey = track->ratingKey;
-                    pqItemID = track->playQueueItemID;
-                }
-            }
-
-            std::string key = "/library/metadata/" + ratingKey;
-            PlexClient::getInstance().reportTimeline(
-                ratingKey, key, currentState, timeMs, durationMs, pqItemID);
         }
     }
 
@@ -1357,26 +869,7 @@ void PlayerActivity::updateProgress() {
             // Notify queue that track ended - it will call onTrackEnded
             MusicQueue::getInstance().onTrackEnded();
         } else {
-            PlexClient::getInstance().markAsWatched(m_mediaKey);
-
-            // Delete downloaded file after watching if setting is enabled
-            if (m_isLocalFile && Application::getInstance().getSettings().deleteAfterWatch) {
-                DownloadsManager::getInstance().deleteDownload(m_mediaKey);
-                brls::Logger::info("PlayerActivity: Auto-deleted download after watch: {}", m_mediaKey);
-            }
-
-            // Auto-play next episode if enabled and this is an episode
-            if (Application::getInstance().getSettings().autoPlayNext
-                && m_mediaType == MediaType::EPISODE
-                && !m_parentRatingKey.empty()
-                && !m_isLocalFile) {
-                brls::Logger::info("PlayerActivity: Looking for next episode (parent={}, index={})",
-                    m_parentRatingKey, m_episodeIndex);
-                playNextEpisode();
-                return;
-            }
-
-            // No auto-play - just exit
+            // Non-queue single track ended - just exit
             brls::sync([this]() {
                 brls::Application::popActivity();
             });
@@ -1389,99 +882,6 @@ void PlayerActivity::updateProgress() {
         m_isPlaying = actuallyPlaying;
         updatePlayPauseLabel();
     }
-}
-
-void PlayerActivity::playNextEpisode() {
-    // Fetch sibling episodes in the same season
-    std::string seasonKey = m_parentRatingKey;
-    std::string showKey = m_grandparentRatingKey;
-    int currentIndex = m_episodeIndex;
-
-    brls::async([this, seasonKey, showKey, currentIndex]() {
-        PlexClient& client = PlexClient::getInstance();
-        std::vector<MediaItem> siblings;
-        if (!client.fetchChildren(seasonKey, siblings)) {
-            brls::Logger::error("PlayerActivity: Failed to fetch season children for auto-play-next");
-            brls::sync([this]() { brls::Application::popActivity(); });
-            return;
-        }
-
-        // Find next episode in same season (index = currentIndex + 1)
-        std::string nextKey;
-        for (const auto& ep : siblings) {
-            if (ep.index == currentIndex + 1) {
-                nextKey = ep.ratingKey;
-                break;
-            }
-        }
-
-        // If not found in same season, try next season (cross-season)
-        if (nextKey.empty() && !showKey.empty()) {
-            brls::Logger::info("PlayerActivity: Last episode of season, checking next season");
-
-            // Fetch all seasons of the show
-            std::vector<MediaItem> seasons;
-            if (client.fetchChildren(showKey, seasons)) {
-                // Find current season's parentIndex, then look for next season
-                // Current season's parentIndex is stored in item.parentIndex during loadMedia
-                // but we can find it by matching seasonKey
-                std::string nextSeasonKey;
-                bool foundCurrent = false;
-                for (const auto& season : seasons) {
-                    if (foundCurrent && season.mediaType == MediaType::SEASON) {
-                        nextSeasonKey = season.ratingKey;
-                        break;
-                    }
-                    if (season.ratingKey == seasonKey) {
-                        foundCurrent = true;
-                    }
-                }
-
-                if (!nextSeasonKey.empty()) {
-                    // Fetch episodes of next season and take the first one
-                    std::vector<MediaItem> nextSeasonEps;
-                    if (client.fetchChildren(nextSeasonKey, nextSeasonEps) && !nextSeasonEps.empty()) {
-                        // Find episode with lowest index (usually 1)
-                        int lowestIdx = INT_MAX;
-                        for (const auto& ep : nextSeasonEps) {
-                            if (ep.index < lowestIdx && ep.mediaType == MediaType::EPISODE) {
-                                lowestIdx = ep.index;
-                                nextKey = ep.ratingKey;
-                            }
-                        }
-                        brls::Logger::info("PlayerActivity: Found first episode of next season: {}",
-                            nextKey);
-                    }
-                }
-            }
-        }
-
-        if (nextKey.empty()) {
-            brls::Logger::info("PlayerActivity: No next episode found, exiting player");
-            brls::sync([this]() { brls::Application::popActivity(); });
-            return;
-        }
-
-        brls::Logger::info("PlayerActivity: Auto-playing next episode: {}", nextKey);
-
-        brls::sync([this, nextKey]() {
-            // Stop current playback
-            MpvPlayer::getInstance().stop();
-
-            // Reset state for new episode
-            m_mediaKey = nextKey;
-            m_endHandled = false;
-            m_introSkipped = false;
-            m_creditsSkipped = false;
-            m_markers.clear();
-            m_activeMarkerType.clear();
-            m_skipButtonVisible = false;
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-
-            // Load the new episode
-            loadMedia();
-        });
-    });
 }
 
 void PlayerActivity::togglePlayPause() {
@@ -1505,611 +905,6 @@ void PlayerActivity::updatePlayPauseLabel() {
     if (musicPlayIcon) {
         musicPlayIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
     }
-}
-
-void PlayerActivity::cycleAudioTrack() {
-    showTrackOverlay(TrackSelectMode::AUDIO);
-}
-
-void PlayerActivity::cycleSubtitleTrack() {
-    showTrackOverlay(TrackSelectMode::SUBTITLE);
-}
-
-void PlayerActivity::fetchPlexStreams() {
-    if (m_streamsLoaded || m_mediaKey.empty()) return;
-
-    PlexClient& client = PlexClient::getInstance();
-    if (client.fetchStreams(m_mediaKey, m_plexStreams, m_partId)) {
-        m_streamsLoaded = true;
-        brls::Logger::info("fetchPlexStreams: Loaded {} streams, partId={}", m_plexStreams.size(), m_partId);
-    }
-}
-
-void PlayerActivity::showTrackOverlay(TrackSelectMode mode) {
-    if (m_trackSelectMode != TrackSelectMode::NONE) {
-        hideTrackOverlay();
-        return;
-    }
-
-    m_trackSelectMode = mode;
-    populateTrackList(mode);
-
-    if (trackOverlay) {
-        trackOverlay->setVisibility(brls::Visibility::VISIBLE);
-        // Register B button to dismiss overlay
-        trackOverlay->registerAction("Back", brls::ControllerButton::BUTTON_B, [this](brls::View* view) {
-            hideTrackOverlay();
-            return true;
-        });
-
-        // Give focus to the currently selected track item for controller navigation
-        if (trackList && !trackList->getChildren().empty()) {
-            int idx = std::min(m_selectedTrackIndex, (int)trackList->getChildren().size() - 1);
-            if (idx < 0) idx = 0;
-            brls::Application::giveFocus(trackList->getChildren()[idx]);
-        }
-        // Reset overlay title focusable state (was set temporarily during list rebuild)
-        if (trackOverlayTitle) {
-            trackOverlayTitle->setFocusable(false);
-        }
-    }
-}
-
-void PlayerActivity::hideTrackOverlay() {
-    TrackSelectMode prevMode = m_trackSelectMode;
-    m_trackSelectMode = TrackSelectMode::NONE;
-    // Restore the overlay title's focusable state (may have been set temporarily)
-    if (trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(false);
-    }
-    if (trackOverlay) {
-        trackOverlay->setVisibility(brls::Visibility::GONE);
-    }
-    // Restore focus to the appropriate button (only if visible and focusable)
-    if (prevMode == TrackSelectMode::SUBTITLE && subBtn &&
-        subBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(subBtn);
-    } else if (prevMode == TrackSelectMode::VIDEO && videoBtn &&
-               videoBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(videoBtn);
-    } else if (audioBtn && audioBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(audioBtn);
-    } else if (m_isQueueMode && musicPlayBtn) {
-        brls::Application::giveFocus(musicPlayBtn);
-    } else if (playBtn) {
-        brls::Application::giveFocus(playBtn);
-    }
-}
-
-void PlayerActivity::populateTrackList(TrackSelectMode mode) {
-    if (!trackList || !trackOverlayTitle) return;
-
-    // Transfer focus away before clearing, so destroying focused children is safe
-    if (!trackList->getChildren().empty() && trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(true);
-        brls::Application::giveFocus(trackOverlayTitle);
-    }
-
-    // Clear existing items
-    trackList->clearViews();
-    m_selectedTrackIndex = 0;
-
-    // Set title
-    switch (mode) {
-        case TrackSelectMode::AUDIO:
-            trackOverlayTitle->setText("Audio Tracks");
-            break;
-        case TrackSelectMode::SUBTITLE:
-            trackOverlayTitle->setText(m_isQueueMode ? "Lyrics" : "Subtitles");
-            break;
-        case TrackSelectMode::VIDEO:
-            trackOverlayTitle->setText("Video Tracks");
-            break;
-        default:
-            return;
-    }
-
-    // Fetch Plex streams (if not already cached) - these have all tracks
-    fetchPlexStreams();
-
-    int plexStreamType = (mode == TrackSelectMode::VIDEO) ? 1 :
-                         (mode == TrackSelectMode::AUDIO) ? 2 : 3;
-
-    // Collect Plex streams of the requested type
-    // For subtitles, also include streamType 4
-    std::vector<const PlexStream*> plexTracksOfType;
-    for (const auto& ps : m_plexStreams) {
-        if (ps.streamType == plexStreamType ||
-            (mode == TrackSelectMode::SUBTITLE && ps.streamType == 4)) {
-            plexTracksOfType.push_back(&ps);
-        }
-    }
-
-    // For audio and subtitle modes, use Plex streams as the primary source
-    // because HLS transcoding only muxes the selected track into the stream,
-    // so MPV only sees 1 audio track. Plex metadata has all available tracks.
-    bool usePlexStreams = (mode == TrackSelectMode::AUDIO || mode == TrackSelectMode::SUBTITLE)
-                         && !plexTracksOfType.empty();
-
-    // For subtitles, add "Off" option first
-    if (mode == TrackSelectMode::SUBTITLE) {
-        brls::Box* item = new brls::Box();
-        item->setAxis(brls::Axis::ROW);
-        item->setJustifyContent(brls::JustifyContent::FLEX_START);
-        item->setAlignItems(brls::AlignItems::CENTER);
-        item->setPaddingTop(10);
-        item->setPaddingBottom(10);
-        item->setPaddingLeft(12);
-        item->setPaddingRight(12);
-        item->setCornerRadius(4);
-        item->setFocusable(true);
-
-        brls::Label* label = new brls::Label();
-        label->setText(m_isQueueMode ? "Off (No Lyrics)" : "Off (No Subtitles)");
-        label->setFontSize(16);
-        label->setTextColor(nvgRGB(220, 220, 220));
-        item->addView(label);
-
-        item->registerClickAction([this](brls::View* view) {
-            selectTrack(TrackSelectMode::SUBTITLE, -1);
-            return true;
-        });
-        item->addGestureRecognizer(new brls::TapGestureRecognizer(item));
-        trackList->addView(item);
-    }
-
-    if (usePlexStreams) {
-        // Build track items from Plex streams (shows ALL available tracks)
-        for (size_t i = 0; i < plexTracksOfType.size(); i++) {
-            const auto& ps = *plexTracksOfType[i];
-
-            std::string displayStr = ps.displayTitle;
-            if (displayStr.empty()) {
-                displayStr = ps.language;
-                if (displayStr.empty()) displayStr = "Track " + std::to_string(i + 1);
-                if (!ps.codec.empty()) displayStr += " [" + ps.codec + "]";
-            }
-
-            brls::Box* item = new brls::Box();
-            item->setAxis(brls::Axis::ROW);
-            item->setJustifyContent(brls::JustifyContent::FLEX_START);
-            item->setAlignItems(brls::AlignItems::CENTER);
-            item->setPaddingTop(10);
-            item->setPaddingBottom(10);
-            item->setPaddingLeft(12);
-            item->setPaddingRight(12);
-            item->setCornerRadius(4);
-            item->setFocusable(true);
-
-            if (ps.selected) {
-                item->setBackgroundColor(nvgRGBA(80, 80, 200, 100));
-                item->setBorderColor(nvgRGB(100, 130, 255));
-                item->setBorderThickness(1);
-                // Track index for focus when overlay opens
-                m_selectedTrackIndex = static_cast<int>(trackList->getChildren().size());
-            }
-
-            std::string prefix = ps.selected ? "> " : "  ";
-            brls::Label* label = new brls::Label();
-            label->setText(prefix + displayStr);
-            label->setFontSize(16);
-            label->setTextColor(ps.selected ? nvgRGB(150, 200, 255) : nvgRGB(220, 220, 220));
-            item->addView(label);
-
-            int plexStreamId = ps.id;
-            item->registerClickAction([this, mode, plexStreamId](brls::View* view) {
-                selectTrack(mode, plexStreamId);
-                return true;
-            });
-            item->addGestureRecognizer(new brls::TapGestureRecognizer(item));
-            trackList->addView(item);
-        }
-    } else {
-        // Fallback: use MPV track list (for video tracks, or when no Plex data)
-        MpvPlayer& player = MpvPlayer::getInstance();
-        std::string mpvType;
-        if (mode == TrackSelectMode::AUDIO) mpvType = "audio";
-        else if (mode == TrackSelectMode::SUBTITLE) mpvType = "sub";
-        else if (mode == TrackSelectMode::VIDEO) mpvType = "video";
-
-        auto mpvTracks = player.getTrackList(mpvType);
-
-        for (size_t i = 0; i < mpvTracks.size(); i++) {
-            const auto& track = mpvTracks[i];
-
-            std::string displayStr;
-            if (!track.lang.empty()) {
-                displayStr = track.lang;
-            } else {
-                displayStr = "Track " + std::to_string(track.id);
-            }
-            if (!track.title.empty()) {
-                displayStr += " - " + track.title;
-            }
-            if (!track.codec.empty()) {
-                displayStr += " [" + track.codec + "]";
-            }
-
-            brls::Box* item = new brls::Box();
-            item->setAxis(brls::Axis::ROW);
-            item->setJustifyContent(brls::JustifyContent::FLEX_START);
-            item->setAlignItems(brls::AlignItems::CENTER);
-            item->setPaddingTop(10);
-            item->setPaddingBottom(10);
-            item->setPaddingLeft(12);
-            item->setPaddingRight(12);
-            item->setCornerRadius(4);
-            item->setFocusable(true);
-
-            if (track.selected) {
-                item->setBackgroundColor(nvgRGBA(80, 80, 200, 100));
-                item->setBorderColor(nvgRGB(100, 130, 255));
-                item->setBorderThickness(1);
-            }
-
-            std::string prefix = track.selected ? "> " : "  ";
-            brls::Label* label = new brls::Label();
-            label->setText(prefix + displayStr);
-            label->setFontSize(16);
-            label->setTextColor(track.selected ? nvgRGB(150, 200, 255) : nvgRGB(220, 220, 220));
-            item->addView(label);
-
-            int trackId = track.id;
-            item->registerClickAction([this, mode, trackId](brls::View* view) {
-                selectTrack(mode, trackId);
-                return true;
-            });
-            item->addGestureRecognizer(new brls::TapGestureRecognizer(item));
-            trackList->addView(item);
-        }
-
-        if (mpvTracks.empty() && mode != TrackSelectMode::SUBTITLE) {
-            brls::Label* label = new brls::Label();
-            label->setText("No tracks available");
-            label->setFontSize(16);
-            label->setTextColor(nvgRGB(180, 180, 180));
-            label->setMargins(12, 12, 12, 12);
-            trackList->addView(label);
-        }
-    }
-
-    // For subtitles, add "Search for Subtitles" option at the bottom
-    if (mode == TrackSelectMode::SUBTITLE && !m_mediaKey.empty() && !m_isQueueMode) {
-        // Add separator
-        brls::Box* sep = new brls::Box();
-        sep->setWidth(376);  // track list width (400) minus padding (24)
-        sep->setHeight(1);
-        sep->setBackgroundColor(nvgRGBA(255, 255, 255, 40));
-        sep->setMarginTop(6);
-        sep->setMarginBottom(6);
-        trackList->addView(sep);
-
-        brls::Box* searchItem = new brls::Box();
-        searchItem->setAxis(brls::Axis::ROW);
-        searchItem->setJustifyContent(brls::JustifyContent::FLEX_START);
-        searchItem->setAlignItems(brls::AlignItems::CENTER);
-        searchItem->setPaddingTop(10);
-        searchItem->setPaddingBottom(10);
-        searchItem->setPaddingLeft(12);
-        searchItem->setPaddingRight(12);
-        searchItem->setCornerRadius(4);
-        searchItem->setFocusable(true);
-        searchItem->setBackgroundColor(nvgRGBA(60, 120, 60, 80));
-
-        brls::Label* searchLabel = new brls::Label();
-        searchLabel->setText("Search for Subtitles...");
-        searchLabel->setFontSize(16);
-        searchLabel->setTextColor(nvgRGB(140, 230, 140));
-        searchItem->addView(searchLabel);
-
-        searchItem->registerClickAction([this](brls::View* view) {
-            // Defer to next frame to avoid destroying the clicked view
-            // while its click handler is still on the call stack
-            brls::sync([this]() {
-                populateSubtitleSearchResults();
-            });
-            return true;
-        });
-        searchItem->addGestureRecognizer(new brls::TapGestureRecognizer(searchItem));
-        trackList->addView(searchItem);
-    }
-}
-
-void PlayerActivity::populateSubtitleSearchResults() {
-    if (!trackList || !trackOverlayTitle) return;
-
-    trackOverlayTitle->setText("Searching Subtitles...");
-
-    // Transfer focus to the overlay title before clearing the track list,
-    // so the previously focused child can be safely destroyed
-    if (trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(true);
-        brls::Application::giveFocus(trackOverlayTitle);
-    }
-
-    trackList->clearViews();
-
-    // Add a loading label
-    brls::Label* loadingLabel = new brls::Label();
-    loadingLabel->setText("Searching for subtitles...");
-    loadingLabel->setFontSize(16);
-    loadingLabel->setTextColor(nvgRGB(180, 180, 180));
-    loadingLabel->setMargins(12, 12, 12, 12);
-    trackList->addView(loadingLabel);
-
-    // Search for subtitles from Plex (queries OpenSubtitles, etc.)
-    PlexClient& client = PlexClient::getInstance();
-    std::vector<PlexClient::SubtitleResult> results;
-
-    if (!client.searchSubtitles(m_mediaKey, "en", results) || results.empty()) {
-        trackList->clearViews();
-        trackOverlayTitle->setText("Subtitle Search");
-
-        brls::Label* noResults = new brls::Label();
-        noResults->setText("No subtitles found");
-        noResults->setFontSize(16);
-        noResults->setTextColor(nvgRGB(180, 180, 180));
-        noResults->setMargins(12, 12, 12, 12);
-        trackList->addView(noResults);
-
-        // Add back button
-        brls::Box* backItem = new brls::Box();
-        backItem->setAxis(brls::Axis::ROW);
-        backItem->setJustifyContent(brls::JustifyContent::FLEX_START);
-        backItem->setAlignItems(brls::AlignItems::CENTER);
-        backItem->setPaddingTop(10);
-        backItem->setPaddingBottom(10);
-        backItem->setPaddingLeft(12);
-        backItem->setPaddingRight(12);
-        backItem->setCornerRadius(4);
-        backItem->setFocusable(true);
-
-        brls::Label* backLabel = new brls::Label();
-        backLabel->setText("< Back to Subtitles");
-        backLabel->setFontSize(16);
-        backLabel->setTextColor(nvgRGB(150, 200, 255));
-        backItem->addView(backLabel);
-
-        backItem->registerClickAction([this](brls::View* view) {
-            brls::sync([this]() {
-                populateTrackList(TrackSelectMode::SUBTITLE);
-            });
-            return true;
-        });
-        backItem->addGestureRecognizer(new brls::TapGestureRecognizer(backItem));
-        trackList->addView(backItem);
-        return;
-    }
-
-    // Store results for selection
-    m_subtitleSearchResults = results;
-
-    // Transfer focus to the overlay title before clearing the track list,
-    // so the previously focused child can be safely destroyed
-    if (trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(true);
-        brls::Application::giveFocus(trackOverlayTitle);
-    }
-
-    trackList->clearViews();
-    trackOverlayTitle->setText("Subtitle Search Results");
-
-    // Back button at top
-    brls::Box* backItem = new brls::Box();
-    backItem->setAxis(brls::Axis::ROW);
-    backItem->setJustifyContent(brls::JustifyContent::FLEX_START);
-    backItem->setAlignItems(brls::AlignItems::CENTER);
-    backItem->setPaddingTop(10);
-    backItem->setPaddingBottom(10);
-    backItem->setPaddingLeft(12);
-    backItem->setPaddingRight(12);
-    backItem->setCornerRadius(4);
-    backItem->setFocusable(true);
-
-    brls::Label* backLabel = new brls::Label();
-    backLabel->setText("< Back to Subtitles");
-    backLabel->setFontSize(16);
-    backLabel->setTextColor(nvgRGB(150, 200, 255));
-    backItem->addView(backLabel);
-
-    backItem->registerClickAction([this](brls::View* view) {
-        brls::sync([this]() {
-            populateTrackList(TrackSelectMode::SUBTITLE);
-        });
-        return true;
-    });
-    backItem->addGestureRecognizer(new brls::TapGestureRecognizer(backItem));
-    trackList->addView(backItem);
-
-    // Add separator
-    brls::Box* sep = new brls::Box();
-    sep->setWidth(376);  // track list width (400) minus padding (24)
-    sep->setHeight(1);
-    sep->setBackgroundColor(nvgRGBA(255, 255, 255, 40));
-    sep->setMarginTop(4);
-    sep->setMarginBottom(4);
-    trackList->addView(sep);
-
-    // Show up to 15 results to avoid overflow on Vita's small screen
-    size_t maxResults = std::min(results.size(), (size_t)15);
-    for (size_t i = 0; i < maxResults; i++) {
-        const auto& sub = results[i];
-
-        std::string displayStr = sub.displayTitle;
-        if (displayStr.empty()) {
-            displayStr = sub.language;
-            if (!sub.codec.empty()) displayStr += " [" + sub.codec + "]";
-        }
-        if (!sub.provider.empty()) {
-            displayStr += " (" + sub.provider + ")";
-        }
-
-        brls::Box* item = new brls::Box();
-        item->setAxis(brls::Axis::ROW);
-        item->setJustifyContent(brls::JustifyContent::FLEX_START);
-        item->setAlignItems(brls::AlignItems::CENTER);
-        item->setPaddingTop(10);
-        item->setPaddingBottom(10);
-        item->setPaddingLeft(12);
-        item->setPaddingRight(12);
-        item->setCornerRadius(4);
-        item->setFocusable(true);
-
-        brls::Label* label = new brls::Label();
-        label->setText(displayStr);
-        label->setFontSize(14);
-        label->setTextColor(nvgRGB(220, 220, 220));
-        item->addView(label);
-
-        // Capture key and title by value to avoid referencing vector after potential invalidation
-        std::string subKey = sub.key;
-        std::string subTitle = sub.displayTitle;
-        item->registerClickAction([this, subKey, subTitle](brls::View* view) {
-            PlexClient& client = PlexClient::getInstance();
-            brls::Logger::debug("Subtitle click: key={}", subKey);
-            if (client.selectSearchedSubtitle(m_mediaKey, m_partId, subKey)) {
-                MpvPlayer::getInstance().showOSD("Subtitle: " + subTitle, 2.0);
-                m_streamsLoaded = false;
-            } else {
-                MpvPlayer::getInstance().showOSD("Failed to select subtitle", 2.0);
-            }
-            hideTrackOverlay();
-            return true;
-        });
-        item->addGestureRecognizer(new brls::TapGestureRecognizer(item));
-        trackList->addView(item);
-    }
-
-    // Give focus to first item in the results list
-    if (!trackList->getChildren().empty()) {
-        brls::Application::giveFocus(trackList->getChildren()[0]);
-    }
-    // Reset overlay title focusable state (was set temporarily during list rebuild)
-    if (trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(false);
-    }
-}
-
-void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    // Check if we have Plex streams - if so, trackId is a Plex stream ID
-    bool hasPlexStreams = !m_plexStreams.empty();
-
-    switch (mode) {
-        case TrackSelectMode::AUDIO:
-            if (hasPlexStreams && m_partId > 0) {
-                // trackId is a Plex stream ID - tell Plex server to switch audio
-                std::string displayTitle = "Audio track " + std::to_string(trackId);
-                for (const auto& ps : m_plexStreams) {
-                    if (ps.id == trackId) {
-                        displayTitle = ps.displayTitle;
-                        break;
-                    }
-                }
-                PlexClient::getInstance().setStreamSelection(m_partId, trackId, -1);
-                // Mark the newly selected stream in our cached data
-                for (auto& ps : m_plexStreams) {
-                    if (ps.streamType == 2) {
-                        ps.selected = (ps.id == trackId);
-                    }
-                }
-                // Stop the current transcode and start a new one at the same
-                // position so Plex re-muxes with the newly selected audio track.
-                // HLS only contains the selected audio, so a reload is needed,
-                // but we seek to the current position to avoid restarting.
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
-                    // Stop existing transcode session so Plex doesn't keep
-                    // serving old audio segments
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading audio at offset={}ms", offsetMs);
-                        player.showOSD("Switching: " + displayTitle, 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else {
-                // Fallback: trackId is an MPV track ID
-                player.setAudioTrack(trackId);
-                player.showOSD("Audio track " + std::to_string(trackId), 1.5);
-            }
-            break;
-
-        case TrackSelectMode::SUBTITLE:
-            if (trackId < 0) {
-                // Disable subtitles
-                if (m_partId > 0) {
-                    PlexClient::getInstance().setStreamSelection(m_partId, -1, 0);
-                }
-                // Clear selection in cache
-                for (auto& ps : m_plexStreams) {
-                    if (ps.streamType == 3 || ps.streamType == 4) ps.selected = false;
-                }
-                // Reload transcode so Plex stops sending subtitles
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading subs off at offset={}ms", offsetMs);
-                        player.showOSD("Subtitles off", 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else if (hasPlexStreams && m_partId > 0) {
-                // trackId is a Plex stream ID - tell Plex server to switch subtitle
-                std::string displayTitle = "Subtitle " + std::to_string(trackId);
-                for (const auto& ps : m_plexStreams) {
-                    if (ps.id == trackId) {
-                        displayTitle = ps.displayTitle;
-                        break;
-                    }
-                }
-                PlexClient::getInstance().setStreamSelection(m_partId, -1, trackId);
-                for (auto& ps : m_plexStreams) {
-                    if (ps.streamType == 3 || ps.streamType == 4) {
-                        ps.selected = (ps.id == trackId);
-                    }
-                }
-                // Reload transcode so Plex serves the new subtitle stream
-                {
-                    double currentPos = player.getPosition();
-                    int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
-                    client.stopTranscode();
-                    std::string newUrl;
-                    if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
-                        brls::Logger::info("selectTrack: Reloading subs at offset={}ms", offsetMs);
-                        player.showOSD("Switching: " + displayTitle, 2.0);
-                        m_transcodeBaseOffsetMs = offsetMs;
-                        player.loadUrl(newUrl, "");
-                    }
-                }
-            } else {
-                // Fallback: trackId is an MPV track ID
-                player.setSubtitleTrack(trackId);
-                player.showOSD("Subtitle track " + std::to_string(trackId), 1.5);
-            }
-            break;
-
-        case TrackSelectMode::VIDEO:
-            player.setVideoTrack(trackId);
-            player.showOSD("Video track " + std::to_string(trackId), 1.5);
-            break;
-
-        default:
-            break;
-    }
-
-    hideTrackOverlay();
 }
 
 void PlayerActivity::seek(int seconds) {
@@ -2164,30 +959,11 @@ void PlayerActivity::toggleShuffle() {
     if (!m_isQueueMode) return;
 
     MusicQueue& queue = MusicQueue::getInstance();
-    bool newShuffle = !queue.isShuffleEnabled();
-
-    // If synced to server, use server-side shuffle/unshuffle
-    if (queue.isServerSynced()) {
-        PlexClient& client = PlexClient::getInstance();
-        PlexClient::PlayQueueContainer pq;
-        bool ok = newShuffle
-            ? client.shufflePlayQueue(queue.getPlayQueueID(), pq)
-            : client.unshufflePlayQueue(queue.getPlayQueueID(), pq);
-
-        if (ok && !pq.items.empty()) {
-            queue.setFromPlayQueue(pq, newShuffle);
-        } else {
-            // Server call failed - fall back to client-side
-            queue.setShuffle(newShuffle);
-        }
-    } else {
-        queue.setShuffle(newShuffle);
-    }
+    queue.setShuffle(!queue.isShuffleEnabled());
 
     updateQueueDisplay();
     updateShuffleIcon();
 
-    // Show OSD feedback
     MpvPlayer::getInstance().showOSD(
         queue.isShuffleEnabled() ? "Shuffle: ON" : "Shuffle: OFF", 1.5);
 }
@@ -2461,7 +1237,7 @@ void PlayerActivity::hideQueueOverlay() {
 }
 
 void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueItem& track, bool isCurrent) {
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     // Row container: [cover art] [title + artist] [duration]
     brls::Box* row = new brls::Box();
@@ -2492,9 +1268,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
     thumb->setScalingType(brls::ImageScalingType::FIT);
     thumb->setMarginRight(14);
 
-    // Defer thumbnail loading - URL and local path resolved lazily when row
-    // becomes visible, avoiding expensive DownloadsManager + PlexClient calls
-    // for every row during queue population
+    // Defer thumbnail loading - URL resolved lazily when row becomes visible
     m_deferredThumbs.push_back({thumb, track.thumb, track.ratingKey, false});
     row->addView(thumb);
 
@@ -2569,13 +1343,6 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                         if (tIdx != queue.getCurrentIndex()) {
                             int dIdx = findQueueRowDisplayIndex(row);
                             // Sync remove to server
-                            if (queue.isServerSynced() && tIdx < (int)queue.getQueue().size()) {
-                                int pqItemID = queue.getQueue()[tIdx].playQueueItemID;
-                                if (pqItemID > 0) {
-                                    PlexClient::getInstance().removeFromPlayQueue(
-                                        queue.getPlayQueueID(), pqItemID);
-                                }
-                            }
                             queue.removeTrack(tIdx);
                             if (dIdx >= 0) {
                                 brls::sync([this, dIdx]() {
@@ -2807,20 +1574,6 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                                 ? sOrder[targetIdx] : targetIdx;
                     brls::Logger::info("Drag: drop displayIdx {} -> {} (trackIdx {} -> {}, shuffled={})",
                         origIdx, targetIdx, m_dragState.draggedTrackIdx, toTrackIdx, isShuffled);
-                    // Sync move to server if connected
-                    if (queue.isServerSynced()) {
-                        int pqItemID = m_dragState.draggedTrackIdx < (int)queue.getQueue().size()
-                            ? queue.getQueue()[m_dragState.draggedTrackIdx].playQueueItemID : 0;
-                        // Find the item to insert after (the one before target position)
-                        int afterPQItemID = 0;
-                        if (toTrackIdx > 0 && toTrackIdx - 1 < (int)queue.getQueue().size()) {
-                            afterPQItemID = queue.getQueue()[toTrackIdx - 1].playQueueItemID;
-                        }
-                        if (pqItemID > 0) {
-                            PlexClient::getInstance().movePlayQueueItem(
-                                queue.getPlayQueueID(), pqItemID, afterPQItemID);
-                        }
-                    }
 
                     queue.moveTrack(m_dragState.draggedTrackIdx, toTrackIdx);
 
@@ -3148,7 +1901,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
     // will complete even after we re-pause here.
     ImageLoader::setPaused(false);
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     for (int i = start; i < end; i++) {
         auto& dt = m_deferredThumbs[i];
@@ -3157,18 +1910,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
 
         dt.loaded = true;
 
-        // Try local file first (works offline)
-        if (!dt.ratingKey.empty()) {
-            DownloadItem dlItem;
-            if (DownloadsManager::getInstance().getDownloadCopy(dt.ratingKey, dlItem) &&
-                dlItem.state == DownloadState::COMPLETED && !dlItem.thumbPath.empty()) {
-                if (ImageLoader::loadFromFile(dlItem.thumbPath, dt.image)) {
-                    continue;
-                }
-            }
-        }
-
-        // Fall back to server URL
+        // Load from server
         if (!dt.thumbPath.empty()) {
             std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {
@@ -3238,7 +1980,7 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         // Reload thumbnails to reflect the swap (skip during chained swaps
         // to avoid race conditions - caller will reload after all swaps)
         if (!skipThumbReload) {
-            PlexClient& swapClient = PlexClient::getInstance();
+            MAClient& swapClient = MAClient::instance();
             if (dtA.loaded && !dtA.thumbPath.empty()) {
                 std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100);
                 ImageLoader::loadAsync(urlA, [](brls::Image*) {}, thumbA, m_alive);
@@ -3590,106 +2332,6 @@ void PlayerActivity::playFromQueue(int index) {
 
 // Controls visibility toggle (like Suwayomi reader settings show/hide)
 
-void PlayerActivity::updateSkipButton(double positionMs) {
-    AppSettings& settings = Application::getInstance().getSettings();
-
-    // Check if we're inside any marker region
-    std::string activeType;
-    int activeEnd = 0;
-    for (const auto& marker : m_markers) {
-        if (positionMs >= marker.startTimeMs && positionMs < marker.endTimeMs) {
-            activeType = marker.type;
-            activeEnd = marker.endTimeMs;
-            break;
-        }
-    }
-
-    if (!activeType.empty()) {
-        // We're inside a marker region
-        bool isIntro = (activeType == "intro");
-        bool autoSkip = isIntro ? settings.autoSkipIntro : settings.autoSkipCredits;
-        bool& alreadySkipped = isIntro ? m_introSkipped : m_creditsSkipped;
-
-        if (autoSkip && !alreadySkipped) {
-            // Auto-skip: seek to end of marker
-            alreadySkipped = true;
-            brls::Logger::info("PlayerActivity: Auto-skipped {} to {}ms", activeType, activeEnd);
-            // Hide skip button
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-            m_skipButtonVisible = false;
-            m_activeMarkerType.clear();
-
-            // If credits auto-skip + auto-play-next, go straight to next episode
-            if (!isIntro && settings.autoPlayNext
-                && m_mediaType == MediaType::EPISODE
-                && !m_parentRatingKey.empty()
-                && !m_isLocalFile) {
-                brls::Logger::info("PlayerActivity: Credits auto-skipped, starting next episode");
-                PlexClient::getInstance().markAsWatched(m_mediaKey);
-                m_endHandled = true;
-                playNextEpisode();
-            } else {
-                double seekToSec = (activeEnd - m_transcodeBaseOffsetMs) / 1000.0;
-                if (seekToSec > 0) {
-                    MpvPlayer::getInstance().seekTo(seekToSec);
-                }
-            }
-            return;
-        }
-
-        // Manual skip mode: show button
-        if (m_activeMarkerType != activeType) {
-            // Entering a new marker region
-            m_activeMarkerType = activeType;
-            m_activeMarkerEndMs = activeEnd;
-            m_skipButtonShowSeconds = 0;
-            m_skipButtonVisible = true;
-
-            if (skipLabel) {
-                skipLabel->setText(isIntro ? "Skip Intro" : "Skip Credits");
-            }
-            if (skipBtn) {
-                skipBtn->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            // Still in same marker region
-            m_skipButtonShowSeconds++;
-
-            // Auto-hide after 5 seconds if controls are not visible
-            if (m_skipButtonShowSeconds >= 5 && !m_controlsVisible && m_skipButtonVisible) {
-                m_skipButtonVisible = false;
-                if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-            }
-        }
-    } else {
-        // Not in any marker region - hide button
-        if (m_skipButtonVisible || !m_activeMarkerType.empty()) {
-            m_skipButtonVisible = false;
-            m_activeMarkerType.clear();
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-        }
-    }
-}
-
-void PlayerActivity::skipToMarkerEnd() {
-    if (m_activeMarkerEndMs <= 0) return;
-
-    double seekToSec = (m_activeMarkerEndMs - m_transcodeBaseOffsetMs) / 1000.0;
-    if (seekToSec > 0) {
-        MpvPlayer::getInstance().seekTo(seekToSec);
-        brls::Logger::info("PlayerActivity: Manually skipped {} to {}ms", m_activeMarkerType, m_activeMarkerEndMs);
-
-        // Mark as skipped to prevent auto-skip re-trigger
-        if (m_activeMarkerType == "intro") m_introSkipped = true;
-        else if (m_activeMarkerType == "credits") m_creditsSkipped = true;
-    }
-
-    // Hide button
-    m_skipButtonVisible = false;
-    m_activeMarkerType.clear();
-    if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-}
-
 void PlayerActivity::toggleControls() {
     if (m_controlsVisible) {
         hideControls();
@@ -3709,34 +2351,20 @@ void PlayerActivity::showControls() {
         controlsBox->setAlpha(1.0f);
         controlsBox->setVisibility(brls::Visibility::VISIBLE);
     }
-    if (centerControls) {
-        centerControls->setAlpha(1.0f);
-        centerControls->setVisibility(brls::Visibility::VISIBLE);
-    }
     if (titleLabel) {
         titleLabel->setVisibility(brls::Visibility::VISIBLE);
-    }
-    // Re-show skip button if we're still in a marker region
-    if (!m_activeMarkerType.empty() && skipBtn) {
-        m_skipButtonVisible = true;
-        m_skipButtonShowSeconds = 0;  // Reset auto-hide timer
-        skipBtn->setVisibility(brls::Visibility::VISIBLE);
     }
 }
 
 void PlayerActivity::hideControls() {
-    // Don't hide controls for photos or music mode
-    if (m_isPhoto || m_isQueueMode) return;
+    // Don't hide controls in music mode
+    if (m_isQueueMode) return;
 
     m_controlsVisible = false;
     if (controlsBox) {
         controlsBox->setAlpha(0.0f);
         controlsBox->setVisibility(brls::Visibility::GONE);
     }
-    if (centerControls) {
-        centerControls->setAlpha(0.0f);
-        centerControls->setVisibility(brls::Visibility::GONE);
-    }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

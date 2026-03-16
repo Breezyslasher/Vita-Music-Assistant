@@ -328,3 +328,9 @@ bool PsvPlatform::canSetBacklightBrightness()
 }
 
 } // namespace brls
+
+// Alias for vita_ma code — delegates to vitaplex_set_audio_playback_active
+// which controls the same s_audioPlaybackActive used by mainLoopIteration().
+extern "C" void vita_ma_set_audio_playback_active(bool active) {
+    vitaplex_set_audio_playback_active(active);
+}

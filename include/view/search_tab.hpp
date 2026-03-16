@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Search Tab
+ * Vita Music Assistant - Search Tab
  * Search for media content
  */
 
@@ -7,11 +7,11 @@
 
 #include <borealis.hpp>
 #include <memory>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/horizontal_scroll_row.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class SearchTab : public brls::Box {
 public:
@@ -23,8 +23,8 @@ public:
 
 private:
     void performSearch(const std::string& query);
-    void onItemSelected(const MediaItem& item);
-    void populateRow(HorizontalScrollRow* row, const std::vector<MediaItem>& items);
+    void onItemSelected(const MusicItem& item);
+    void populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>& items);
 
     brls::Label* m_titleLabel = nullptr;
     brls::Label* m_searchLabel = nullptr;
@@ -35,28 +35,19 @@ private:
     brls::Box* m_scrollContent = nullptr;
 
     // Category labels and rows
-    brls::Label* m_moviesLabel = nullptr;
-    HorizontalScrollRow* m_moviesRow = nullptr;
-    brls::Label* m_showsLabel = nullptr;
-    HorizontalScrollRow* m_showsRow = nullptr;
-    brls::Label* m_episodesLabel = nullptr;
-    HorizontalScrollRow* m_episodesRow = nullptr;
     brls::Label* m_albumsLabel = nullptr;
     HorizontalScrollRow* m_albumsRow = nullptr;
     brls::Label* m_tracksLabel = nullptr;
     HorizontalScrollRow* m_tracksRow = nullptr;
 
     std::string m_searchQuery;
-    std::vector<MediaItem> m_results;
-    std::vector<MediaItem> m_movies;
-    std::vector<MediaItem> m_shows;
-    std::vector<MediaItem> m_episodes;
-    std::vector<MediaItem> m_albums;
-    std::vector<MediaItem> m_tracks;
+    std::vector<MusicItem> m_results;
+    std::vector<MusicItem> m_albums;
+    std::vector<MusicItem> m_tracks;
 
     // Alive flag + generation counter for crash prevention
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
     int m_loadGeneration = 0;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

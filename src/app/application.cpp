@@ -1,10 +1,10 @@
 /**
- * VitaPlex - Application implementation
+ * Vita Music Assistant - Application implementation
  */
 
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
-#include "app/downloads_manager.hpp"
+#include "app/ma_client.hpp"
+#include "app/ma_types.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -18,9 +18,9 @@
 #include <psp2/io/stat.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
-static const char* SETTINGS_PATH = "ux0:data/VitaPlex/settings.json";
+static const char* SETTINGS_PATH = "ux0:data/VitaMA/settings.json";
 
 Application& Application::getInstance() {
     static Application instance;
@@ -29,11 +29,11 @@ Application& Application::getInstance() {
 
 bool Application::init() {
     brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
-    brls::Logger::info("VitaPlex {} initializing...", VITA_PLEX_VERSION);
+    brls::Logger::info("Vita Music Assistant {} initializing...", VMA_VERSION);
 
 #ifdef __vita__
     // Create data directory
-    int ret = sceIoMkdir("ux0:data/VitaPlex", 0777);
+    int ret = sceIoMkdir("ux0:data/VitaMA", 0777);
     brls::Logger::debug("sceIoMkdir result: {:#x}", ret);
 #endif
 
@@ -54,17 +54,12 @@ void Application::run() {
     brls::Logger::info("Application::run - isLoggedIn={}, serverUrl={}",
                        isLoggedIn(), m_serverUrl.empty() ? "(empty)" : m_serverUrl);
 
-    // Check if we have saved login credentials
-    if (isLoggedIn() && !m_serverUrl.empty()) {
+    // Check if we have a saved server URL
+    if (!m_serverUrl.empty()) {
         brls::Logger::info("Restoring saved session...");
-        // Verify connection and go to main
-        PlexClient::getInstance().setAuthToken(m_authToken);
-        // Use connectToServer to properly initialize (including Live TV check)
-        if (PlexClient::getInstance().connectToServer(m_serverUrl)) {
-            brls::Logger::info("Restored session and connected to server");
-            // Bidirectional sync: push local offline progress, pull server progress
-            DownloadsManager::getInstance().init();
-            DownloadsManager::getInstance().syncProgressBidirectional();
+        // Connect to Music Assistant server
+        if (MAClient::instance().connect(m_serverUrl, m_authToken)) {
+            brls::Logger::info("Connected to server");
             pushMainActivity();
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
@@ -85,7 +80,7 @@ void Application::run() {
 void Application::shutdown() {
     saveSettings();
     m_initialized = false;
-    brls::Logger::info("VitaPlex shutting down");
+    brls::Logger::info("Vita Music Assistant shutting down");
 }
 
 void Application::pushLoginActivity() {
@@ -96,12 +91,8 @@ void Application::pushMainActivity() {
     brls::Application::pushActivity(new MainActivity());
 }
 
-void Application::pushPlayerActivity(const std::string& mediaKey, bool isLocalFile) {
-    brls::Application::pushActivity(new PlayerActivity(mediaKey, isLocalFile));
-}
-
-void Application::pushLiveTVPlayerActivity(const std::string& streamUrl, const std::string& channelTitle) {
-    brls::Application::pushActivity(PlayerActivity::createForStream(streamUrl, channelTitle));
+void Application::pushPlayerActivity(const std::string& queueId) {
+    brls::Application::pushActivity(new PlayerActivity(queueId));
 }
 
 void Application::applyTheme() {
@@ -135,14 +126,12 @@ void Application::applyLogLevel() {
     }
 }
 
-std::string Application::getQualityString(VideoQuality quality) {
+std::string Application::getQualityString(AudioQuality quality) {
     switch (quality) {
-        case VideoQuality::ORIGINAL: return "Original (Direct Play)";
-        case VideoQuality::QUALITY_1080P: return "1080p (20 Mbps)";
-        case VideoQuality::QUALITY_720P: return "720p (4 Mbps)";
-        case VideoQuality::QUALITY_480P: return "480p (2 Mbps)";
-        case VideoQuality::QUALITY_360P: return "360p (1 Mbps)";
-        case VideoQuality::QUALITY_240P: return "240p (500 Kbps)";
+        case AudioQuality::LOSSLESS: return "Lossless (FLAC)";
+        case AudioQuality::HIGH: return "High (320 Kbps)";
+        case AudioQuality::NORMAL: return "Normal (192 Kbps)";
+        case AudioQuality::LOW: return "Low (96 Kbps)";
         default: return "Unknown";
     }
 }
@@ -152,15 +141,6 @@ std::string Application::getThemeString(AppTheme theme) {
         case AppTheme::SYSTEM: return "System";
         case AppTheme::LIGHT: return "Light";
         case AppTheme::DARK: return "Dark";
-        default: return "Unknown";
-    }
-}
-
-std::string Application::getSubtitleSizeString(SubtitleSize size) {
-    switch (size) {
-        case SubtitleSize::SMALL: return "Small";
-        case SubtitleSize::MEDIUM: return "Medium";
-        case SubtitleSize::LARGE: return "Large";
         default: return "Unknown";
     }
 }
@@ -248,43 +228,26 @@ bool Application::loadSettings() {
     m_settings.showDebugTab = extractBool("showDebugTab", true);
 
     // Load layout settings
-    m_settings.showLibrariesInSidebar = extractBool("showLibrariesInSidebar", false);
     m_settings.collapseSidebar = extractBool("collapseSidebar", false);
-    m_settings.hiddenLibraries = extractString("hiddenLibraries");
     m_settings.sidebarOrder = extractString("sidebarOrder");
 
     // Load content display settings
-    m_settings.showCollections = extractBool("showCollections", true);
     m_settings.showPlaylists = extractBool("showPlaylists", true);
-    m_settings.showGenres = extractBool("showGenres", true);
     m_settings.hideTitlesInGrid = extractBool("hideTitlesInGrid", false);
-    m_settings.skipSingleSeason = extractBool("skipSingleSeason", false);
 
     // Load playback settings
     m_settings.autoPlayNext = extractBool("autoPlayNext", true);
-    m_settings.resumePlayback = extractBool("resumePlayback", true);
-    m_settings.showSubtitles = extractBool("showSubtitles", true);
-    m_settings.subtitleSize = static_cast<SubtitleSize>(extractInt("subtitleSize"));
     m_settings.seekInterval = extractInt("seekInterval");
     if (m_settings.seekInterval <= 0) m_settings.seekInterval = 10;
     m_settings.controlsAutoHideSeconds = extractInt("controlsAutoHideSeconds");
     if (m_settings.controlsAutoHideSeconds < 0) m_settings.controlsAutoHideSeconds = 5;
-    m_settings.autoSkipIntro = extractBool("autoSkipIntro", false);
-    m_settings.autoSkipCredits = extractBool("autoSkipCredits", false);
 
-    // Load transcode settings
-    m_settings.videoQuality = static_cast<VideoQuality>(extractInt("videoQuality"));
-    m_settings.forceTranscode = extractBool("forceTranscode", false);
-    m_settings.maxBitrate = extractInt("maxBitrate");
-    if (m_settings.maxBitrate <= 0) m_settings.maxBitrate = 2000;
+    // Load audio quality settings
+    m_settings.audioQuality = static_cast<AudioQuality>(extractInt("audioQuality"));
 
     // Load network settings
     m_settings.connectionTimeout = extractInt("connectionTimeout");
     if (m_settings.connectionTimeout <= 0) m_settings.connectionTimeout = 180; // 3 minutes default
-    m_settings.directPlay = extractBool("directPlay", false);
-
-    // Load download settings
-    m_settings.deleteAfterWatch = extractBool("deleteAfterWatch", false);
 
     // Load music settings
     int trackAction = extractInt("trackDefaultAction");
@@ -322,39 +285,23 @@ bool Application::saveSettings() {
     json += "  \"showDebugTab\": " + std::string(m_settings.showDebugTab ? "true" : "false") + ",\n";
 
     // Layout settings
-    json += "  \"showLibrariesInSidebar\": " + std::string(m_settings.showLibrariesInSidebar ? "true" : "false") + ",\n";
     json += "  \"collapseSidebar\": " + std::string(m_settings.collapseSidebar ? "true" : "false") + ",\n";
-    json += "  \"hiddenLibraries\": \"" + m_settings.hiddenLibraries + "\",\n";
     json += "  \"sidebarOrder\": \"" + m_settings.sidebarOrder + "\",\n";
 
     // Content display settings
-    json += "  \"showCollections\": " + std::string(m_settings.showCollections ? "true" : "false") + ",\n";
     json += "  \"showPlaylists\": " + std::string(m_settings.showPlaylists ? "true" : "false") + ",\n";
-    json += "  \"showGenres\": " + std::string(m_settings.showGenres ? "true" : "false") + ",\n";
     json += "  \"hideTitlesInGrid\": " + std::string(m_settings.hideTitlesInGrid ? "true" : "false") + ",\n";
-    json += "  \"skipSingleSeason\": " + std::string(m_settings.skipSingleSeason ? "true" : "false") + ",\n";
 
     // Playback settings
     json += "  \"autoPlayNext\": " + std::string(m_settings.autoPlayNext ? "true" : "false") + ",\n";
-    json += "  \"resumePlayback\": " + std::string(m_settings.resumePlayback ? "true" : "false") + ",\n";
-    json += "  \"showSubtitles\": " + std::string(m_settings.showSubtitles ? "true" : "false") + ",\n";
-    json += "  \"subtitleSize\": " + std::to_string(static_cast<int>(m_settings.subtitleSize)) + ",\n";
     json += "  \"seekInterval\": " + std::to_string(m_settings.seekInterval) + ",\n";
     json += "  \"controlsAutoHideSeconds\": " + std::to_string(m_settings.controlsAutoHideSeconds) + ",\n";
-    json += "  \"autoSkipIntro\": " + std::string(m_settings.autoSkipIntro ? "true" : "false") + ",\n";
-    json += "  \"autoSkipCredits\": " + std::string(m_settings.autoSkipCredits ? "true" : "false") + ",\n";
 
-    // Transcode settings
-    json += "  \"videoQuality\": " + std::to_string(static_cast<int>(m_settings.videoQuality)) + ",\n";
-    json += "  \"forceTranscode\": " + std::string(m_settings.forceTranscode ? "true" : "false") + ",\n";
-    json += "  \"maxBitrate\": " + std::to_string(m_settings.maxBitrate) + ",\n";
+    // Audio quality settings
+    json += "  \"audioQuality\": " + std::to_string(static_cast<int>(m_settings.audioQuality)) + ",\n";
 
     // Network settings
     json += "  \"connectionTimeout\": " + std::to_string(m_settings.connectionTimeout) + ",\n";
-    json += "  \"directPlay\": " + std::string(m_settings.directPlay ? "true" : "false") + ",\n";
-
-    // Download settings
-    json += "  \"deleteAfterWatch\": " + std::string(m_settings.deleteAfterWatch ? "true" : "false") + ",\n";
 
     // Music settings
     json += "  \"trackDefaultAction\": " + std::to_string(static_cast<int>(m_settings.trackDefaultAction)) + ",\n";
@@ -383,4 +330,4 @@ bool Application::saveSettings() {
 #endif
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

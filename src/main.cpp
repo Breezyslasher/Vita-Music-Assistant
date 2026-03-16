@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Plex Client for PlayStation Vita
+ * Vita Music Assistant - Music Client for PlayStation Vita
  * Main entry point with Borealis UI framework
  *
  * Based on switchfin architecture (https://github.com/dragonflylee/switchfin)
@@ -8,12 +8,10 @@
 
 #include <borealis.hpp>
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/media_item_cell.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/media_detail_view.hpp"
-#include "view/video_view.hpp"
-#include "app/downloads_manager.hpp"
 #include "utils/http_client.hpp"
 
 #ifdef __vita__
@@ -137,7 +135,7 @@ static bool initVitaNetwork() {
     }
 
     // Initialize curl
-    vitaplex::HttpClient::globalInit();
+    vita_ma::HttpClient::globalInit();
 
     brls::Logger::info("Networking initialized");
     return true;
@@ -147,7 +145,7 @@ static bool initVitaNetwork() {
  * Cleanup networking
  */
 static void cleanupVitaNetwork() {
-    vitaplex::HttpClient::globalCleanup();
+    vita_ma::HttpClient::globalCleanup();
     sceHttpTerm();
     sceSslTerm();
     sceNetCtlTerm();
@@ -159,9 +157,8 @@ static void cleanupVitaNetwork() {
  * Register custom views
  */
 static void registerCustomViews() {
-    brls::Application::registerXMLView("MediaItemCell", vitaplex::MediaItemCell::create);
-    brls::Application::registerXMLView("RecyclingGrid", vitaplex::RecyclingGrid::create);
-    brls::Application::registerXMLView("vitaplex:VideoView", vitaplex::VideoView::create);
+    brls::Application::registerXMLView("MediaItemCell", vita_ma::MediaItemCell::create);
+    brls::Application::registerXMLView("RecyclingGrid", vita_ma::RecyclingGrid::create);
 }
 
 /**
@@ -184,8 +181,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Create log directory and file on Vita
-    sceIoMkdir("ux0:data/VitaPlex", 0777);
-    static FILE* logFile = std::fopen("ux0:data/VitaPlex/vitaplex.log", "w");
+    sceIoMkdir("ux0:data/VitaMA", 0777);
+    static FILE* logFile = std::fopen("ux0:data/VitaMA/vita_ma.log", "w");
     if (logFile) {
         // Use line buffering so logs are written immediately
         setvbuf(logFile, NULL, _IOLBF, 0);
@@ -231,7 +228,7 @@ int main(int argc, char* argv[]) {
                     time_tm.tm_hour, time_tm.tm_min, time_tm.tm_sec,
                     (int)ms, levelStr, log.c_str());
         });
-        brls::Logger::info("Log file initialized: ux0:data/VitaPlex/vitaplex.log");
+        brls::Logger::info("Log file initialized: ux0:data/VitaMA/vita_ma.log");
     }
 #endif
 
@@ -241,22 +238,19 @@ int main(int argc, char* argv[]) {
     style.addMetric("brls/sidebar/padding_right", 20.0f);
 
     // Create window
-    brls::Application::createWindow("VitaPlex");
+    brls::Application::createWindow("Vita Music Assistant");
 
-    // Set theme colors (Plex-like)
+    // Set theme colors
     brls::Application::getPlatform()->getThemeVariant();
 
     // Register custom views
     registerCustomViews();
 
-    // Initialize downloads manager
-    vitaplex::DownloadsManager::getInstance().init();
-
     // Initialize application
-    vitaplex::Application& app = vitaplex::Application::getInstance();
+    vita_ma::Application& app = vita_ma::Application::getInstance();
 
     if (!app.init()) {
-        brls::Logger::error("Failed to initialize VitaPlex");
+        brls::Logger::error("Failed to initialize Vita Music Assistant");
 #ifdef __vita__
         cleanupVitaNetwork();
         sceKernelExitProcess(1);

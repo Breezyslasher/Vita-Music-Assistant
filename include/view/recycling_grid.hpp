@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Recycling Grid
+ * Vita Music Assistant - Recycling Grid
  * Memory-efficient grid view with infinite scroll pagination.
  * Automatically fetches the next page when scrolling near the bottom.
  */
@@ -7,20 +7,20 @@
 #pragma once
 
 #include <borealis.hpp>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include <functional>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class RecyclingGrid : public brls::ScrollingFrame {
 public:
     RecyclingGrid();
 
-    void setDataSource(const std::vector<MediaItem>& items);
+    void setDataSource(const std::vector<MusicItem>& items);
     // Append additional items (called when next page arrives from server)
-    void appendItems(const std::vector<MediaItem>& newItems);
-    void setOnItemSelected(std::function<void(const MediaItem&)> callback);
-    void setOnItemStartAction(std::function<void(const MediaItem&)> callback);
+    void appendItems(const std::vector<MusicItem>& newItems);
+    void setOnItemSelected(std::function<void(const MusicItem&)> callback);
+    void setOnItemStartAction(std::function<void(const MusicItem&)> callback);
 
     // Called automatically when user scrolls to the bottom.
     // Owner should fetch the next page and call appendItems().
@@ -39,9 +39,9 @@ private:
     void onItemClicked(int index);
     void addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index);
 
-    std::vector<MediaItem> m_items;
-    std::function<void(const MediaItem&)> m_onItemSelected;
-    std::function<void(const MediaItem&)> m_onItemStartAction;
+    std::vector<MusicItem> m_items;
+    std::function<void(const MusicItem&)> m_onItemSelected;
+    std::function<void(const MusicItem&)> m_onItemStartAction;
     std::function<void()> m_onLoadMore;
 
     brls::Box* m_contentBox = nullptr;
@@ -53,4 +53,4 @@ private:
     bool m_loading = false;  // Prevents duplicate fetch requests
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

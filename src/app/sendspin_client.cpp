@@ -58,7 +58,7 @@ bool SendspinClient::startStream(const std::string& sendspinUrl) {
     setState(SendspinState::BUFFERING);
 
     // Tell MPV to play from our pipe
-    auto& mpv = MpvPlayer::instance();
+    auto& mpv = MpvPlayer::getInstance();
     if (!mpv.isInitialized()) {
         mpv.init();
     }
@@ -72,21 +72,21 @@ void SendspinClient::stopStream() {
 
     brls::Logger::info("Sendspin: stopping stream");
     m_ws.disconnect();
-    MpvPlayer::instance().stop();
+    MpvPlayer::getInstance().stop();
     cleanupAudioPipe();
     setState(SendspinState::DISCONNECTED);
 }
 
 void SendspinClient::pauseStream() {
     if (m_state.load() == SendspinState::STREAMING) {
-        MpvPlayer::instance().pause();
+        MpvPlayer::getInstance().pause();
         setState(SendspinState::PAUSED);
     }
 }
 
 void SendspinClient::resumeStream() {
     if (m_state.load() == SendspinState::PAUSED) {
-        MpvPlayer::instance().play();
+        MpvPlayer::getInstance().play();
         setState(SendspinState::STREAMING);
     }
 }
@@ -281,7 +281,7 @@ void RemotePlaybackController::playQueueLocally(const std::string& queueId) {
         // If it's a direct HTTP stream URL, play directly with MPV
         if (streamUrl.find("http://") == 0 || streamUrl.find("https://") == 0) {
             brls::Logger::info("RemotePlayback: playing direct stream: {}", streamUrl);
-            auto& mpv = MpvPlayer::instance();
+            auto& mpv = MpvPlayer::getInstance();
             if (!mpv.isInitialized()) mpv.init();
             mpv.loadUrl(streamUrl);
         }
@@ -302,7 +302,7 @@ void RemotePlaybackController::stopLocalPlayback() {
 
     brls::Logger::info("RemotePlayback: stopping local playback");
     SendspinClient::instance().stopStream();
-    MpvPlayer::instance().stop();
+    MpvPlayer::getInstance().stop();
     m_localPlayback.store(false);
     m_currentQueueId.clear();
 }

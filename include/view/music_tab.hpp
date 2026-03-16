@@ -1,16 +1,22 @@
 /**
- * VitaPlex - Music Tab
- * Displays music libraries with playlists and collections
+ * Vita Music Assistant - Music Tab
+ * Displays music libraries with playlists
  */
 
 #pragma once
 
 #include <borealis.hpp>
 #include <memory>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
+
+// Simple section descriptor for music library
+struct MusicSection {
+    std::string key;
+    std::string title;
+};
 
 class MusicTab : public brls::Box {
 public:
@@ -25,17 +31,15 @@ private:
     void loadContent(const std::string& sectionKey);
     void loadAlbumsByType(const std::string& sectionKey);
     void loadPlaylists();
-    void loadCollections(const std::string& sectionKey);
-    void onItemSelected(const MediaItem& item);
-    void onPlaylistSelected(const Playlist& playlist);
-    void onCollectionSelected(const MediaItem& collection);
+    void onItemSelected(const MusicItem& item);
+    void onPlaylistSelected(const MusicItem& playlist);
     brls::Box* createHorizontalRow(const std::string& title);
-    brls::Box* createAlbumScrollRow(const std::string& title, const std::vector<MediaItem>& items);
+    brls::Box* createAlbumScrollRow(const std::string& title, const std::vector<MusicItem>& items);
 
     // Playlist management
     void showCreatePlaylistDialog();
-    void showPlaylistOptionsDialog(const Playlist& playlist);
-    void showAlbumContextMenu(const MediaItem& album);
+    void showPlaylistOptionsDialog(const MusicItem& playlist);
+    void showAlbumContextMenu(const MusicItem& album);
     void playPlaylistWithQueue(const std::string& playlistId, int startIndex = 0);
     void refreshPlaylists();
 
@@ -56,10 +60,6 @@ private:
     brls::Box* m_playlistsRow = nullptr;
     brls::Box* m_playlistsContainer = nullptr;
 
-    // Collections row
-    brls::Box* m_collectionsRow = nullptr;
-    brls::Box* m_collectionsContainer = nullptr;
-
     // Album categories (scrolling rows by type)
     brls::ScrollingFrame* m_albumCategoriesScroll = nullptr;
     brls::Box* m_albumCategoriesBox = nullptr;
@@ -67,10 +67,9 @@ private:
     // Main content grid
     RecyclingGrid* m_contentGrid = nullptr;
 
-    std::vector<LibrarySection> m_sections;  // Music sections only
-    std::vector<MediaItem> m_items;
-    std::vector<Playlist> m_playlists;        // Using new Playlist struct
-    std::vector<MediaItem> m_collections;
+    std::vector<MusicSection> m_sections;
+    std::vector<MusicItem> m_items;
+    std::vector<MusicItem> m_playlists;
     std::string m_currentSection;
     std::string m_currentPlaylistId;          // Currently viewing playlist
     bool m_loaded = false;
@@ -80,4 +79,4 @@ private:
     std::shared_ptr<bool> m_alive;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

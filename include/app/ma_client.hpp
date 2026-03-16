@@ -175,16 +175,26 @@ public:
     // Get stream URL for local playback
     void getStreamUrl(const std::string& queueId, MAResponseCallback cb);
 
+    // Get all players
+    void getPlayers(MAResponseCallback cb);
+
+    // Delete a playlist
+    void deletePlaylist(const std::string& itemId, MAResponseCallback cb = nullptr);
+
+    // Get thumbnail URL for an image path
+    // Returns a full URL suitable for image loading
+    std::string getThumbnailUrl(const std::string& imageUrl, int width = 0, int height = 0);
+
     // Server info
     ServerInfo getServerInfo() const { return m_serverInfo; }
+
+    // Send a command to the server (public for WebRTC relay use)
+    void sendCommand(const std::string& command, const Json& kwargs,
+                     MAResponseCallback cb = nullptr);
 
 private:
     MAClient() = default;
     ~MAClient() = default;
-
-    // Send a command to the server
-    void sendCommand(const std::string& command, const Json& kwargs,
-                     MAResponseCallback cb = nullptr);
     std::string generateMessageId();
 
     // Handle incoming messages

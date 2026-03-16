@@ -27,7 +27,7 @@ include(${BOREALIS_LIBRARY}/cmake/commonOption.cmake)
 include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 
 # Project definition (AFTER toolchain include)
-project(VitaPlex VERSION 2.0.0 LANGUAGES C CXX)
+project(VitaMusicAssistant VERSION 2.0.0 LANGUAGES C CXX)
 
 # C++17 required for Borealis
 set(CMAKE_CXX_STANDARD 17)
@@ -37,8 +37,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti -fexceptions")
 
 # App metadata
-set(VITA_APP_NAME "VitaPlex")
-set(VITA_TITLEID "VPLEX0001")
+set(VITA_APP_NAME "Vita Music Assistant")
+set(VITA_TITLEID "VMASS0001")
 set(VITA_VERSION "02.00")
 # ATTRIBUTE2=12 enables maximum heap size mode - CRITICAL for memory-intensive apps
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1 -d ATTRIBUTE2=12")
@@ -64,8 +64,10 @@ set(APP_SOURCES
 
     # Application
     src/app/application.cpp
-    src/app/plex_client.cpp
-    src/app/downloads_manager.cpp
+    src/app/ma_client.cpp
+    src/app/sendspin_client.cpp
+    src/app/websocket_client.cpp
+    src/app/webrtc_client.cpp
     src/app/music_queue.cpp
 
     # Activities
@@ -80,16 +82,15 @@ set(APP_SOURCES
     src/view/search_tab.cpp
     src/view/settings_tab.cpp
     src/view/debug_tab.cpp
-    src/view/livetv_tab.cpp
     src/view/media_detail_view.cpp
     src/view/media_item_cell.cpp
     src/view/recycling_grid.cpp
-    src/view/video_view.cpp
-    src/view/downloads_tab.cpp
     src/view/music_tab.cpp
+    src/view/now_playing_view.cpp
     src/view/progress_dialog.cpp
     src/view/overlay_dialog.cpp
     src/view/horizontal_scroll_row.cpp
+    src/view/queue_tab.cpp
 
     # Player
     src/player/mpv_player.cpp
@@ -97,7 +98,6 @@ set(APP_SOURCES
     # Utils
     src/utils/http_client.cpp
     src/utils/image_loader.cpp
-    src/utils/jwt_auth.cpp
     src/utils/vita_stubs.c
 )
 
@@ -114,8 +114,8 @@ add_executable(${PROJECT_NAME} ${APP_SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE ${APP_INCLUDES})
 
 # Wrap pthread_create to enforce a minimum 512KB stack size.
-# Vita's default pthread stack is only 32KB, which is too small for MPV's
-# software H.264 decoder threads (causes stack overflow crash).
+# Vita's default pthread stack is only 32KB, which can be too small for
+# audio decoder threads.
 target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--wrap=pthread_create")
 
 # Link libraries - borealis + app platform libs from toolchain
@@ -124,23 +124,19 @@ target_link_libraries(${PROJECT_NAME}
     borealis
     ${APP_PLATFORM_LIB}
 
-    # External libraries first (they depend on Vita stubs)
-    # FFmpeg has circular dependencies - list avcodec multiple times
+    # External libraries
     curl
     mpv
-    archive
-    zstd
+    ass
     avfilter
     avformat
     avcodec
-    swresample
     swscale
+    swresample
     avutil
     avcodec
-    ass
+    archive
     freetype
-    harfbuzz
-    fribidi
     png
     bz2
     lzma
@@ -158,12 +154,11 @@ target_link_libraries(${PROJECT_NAME}
     SceRtc_stub
     SceShellSvc_stub
     SceAudiodec_stub
-    SceVideodec_stub
-    SceAvcodec_stub
-    SceCodecEngine_stub
     SceAudio_stub
     SceVshBridge_stub
     SceAppMgr_stub
+    SceVideodec_stub
+    SceCodecEngine_stub
 
     # Standard libraries last (m is provided by libstdc++)
     z

@@ -1,5 +1,5 @@
 /**
- * VitaPlex - MPV Video Player Implementation
+ * Vita Music Assistant - MPV Player Implementation
  * Based on switchfin's MPV implementation for PS Vita
  * Using software rendering with NanoVG display
  */
@@ -28,10 +28,10 @@
 #ifdef __vita__
 // Defined in patches/psv_platform.cpp - throttles the borealis main loop
 // to ~30fps during audio-only playback so the ao_vita thread gets more CPU.
-extern "C" void vitaplex_set_audio_playback_active(bool active);
+extern "C" void vita_ma_set_audio_playback_active(bool active);
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 #ifdef __vita__
 // Flush the GXM GPU pipeline to ensure it's idle before mpv uses the shared
@@ -198,20 +198,16 @@ bool MpvPlayer::init() {
 
     mpv_set_option_string(m_mpv, "network-timeout", "30");
 
-    // User agent for Plex compatibility
-    mpv_set_option_string(m_mpv, "user-agent", PLEX_CLIENT_NAME "/" PLEX_CLIENT_VERSION);
+    // User agent for Music Assistant
+    mpv_set_option_string(m_mpv, "user-agent", MA_CLIENT_NAME "/" MA_CLIENT_VERSION);
 
-    // Per official Plex API (developer.plex.tv/pms), X-Plex-Client-Identifier
-    // is a REQUIRED HTTP header (in=header). Set it here so MPV sends it
-    // when streaming from Plex transcode endpoints.
+    // HTTP headers for Music Assistant server identification
     mpv_set_option_string(m_mpv, "http-header-fields",
-        "X-Plex-Client-Identifier: VitaPlex,"
-        "X-Plex-Product: VitaPlex,"
-        "X-Plex-Version: 1.0.0,"
-        "X-Plex-Platform: PlayStation Vita,"
-        "X-Plex-Device: PS Vita,"
-        "X-Plex-Client-Profile-Name: Generic,"
-        "X-Plex-Device-Name: PS Vita");
+        "X-MA-Client: Vita Music Assistant,"
+        "X-MA-Product: Vita Music Assistant,"
+        "X-MA-Version: " MA_CLIENT_VERSION ","
+        "X-MA-Platform: PlayStation Vita,"
+        "X-MA-Device: PS Vita");
 
     // Note: demuxer-lavf-probe-info and force-seekable caused crashes on Vita
     // Keep options minimal for compatibility
@@ -301,7 +297,7 @@ void MpvPlayer::shutdown() {
 
         m_stopping.store(true);
 #ifdef __vita__
-        vitaplex_set_audio_playback_active(false);
+        vita_ma_set_audio_playback_active(false);
 #endif
 
         // Clean up render context first (locks m_renderMutex to wait for in-flight renders)
@@ -578,13 +574,6 @@ void MpvPlayer::cycleAudio() {
     mpv_command_async(m_mpv, 0, cmd);
 }
 
-void MpvPlayer::setVideoTrack(int track) {
-    if (!m_mpv || m_stopping) return;
-
-    int64_t vid = track;
-    mpv_set_property_async(m_mpv, 0, "vid", MPV_FORMAT_INT64, &vid);
-}
-
 void MpvPlayer::disableSubtitles() {
     if (!m_mpv || m_stopping) return;
 
@@ -748,14 +737,14 @@ void MpvPlayer::setState(MpvPlayerState newState) {
         bool playing = (newState == MpvPlayerState::PLAYING ||
                        newState == MpvPlayerState::BUFFERING);
         brls::Application::getPlatform()->disableScreenDimming(playing,
-            "MpvPlayer", "VitaPlex");
+            "MpvPlayer", "Vita Music Assistant");
 
 #ifdef __vita__
         // Throttle the borealis main loop during audio-only playback.
         // The music player screen is mostly static so 30fps is fine,
         // and the freed CPU time prevents ao_vita audio underruns.
         if (m_audioOnly) {
-            vitaplex_set_audio_playback_active(playing);
+            vita_ma_set_audio_playback_active(playing);
         }
 #endif
         brls::Logger::debug("MpvPlayer::setState assignment done");
@@ -976,31 +965,7 @@ void MpvPlayer::handlePropertyChange(mpv_event_property* prop, uint64_t id) {
 void MpvPlayer::updatePlaybackInfo() {
     if (!m_mpv || m_state == MpvPlayerState::IDLE || m_state == MpvPlayerState::LOADING) return;
 
-    // Get video codec info if not yet fetched
-    if (m_playbackInfo.videoCodec.empty() && m_state == MpvPlayerState::PLAYING) {
-        char* val = mpv_get_property_string(m_mpv, "video-codec");
-        if (val) {
-            m_playbackInfo.videoCodec = val;
-            mpv_free(val);
-        }
-
-        int64_t w = 0, h = 0;
-        mpv_get_property(m_mpv, "width", MPV_FORMAT_INT64, &w);
-        mpv_get_property(m_mpv, "height", MPV_FORMAT_INT64, &h);
-        m_playbackInfo.videoWidth = (int)w;
-        m_playbackInfo.videoHeight = (int)h;
-
-        double fps = 0.0;
-        mpv_get_property(m_mpv, "estimated-vf-fps", MPV_FORMAT_DOUBLE, &fps);
-        m_playbackInfo.fps = fps;
-
-        if (m_playbackInfo.videoWidth > 0) {
-            brls::Logger::info("MpvPlayer: Video {}x{} @ {:.2f}fps codec={}",
-                              m_playbackInfo.videoWidth, m_playbackInfo.videoHeight,
-                              m_playbackInfo.fps, m_playbackInfo.videoCodec);
-        }
-    }
-
+    // Get audio codec info if not yet fetched
     if (m_playbackInfo.audioCodec.empty() && m_state == MpvPlayerState::PLAYING) {
         char* val = mpv_get_property_string(m_mpv, "audio-codec");
         if (val) {
@@ -1258,4 +1223,4 @@ void MpvPlayer::render() {
     // VideoView::draw() just displays the already-rendered NanoVG texture
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

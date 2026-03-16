@@ -1,15 +1,16 @@
 /**
- * VitaPlex - Home Tab implementation
+ * Vita Music Assistant - Home Tab implementation
  */
 
 #include "view/home_tab.hpp"
 #include "view/media_item_cell.hpp"
 #include "view/media_detail_view.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 HomeTab::HomeTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -34,38 +35,6 @@ HomeTab::HomeTab() {
     m_titleLabel->setFontSize(28);
     m_titleLabel->setMarginBottom(20);
     m_scrollContent->addView(m_titleLabel);
-
-    // Continue Watching section
-    auto* continueLabel = new brls::Label();
-    continueLabel->setText("Continue Watching");
-    continueLabel->setFontSize(22);
-    continueLabel->setMarginBottom(10);
-    m_scrollContent->addView(continueLabel);
-
-    m_continueWatchingRow = createMediaRow();
-    m_scrollContent->addView(m_continueWatchingRow);
-
-    // Recently Added Movies section
-    auto* moviesLabel = new brls::Label();
-    moviesLabel->setText("Recently Added Movies");
-    moviesLabel->setFontSize(22);
-    moviesLabel->setMarginBottom(10);
-    moviesLabel->setMarginTop(15);
-    m_scrollContent->addView(moviesLabel);
-
-    m_moviesRow = createMediaRow();
-    m_scrollContent->addView(m_moviesRow);
-
-    // Recently Added TV Shows section
-    auto* showsLabel = new brls::Label();
-    showsLabel->setText("Recently Added TV Shows");
-    showsLabel->setFontSize(22);
-    showsLabel->setMarginBottom(10);
-    showsLabel->setMarginTop(15);
-    m_scrollContent->addView(showsLabel);
-
-    m_showsRow = createMediaRow();
-    m_scrollContent->addView(m_showsRow);
 
     // Recently Added Music section
     auto* musicLabel = new brls::Label();
@@ -93,7 +62,7 @@ HorizontalScrollRow* HomeTab::createMediaRow() {
     return row;
 }
 
-void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MediaItem>& items, bool directPlay) {
+void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>& items, bool directPlay) {
     if (!row) return;
 
     row->clearViews();
@@ -103,11 +72,11 @@ void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MediaItem>
         cell->setItem(item);
         cell->setMarginRight(10);
 
-        MediaItem capturedItem = item;
+        MusicItem capturedItem = item;
         cell->registerClickAction([this, capturedItem, directPlay](brls::View* view) {
             if (directPlay) {
-                // Play directly for continue watching items (movies, episodes, tracks)
-                Application::getInstance().pushPlayerActivity(capturedItem.ratingKey);
+                // Play directly for recently played items
+                Application::getInstance().pushPlayerActivity(capturedItem.itemId);
             } else {
                 onItemSelected(capturedItem);
             }
@@ -115,32 +84,14 @@ void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MediaItem>
         });
         cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
 
-        // Register START button context menus for movies, shows, and seasons
-        if (capturedItem.mediaType == MediaType::MOVIE) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showMovieContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::SHOW) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showShowContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::SEASON) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showSeasonContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::MUSIC_ARTIST) {
+        // Register START button context menus for artists and albums
+        if (capturedItem.mediaType == MediaType::ARTIST) {
             cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
                 [capturedItem](brls::View* view) {
                     MediaDetailView::showArtistContextMenuStatic(capturedItem);
                     return true;
                 });
-        } else if (capturedItem.mediaType == MediaType::MUSIC_ALBUM) {
+        } else if (capturedItem.mediaType == MediaType::ALBUM) {
             cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
                 [capturedItem](brls::View* view) {
                     MediaDetailView::showAlbumContextMenuStatic(capturedItem);
@@ -174,12 +125,6 @@ void HomeTab::willDisappear(bool resetState) {
     ImageLoader::clearCache();
 
     // Free stored item data to reduce baseline memory
-    m_continueWatching.clear();
-    m_continueWatching.shrink_to_fit();
-    m_recentMovies.clear();
-    m_recentMovies.shrink_to_fit();
-    m_recentShows.clear();
-    m_recentShows.shrink_to_fit();
     m_recentMusic.clear();
     m_recentMusic.shrink_to_fit();
 
@@ -200,122 +145,44 @@ void HomeTab::onFocusGained() {
 void HomeTab::loadContent() {
     brls::Logger::debug("HomeTab::loadContent - Starting async load");
 
-    // Load continue watching asynchronously
-    asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        brls::Logger::debug("HomeTab: Fetching continue watching (async)...");
-        PlexClient& client = PlexClient::getInstance();
-        std::vector<MediaItem> items;
+    // Load recently played music using MA async API
+    MAClient::instance().getRecentlyPlayed(
+        [this, aliveWeak = std::weak_ptr<bool>(m_alive)](bool success, const Json& result) {
+            if (!success) {
+                brls::Logger::error("HomeTab: Failed to fetch recently played music");
+                return;
+            }
 
-        if (client.fetchContinueWatching(items)) {
-            brls::Logger::info("HomeTab: Got {} continue watching items", items.size());
+            // TODO: Parse JSON result into MusicItem vector
+            // The result contains an array of music items from Music Assistant.
+            // Each item needs to be parsed into a MusicItem struct.
+            std::vector<MusicItem> music;
 
-            // Trim heavy fields to reduce memory
-            for (auto& item : items) item.trimForGrid();
+            brls::Logger::info("HomeTab: Got {} recently played music items", music.size());
 
-            brls::sync([this, items, aliveWeak]() {
+            brls::sync([this, music, aliveWeak]() {
                 auto alive = aliveWeak.lock();
                 if (!alive || !*alive) return;
-                m_continueWatching = items;
-                populateRow(m_continueWatchingRow, m_continueWatching, true);
+
+                m_recentMusic = music;
+                populateRow(m_musicRow, m_recentMusic);
             });
-        } else {
-            brls::Logger::error("HomeTab: Failed to fetch continue watching");
-        }
-    });
-
-    // Load recently added by fetching from library sections
-    asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        brls::Logger::debug("HomeTab: Fetching library sections for recently added...");
-        PlexClient& client = PlexClient::getInstance();
-
-        // First get all library sections
-        std::vector<LibrarySection> sections;
-        if (!client.fetchLibrarySections(sections)) {
-            brls::Logger::error("HomeTab: Failed to fetch library sections");
-            return;
-        }
-
-        // Get hidden libraries setting
-        std::string hiddenLibraries = Application::getInstance().getSettings().hiddenLibraries;
-
-        std::vector<MediaItem> movies;
-        std::vector<MediaItem> shows;
-        std::vector<MediaItem> music;
-
-        // Helper to check if library is hidden
-        auto isHidden = [&hiddenLibraries](const std::string& key) -> bool {
-            if (hiddenLibraries.empty()) return false;
-            std::string hidden = hiddenLibraries;
-            size_t pos = 0;
-            while ((pos = hidden.find(',')) != std::string::npos) {
-                if (hidden.substr(0, pos) == key) return true;
-                hidden.erase(0, pos + 1);
-            }
-            return (hidden == key);
-        };
-
-        // Fetch recently added from each section by type
-        for (const auto& section : sections) {
-            // Skip hidden libraries
-            if (isHidden(section.key)) {
-                brls::Logger::debug("HomeTab: Skipping hidden library: {}", section.title);
-                continue;
-            }
-
-            std::vector<MediaItem> sectionItems;
-
-            // Fetch recently added using the correct API endpoint
-            if (client.fetchSectionRecentlyAdded(section.key, sectionItems)) {
-                // Sort items by type
-                for (auto& item : sectionItems) {
-                    if (section.type == "movie") {
-                        if (movies.size() < 8) movies.push_back(item);
-                    } else if (section.type == "show") {
-                        if (shows.size() < 8) shows.push_back(item);
-                    } else if (section.type == "artist") {
-                        if (music.size() < 8) music.push_back(item);
-                    }
-                }
-            }
-        }
-
-        brls::Logger::info("HomeTab: Got {} movies, {} shows, {} music items",
-                           movies.size(), shows.size(), music.size());
-
-        // Trim heavy fields to reduce memory for grid display
-        for (auto& item : movies) item.trimForGrid();
-        for (auto& item : shows) item.trimForGrid();
-        for (auto& item : music) item.trimForGrid();
-
-        // Update UI on main thread
-        brls::sync([this, movies, shows, music, aliveWeak]() {
-            auto alive = aliveWeak.lock();
-            if (!alive || !*alive) return;
-
-            m_recentMovies = movies;
-            m_recentShows = shows;
-            m_recentMusic = music;
-
-            populateRow(m_moviesRow, m_recentMovies);
-            populateRow(m_showsRow, m_recentShows);
-            populateRow(m_musicRow, m_recentMusic);
-        });
-    });
+        }, 20);
 
     m_loaded = true;
     brls::Logger::debug("HomeTab: Async content loading started");
 }
 
-void HomeTab::onItemSelected(const MediaItem& item) {
+void HomeTab::onItemSelected(const MusicItem& item) {
     // For tracks, play directly instead of showing detail view
-    if (item.mediaType == MediaType::MUSIC_TRACK) {
-        Application::getInstance().pushPlayerActivity(item.ratingKey);
+    if (item.mediaType == MediaType::TRACK) {
+        Application::getInstance().pushPlayerActivity(item.itemId);
         return;
     }
 
-    // Show media detail view for other types
+    // Show media detail view for other types (artists, albums)
     auto* detailView = new MediaDetailView(item);
     brls::Application::pushActivity(new brls::Activity(detailView));
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

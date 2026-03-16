@@ -13,7 +13,7 @@
     <!-- Title -->
     <brls:Label
         id="login/title"
-        text="VitaPlex"
+        text="Vita Music Assistant"
         fontSize="36"
         marginBottom="40"/>
 
@@ -69,13 +69,6 @@
             width="180"/>
 
     </brls:Box>
-
-    <!-- Offline mode button -->
-    <brls:Button
-        id="login/offline_button"
-        text="Offline Mode"
-        width="200"
-        marginBottom="20"/>
 
     <!-- PIN Code display -->
     <brls:Label

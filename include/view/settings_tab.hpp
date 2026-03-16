@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Settings Tab
+ * Vita Music Assistant - Settings Tab
  * Application settings and user info
  */
 
@@ -7,7 +7,7 @@
 
 #include <borealis.hpp>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class SettingsTab : public brls::Box {
 public:
@@ -19,8 +19,8 @@ private:
     void createLayoutSection();
     void createContentDisplaySection();
     void createPlaybackSection();
-    void createTranscodeSection();
-    void createDownloadsSection();
+    void createAudioSection();
+    void createRemoteAccessSection();
     void createAboutSection();
     void createDebugSection();
 
@@ -29,11 +29,9 @@ private:
     void onTestLocalPlayback();
     void onThemeChanged(int index);
     void onQualityChanged(int index);
-    void onSubtitleSizeChanged(int index);
     void onSeekIntervalChanged(int index);
     void onControlsAutoHideChanged(int index);
     void onConnectionTimeoutChanged(int index);
-    void onManageHiddenLibraries();
     void onManageSidebarOrder();
 
     brls::ScrollingFrame* m_scrollView = nullptr;
@@ -49,43 +47,25 @@ private:
     brls::BooleanCell* m_showDebugTabToggle = nullptr;
 
     // Layout section
-    brls::BooleanCell* m_sidebarLibrariesToggle = nullptr;
     brls::BooleanCell* m_collapseSidebarToggle = nullptr;
-    brls::DetailCell* m_hiddenLibrariesCell = nullptr;
     brls::DetailCell* m_sidebarOrderCell = nullptr;
 
     // Content display section
-    brls::BooleanCell* m_collectionsToggle = nullptr;
     brls::BooleanCell* m_playlistsToggle = nullptr;
-    brls::BooleanCell* m_genresToggle = nullptr;
     brls::BooleanCell* m_hideTitlesToggle = nullptr;
-    brls::BooleanCell* m_skipSingleSeasonToggle = nullptr;
 
     // Playback section
     brls::BooleanCell* m_autoPlayToggle = nullptr;
-    brls::BooleanCell* m_resumeToggle = nullptr;
-    brls::BooleanCell* m_subtitlesToggle = nullptr;
-    brls::SelectorCell* m_subtitleSizeSelector = nullptr;
     brls::SelectorCell* m_seekIntervalSelector = nullptr;
     brls::SelectorCell* m_controlsAutoHideSelector = nullptr;
-    brls::BooleanCell* m_autoSkipIntroToggle = nullptr;
-    brls::BooleanCell* m_autoSkipCreditsToggle = nullptr;
 
-    // Transcode section
+    // Audio section
     brls::SelectorCell* m_qualitySelector = nullptr;
-    brls::BooleanCell* m_forceTranscodeToggle = nullptr;
-    brls::BooleanCell* m_directPlayToggle = nullptr;
-
-    // Transcode section (continued)
     brls::SelectorCell* m_connectionTimeoutSelector = nullptr;
-
-    // Downloads section
-    brls::BooleanCell* m_deleteAfterWatchToggle = nullptr;
-    brls::DetailCell* m_clearDownloadsCell = nullptr;
 
     // Music section
     brls::SelectorCell* m_trackActionSelector = nullptr;
     brls::BooleanCell* m_backgroundMusicToggle = nullptr;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

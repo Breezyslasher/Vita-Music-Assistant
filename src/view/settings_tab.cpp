@@ -1,11 +1,11 @@
 /**
- * VitaPlex - Settings Tab implementation
+ * Vita Music Assistant - Settings Tab implementation
  */
 
 #include "view/settings_tab.hpp"
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
-#include "app/downloads_manager.hpp"
+#include "app/ma_client.hpp"
+#include "app/ma_types.hpp"
 #include "player/mpv_player.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/http_client.hpp"
@@ -18,7 +18,7 @@
 #include <psp2/net/net.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 SettingsTab::SettingsTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -41,8 +41,8 @@ SettingsTab::SettingsTab() {
     createLayoutSection();
     createContentDisplaySection();
     createPlaybackSection();
-    createTranscodeSection();
-    createDownloadsSection();
+    createAudioSection();
+    createRemoteAccessSection();
     createDebugSection();
     createAboutSection();
 
@@ -137,15 +137,6 @@ void SettingsTab::createLayoutSection() {
     header->setTitle("Layout");
     m_contentBox->addView(header);
 
-    // Show libraries in sidebar toggle
-    m_sidebarLibrariesToggle = new brls::BooleanCell();
-    m_sidebarLibrariesToggle->init("Libraries in Sidebar", settings.showLibrariesInSidebar, [&settings](bool value) {
-        settings.showLibrariesInSidebar = value;
-        Application::getInstance().saveSettings();
-        // Note: Requires app restart to take effect
-    });
-    m_contentBox->addView(m_sidebarLibrariesToggle);
-
     // Collapse sidebar toggle
     m_collapseSidebarToggle = new brls::BooleanCell();
     m_collapseSidebarToggle->init("Collapse Sidebar", settings.collapseSidebar, [&settings](bool value) {
@@ -154,24 +145,6 @@ void SettingsTab::createLayoutSection() {
         // Note: Requires app restart to take effect
     });
     m_contentBox->addView(m_collapseSidebarToggle);
-
-    // Manage hidden libraries
-    m_hiddenLibrariesCell = new brls::DetailCell();
-    m_hiddenLibrariesCell->setText("Manage Hidden Libraries");
-    int hiddenCount = 0;
-    if (!settings.hiddenLibraries.empty()) {
-        // Count comma-separated items
-        hiddenCount = 1;
-        for (char c : settings.hiddenLibraries) {
-            if (c == ',') hiddenCount++;
-        }
-    }
-    m_hiddenLibrariesCell->setDetailText(hiddenCount > 0 ? std::to_string(hiddenCount) + " hidden" : "None hidden");
-    m_hiddenLibrariesCell->registerClickAction([this](brls::View* view) {
-        onManageHiddenLibraries();
-        return true;
-    });
-    m_contentBox->addView(m_hiddenLibrariesCell);
 
     // Manage sidebar order
     m_sidebarOrderCell = new brls::DetailCell();
@@ -201,14 +174,6 @@ void SettingsTab::createContentDisplaySection() {
     header->setTitle("Content Display");
     m_contentBox->addView(header);
 
-    // Show collections toggle
-    m_collectionsToggle = new brls::BooleanCell();
-    m_collectionsToggle->init("Show Collections", settings.showCollections, [&settings](bool value) {
-        settings.showCollections = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_collectionsToggle);
-
     // Show playlists toggle
     m_playlistsToggle = new brls::BooleanCell();
     m_playlistsToggle->init("Show Playlists", settings.showPlaylists, [&settings](bool value) {
@@ -217,29 +182,13 @@ void SettingsTab::createContentDisplaySection() {
     });
     m_contentBox->addView(m_playlistsToggle);
 
-    // Show genres/categories toggle
-    m_genresToggle = new brls::BooleanCell();
-    m_genresToggle->init("Show Categories", settings.showGenres, [&settings](bool value) {
-        settings.showGenres = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_genresToggle);
-
     // Hide titles toggle
     m_hideTitlesToggle = new brls::BooleanCell();
-    m_hideTitlesToggle->init("Hide Movie/Show Titles", settings.hideTitlesInGrid, [&settings](bool value) {
+    m_hideTitlesToggle->init("Hide Titles in Grid", settings.hideTitlesInGrid, [&settings](bool value) {
         settings.hideTitlesInGrid = value;
         Application::getInstance().saveSettings();
     });
     m_contentBox->addView(m_hideTitlesToggle);
-
-    // Skip single season toggle
-    m_skipSingleSeasonToggle = new brls::BooleanCell();
-    m_skipSingleSeasonToggle->init("Skip Season for Single-Season Shows", settings.skipSingleSeason, [&settings](bool value) {
-        settings.skipSingleSeason = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_skipSingleSeasonToggle);
 
     // Info label
     auto* contentInfoLabel = new brls::Label();
@@ -261,36 +210,11 @@ void SettingsTab::createPlaybackSection() {
 
     // Auto-play next toggle
     m_autoPlayToggle = new brls::BooleanCell();
-    m_autoPlayToggle->init("Auto-Play Next Episode", settings.autoPlayNext, [&settings](bool value) {
+    m_autoPlayToggle->init("Auto-Play Next Track", settings.autoPlayNext, [&settings](bool value) {
         settings.autoPlayNext = value;
         Application::getInstance().saveSettings();
     });
     m_contentBox->addView(m_autoPlayToggle);
-
-    // Resume playback toggle
-    m_resumeToggle = new brls::BooleanCell();
-    m_resumeToggle->init("Resume Playback", settings.resumePlayback, [&settings](bool value) {
-        settings.resumePlayback = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_resumeToggle);
-
-    // Show subtitles toggle
-    m_subtitlesToggle = new brls::BooleanCell();
-    m_subtitlesToggle->init("Show Subtitles", settings.showSubtitles, [&settings](bool value) {
-        settings.showSubtitles = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_subtitlesToggle);
-
-    // Subtitle size selector
-    m_subtitleSizeSelector = new brls::SelectorCell();
-    m_subtitleSizeSelector->init("Subtitle Size", {"Small", "Medium", "Large"},
-        static_cast<int>(settings.subtitleSize),
-        [this](int index) {
-            onSubtitleSizeChanged(index);
-        });
-    m_contentBox->addView(m_subtitleSizeSelector);
 
     // Seek interval selector
     m_seekIntervalSelector = new brls::SelectorCell();
@@ -317,30 +241,6 @@ void SettingsTab::createPlaybackSection() {
             onControlsAutoHideChanged(index);
         });
     m_contentBox->addView(m_controlsAutoHideSelector);
-
-    // Auto-skip intro toggle
-    m_autoSkipIntroToggle = new brls::BooleanCell();
-    m_autoSkipIntroToggle->init("Auto-Skip Intro", settings.autoSkipIntro, [&settings](bool value) {
-        settings.autoSkipIntro = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_autoSkipIntroToggle);
-
-    // Auto-skip credits toggle
-    m_autoSkipCreditsToggle = new brls::BooleanCell();
-    m_autoSkipCreditsToggle->init("Auto-Skip Credits", settings.autoSkipCredits, [&settings](bool value) {
-        settings.autoSkipCredits = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_autoSkipCreditsToggle);
-
-    // Info label for skip settings
-    auto* skipInfoLabel = new brls::Label();
-    skipInfoLabel->setText("When off, a skip button appears briefly");
-    skipInfoLabel->setFontSize(14);
-    skipInfoLabel->setMarginLeft(16);
-    skipInfoLabel->setMarginTop(8);
-    m_contentBox->addView(skipInfoLabel);
 
     // Music section
     auto* musicHeader = new brls::Header();
@@ -376,40 +276,24 @@ void SettingsTab::createPlaybackSection() {
     m_contentBox->addView(musicInfoLabel);
 }
 
-void SettingsTab::createTranscodeSection() {
+void SettingsTab::createAudioSection() {
     Application& app = Application::getInstance();
     AppSettings& settings = app.getSettings();
 
     // Section header
     auto* header = new brls::Header();
-    header->setTitle("Transcoding");
+    header->setTitle("Audio");
     m_contentBox->addView(header);
 
-    // Video quality selector
+    // Audio quality selector
     m_qualitySelector = new brls::SelectorCell();
-    m_qualitySelector->init("Video Quality",
-        {"Original (Direct Play)", "1080p (20 Mbps)", "720p (4 Mbps)", "480p (2 Mbps)", "360p (1 Mbps)", "240p (500 Kbps)"},
-        static_cast<int>(settings.videoQuality),
+    m_qualitySelector->init("Audio Quality",
+        {"Lossless (FLAC)", "High (320 kbps)", "Normal (192 kbps)", "Low (96 kbps)"},
+        static_cast<int>(settings.audioQuality),
         [this](int index) {
             onQualityChanged(index);
         });
     m_contentBox->addView(m_qualitySelector);
-
-    // Force transcode toggle
-    m_forceTranscodeToggle = new brls::BooleanCell();
-    m_forceTranscodeToggle->init("Force Transcode", settings.forceTranscode, [&settings](bool value) {
-        settings.forceTranscode = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_forceTranscodeToggle);
-
-    // Direct play toggle
-    m_directPlayToggle = new brls::BooleanCell();
-    m_directPlayToggle->init("Try Direct Play First", settings.directPlay, [&settings](bool value) {
-        settings.directPlay = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_directPlayToggle);
 
     // Connection timeout selector
     m_connectionTimeoutSelector = new brls::SelectorCell();
@@ -425,56 +309,34 @@ void SettingsTab::createTranscodeSection() {
     m_contentBox->addView(m_connectionTimeoutSelector);
 }
 
-void SettingsTab::createDownloadsSection() {
+void SettingsTab::createRemoteAccessSection() {
     Application& app = Application::getInstance();
     AppSettings& settings = app.getSettings();
 
     // Section header
     auto* header = new brls::Header();
-    header->setTitle("Downloads");
+    header->setTitle("Remote Access");
     m_contentBox->addView(header);
 
-    // Delete after watch toggle
-    m_deleteAfterWatchToggle = new brls::BooleanCell();
-    m_deleteAfterWatchToggle->init("Delete After Watching", settings.deleteAfterWatch, [&settings](bool value) {
-        settings.deleteAfterWatch = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_deleteAfterWatchToggle);
+    // Remote access info
+    auto* remoteIdCell = new brls::DetailCell();
+    remoteIdCell->setText("Remote ID");
+    remoteIdCell->setDetailText(settings.remoteId.empty() ? "Not configured" : settings.remoteId);
+    m_contentBox->addView(remoteIdCell);
 
-    // Clear all downloads
-    m_clearDownloadsCell = new brls::DetailCell();
-    m_clearDownloadsCell->setText("Clear All Downloads");
-    auto downloads = DownloadsManager::getInstance().getDownloads();
-    m_clearDownloadsCell->setDetailText(std::to_string(downloads.size()) + " items");
-    m_clearDownloadsCell->registerClickAction([this](brls::View* view) {
-        brls::Dialog* dialog = new brls::Dialog("Delete all downloaded content?");
+    // Remote access status
+    auto* remoteStatusCell = new brls::DetailCell();
+    remoteStatusCell->setText("Status");
+    remoteStatusCell->setDetailText(settings.remoteAccessEnabled ? "Enabled" : "Disabled");
+    m_contentBox->addView(remoteStatusCell);
 
-        dialog->addButton("Cancel", []() {});
-
-        dialog->addButton("Delete All", [this]() {
-            auto downloads = DownloadsManager::getInstance().getDownloads();
-            for (const auto& item : downloads) {
-                DownloadsManager::getInstance().deleteDownload(item.ratingKey);
-            }
-            if (m_clearDownloadsCell) {
-                m_clearDownloadsCell->setDetailText("0 items");
-            }
-            brls::Application::notify("All downloads deleted");
-        });
-
-        dialog->open();
-        return true;
-    });
-    m_contentBox->addView(m_clearDownloadsCell);
-
-    // Downloads storage path info
-    auto* pathLabel = new brls::Label();
-    pathLabel->setText("Storage: " + DownloadsManager::getInstance().getDownloadsPath());
-    pathLabel->setFontSize(14);
-    pathLabel->setMarginLeft(16);
-    pathLabel->setMarginTop(8);
-    m_contentBox->addView(pathLabel);
+    // Info label
+    auto* infoLabel = new brls::Label();
+    infoLabel->setText("Remote access uses WebRTC to connect to your Music Assistant server from anywhere.");
+    infoLabel->setFontSize(14);
+    infoLabel->setMarginLeft(16);
+    infoLabel->setMarginTop(8);
+    m_contentBox->addView(infoLabel);
 }
 
 void SettingsTab::createDebugSection() {
@@ -486,7 +348,7 @@ void SettingsTab::createDebugSection() {
     // Network test button
     auto* networkTestCell = new brls::DetailCell();
     networkTestCell->setText("Network Test");
-    networkTestCell->setDetailText("View network info and test Plex connection");
+    networkTestCell->setDetailText("View network info and test server connection");
     networkTestCell->registerClickAction([this](brls::View* view) {
         onNetworkTest();
         return true;
@@ -496,7 +358,7 @@ void SettingsTab::createDebugSection() {
     // Test local playback button
     auto* testLocalCell = new brls::DetailCell();
     testLocalCell->setText("Test Local Playback");
-    testLocalCell->setDetailText("ux0:data/VitaPlex/test.mp3");
+    testLocalCell->setDetailText("ux0:data/VitaMA/test.mp3");
     testLocalCell->registerClickAction([this](brls::View* view) {
         onTestLocalPlayback();
         return true;
@@ -505,7 +367,7 @@ void SettingsTab::createDebugSection() {
 
     // Info label
     auto* infoLabel = new brls::Label();
-    infoLabel->setText("Place test.mp3 or test.mp4 in ux0:data/VitaPlex/");
+    infoLabel->setText("Place test.mp3 or test.mp4 in ux0:data/VitaMA/");
     infoLabel->setFontSize(14);
     infoLabel->setMarginLeft(16);
     infoLabel->setMarginTop(8);
@@ -522,12 +384,12 @@ void SettingsTab::createAboutSection() {
     // Version info
     auto* versionCell = new brls::DetailCell();
     versionCell->setText("Version");
-    versionCell->setDetailText(VITA_PLEX_VERSION);
+    versionCell->setDetailText(VMA_VERSION);
     m_contentBox->addView(versionCell);
 
     // App description
     auto* descLabel = new brls::Label();
-    descLabel->setText("VitaPlex - Plex Client for PlayStation Vita");
+    descLabel->setText("Vita Music Assistant - Music Client for PlayStation Vita");
     descLabel->setFontSize(16);
     descLabel->setMarginLeft(16);
     descLabel->setMarginTop(8);
@@ -550,7 +412,7 @@ void SettingsTab::onLogout() {
 
     dialog->addButton("Logout", [this]() {
         // Clear credentials
-        PlexClient::getInstance().logout();
+        MAClient::instance().disconnect();
         Application::getInstance().setAuthToken("");
         Application::getInstance().setServerUrl("");
         Application::getInstance().setUsername("");
@@ -576,38 +438,7 @@ void SettingsTab::onQualityChanged(int index) {
     Application& app = Application::getInstance();
     AppSettings& settings = app.getSettings();
 
-    settings.videoQuality = static_cast<VideoQuality>(index);
-
-    // Update bitrate based on quality
-    switch (settings.videoQuality) {
-        case VideoQuality::ORIGINAL:
-            settings.maxBitrate = 0;  // No limit
-            break;
-        case VideoQuality::QUALITY_1080P:
-            settings.maxBitrate = 20000;
-            break;
-        case VideoQuality::QUALITY_720P:
-            settings.maxBitrate = 4000;
-            break;
-        case VideoQuality::QUALITY_480P:
-            settings.maxBitrate = 2000;
-            break;
-        case VideoQuality::QUALITY_360P:
-            settings.maxBitrate = 1000;
-            break;
-        case VideoQuality::QUALITY_240P:
-            settings.maxBitrate = 500;
-            break;
-    }
-
-    app.saveSettings();
-}
-
-void SettingsTab::onSubtitleSizeChanged(int index) {
-    Application& app = Application::getInstance();
-    AppSettings& settings = app.getSettings();
-
-    settings.subtitleSize = static_cast<SubtitleSize>(index);
+    settings.audioQuality = static_cast<AudioQuality>(index);
     app.saveSettings();
 }
 
@@ -656,103 +487,6 @@ void SettingsTab::onControlsAutoHideChanged(int index) {
     app.saveSettings();
 }
 
-void SettingsTab::onManageHiddenLibraries() {
-    Application& app = Application::getInstance();
-    AppSettings& settings = app.getSettings();
-
-    // Fetch library sections
-    std::vector<LibrarySection> sections;
-    PlexClient::getInstance().fetchLibrarySections(sections);
-
-    if (sections.empty()) {
-        brls::Dialog* dialog = new brls::Dialog("No libraries found");
-        dialog->addButton("OK", []() {});
-        dialog->open();
-        return;
-    }
-
-    // Parse currently hidden libraries
-    std::set<std::string> hiddenKeys;
-    std::string hidden = settings.hiddenLibraries;
-    size_t pos = 0;
-    while ((pos = hidden.find(',')) != std::string::npos) {
-        std::string key = hidden.substr(0, pos);
-        if (!key.empty()) hiddenKeys.insert(key);
-        hidden.erase(0, pos + 1);
-    }
-    if (!hidden.empty()) hiddenKeys.insert(hidden);
-
-    // Create scrollable dialog content for many libraries
-    brls::Box* outerBox = new brls::Box();
-    outerBox->setAxis(brls::Axis::COLUMN);
-    outerBox->setWidth(400);
-    outerBox->setHeight(350);  // Fixed height for scrolling
-
-    auto* title = new brls::Label();
-    title->setText("Select libraries to hide:");
-    title->setFontSize(20);
-    title->setMarginBottom(15);
-    title->setMarginLeft(20);
-    title->setMarginTop(20);
-    outerBox->addView(title);
-
-    // Scrolling frame for checkboxes
-    brls::ScrollingFrame* scrollFrame = new brls::ScrollingFrame();
-    scrollFrame->setGrow(1.0f);
-
-    brls::Box* content = new brls::Box();
-    content->setAxis(brls::Axis::COLUMN);
-    content->setPaddingLeft(20);
-    content->setPaddingRight(20);
-
-    std::vector<std::pair<std::string, brls::BooleanCell*>> checkboxes;
-
-    for (const auto& section : sections) {
-        auto* checkbox = new brls::BooleanCell();
-        bool isHidden = (hiddenKeys.find(section.key) != hiddenKeys.end());
-        checkbox->init(section.title, isHidden, [](bool value) {});
-        content->addView(checkbox);
-        checkboxes.push_back({section.key, checkbox});
-    }
-
-    scrollFrame->setContentView(content);
-    outerBox->addView(scrollFrame);
-
-    brls::Dialog* dialog = new brls::Dialog(outerBox);
-
-    dialog->addButton("Cancel", []() {});
-
-    dialog->addButton("Save", [checkboxes, this]() {
-        Application& app = Application::getInstance();
-        AppSettings& settings = app.getSettings();
-
-        std::string newHidden;
-        for (const auto& pair : checkboxes) {
-            if (pair.second->isOn()) {
-                if (!newHidden.empty()) newHidden += ",";
-                newHidden += pair.first;
-            }
-        }
-
-        settings.hiddenLibraries = newHidden;
-        app.saveSettings();
-
-        // Update the cell text
-        int count = 0;
-        if (!newHidden.empty()) {
-            count = 1;
-            for (char c : newHidden) {
-                if (c == ',') count++;
-            }
-        }
-        if (m_hiddenLibrariesCell) {
-            m_hiddenLibrariesCell->setDetailText(count > 0 ? std::to_string(count) + " hidden" : "None hidden");
-        }
-    });
-
-    dialog->open();
-}
-
 void SettingsTab::onManageSidebarOrder() {
     Application& app = Application::getInstance();
     AppSettings& settings = app.getSettings();
@@ -762,8 +496,7 @@ void SettingsTab::onManageSidebarOrder() {
         {"home", "Home"},
         {"library", "Library"},
         {"music", "Music"},
-        {"search", "Search"},
-        {"livetv", "Live TV"}
+        {"search", "Search"}
     };
 
     // Parse current order or use default
@@ -1009,33 +742,33 @@ void SettingsTab::onNetworkTest() {
             }
         }
 
-        // ── 3. Plex Server Check (latency) ──
+        // ── 3. MA Server Check (latency) ──
         Application& app = Application::getInstance();
         std::string serverUrl = app.getServerUrl();
-        std::string plexStatus;
-        std::string plexLatency = "-";
+        std::string maStatus;
+        std::string maLatency = "-";
 
         if (serverUrl.empty()) {
-            plexStatus = "Not configured";
+            maStatus = "Not configured";
         } else if (!wifiConnected) {
-            plexStatus = "Skipped (no WiFi)";
+            maStatus = "Skipped (no WiFi)";
         } else {
-            HttpClient plexClient;
-            plexClient.setTimeout(10);
-            plexClient.setDefaultHeader("X-Plex-Token", app.getAuthToken());
-            plexClient.setDefaultHeader("Accept", "application/json");
+            HttpClient maClient;
+            maClient.setTimeout(10);
+            maClient.setDefaultHeader("Authorization", "Bearer " + app.getAuthToken());
+            maClient.setDefaultHeader("Accept", "application/json");
 
             auto start = std::chrono::steady_clock::now();
             std::string response;
-            bool ok = plexClient.get(serverUrl + "/identity", response);
+            bool ok = maClient.get(serverUrl + "/info", response);
             auto end = std::chrono::steady_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-            plexLatency = std::to_string(ms) + "ms";
+            maLatency = std::to_string(ms) + "ms";
             if (ok) {
-                plexStatus = "Connected (" + std::to_string(ms) + "ms)";
+                maStatus = "Connected (" + std::to_string(ms) + "ms)";
             } else {
-                plexStatus = "Failed (" + std::to_string(ms) + "ms)";
+                maStatus = "Failed (" + std::to_string(ms) + "ms)";
             }
         }
 
@@ -1093,10 +826,10 @@ void SettingsTab::onNetworkTest() {
             addHeader("-- Internet --");
             addRow("Connectivity:", internetStatus);
 
-            // Plex server section
-            addHeader("-- Plex Server --");
+            // MA server section
+            addHeader("-- Music Assistant --");
             addRow("Server:", serverUrl.empty() ? "Not configured" : serverUrl);
-            addRow("Connection:", plexStatus);
+            addRow("Connection:", maStatus);
 
             auto* dialog = new brls::Dialog(content);
             dialog->addButton("Close", []() {});
@@ -1109,7 +842,7 @@ void SettingsTab::onTestLocalPlayback() {
     brls::Logger::info("SettingsTab: Testing local playback...");
 
     // Check for test files
-    const std::string basePath = "ux0:data/VitaPlex/";
+    const std::string basePath = "ux0:data/VitaMA/";
     std::string testFile;
 
     // Try mp4 first (to test video), then audio files
@@ -1131,15 +864,15 @@ void SettingsTab::onTestLocalPlayback() {
     }
 
     if (testFile.empty()) {
-        brls::Application::notify("No test file found in ux0:data/VitaPlex/");
+        brls::Application::notify("No test file found in ux0:data/VitaMA/");
         brls::Logger::error("SettingsTab: No test file found");
         return;
     }
 
-    // Push player activity with the test file (this shows the video view properly)
+    // Push player activity with the test file
     brls::Logger::info("SettingsTab: Pushing player activity for: {}", testFile);
-    PlayerActivity* activity = PlayerActivity::createForDirectFile(testFile);
+    PlayerActivity* activity = PlayerActivity::createForStream(testFile, "Local Test");
     brls::Application::pushActivity(activity);
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

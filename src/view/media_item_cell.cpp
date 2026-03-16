@@ -1,13 +1,14 @@
 /**
- * VitaPlex - Media Item Cell implementation
+ * Vita Music Assistant - Media Item Cell implementation
  */
 
 #include "view/media_item_cell.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "utils/image_loader.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 MediaItemCell::MediaItemCell()
     : m_alive(std::make_shared<std::atomic<bool>>(true)) {
@@ -19,10 +20,11 @@ MediaItemCell::MediaItemCell()
     this->setCornerRadius(8);
     this->setBackgroundColor(nvgRGBA(50, 50, 50, 255));
 
-    // Thumbnail image - hidden until texture loads to prevent null texture crash on Vita
+    // Thumbnail image - square album art for music-only client
+    // Hidden until texture loads to prevent null texture crash on Vita
     m_thumbnailImage = new brls::Image();
     m_thumbnailImage->setWidth(110);
-    m_thumbnailImage->setHeight(165);
+    m_thumbnailImage->setHeight(110);
     m_thumbnailImage->setScalingType(brls::ImageScalingType::FIT);
     m_thumbnailImage->setCornerRadius(4);
     m_thumbnailImage->setVisibility(brls::Visibility::INVISIBLE);
@@ -35,29 +37,21 @@ MediaItemCell::MediaItemCell()
     m_titleLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     this->addView(m_titleLabel);
 
-    // Subtitle label (for episodes: S01E01)
+    // Subtitle label (e.g. track number)
     m_subtitleLabel = new brls::Label();
     m_subtitleLabel->setFontSize(10);
     m_subtitleLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     m_subtitleLabel->setVisibility(brls::Visibility::GONE);
     this->addView(m_subtitleLabel);
 
-    // Description label (shows on focus for episodes)
+    // Description label (shows on focus)
     m_descriptionLabel = new brls::Label();
     m_descriptionLabel->setFontSize(9);
     m_descriptionLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     m_descriptionLabel->setVisibility(brls::Visibility::GONE);
     this->addView(m_descriptionLabel);
 
-    // Progress bar (for continue watching)
-    m_progressBar = new brls::Rectangle();
-    m_progressBar->setHeight(3);
-    m_progressBar->setWidth(0);
-    m_progressBar->setColor(nvgRGBA(229, 160, 13, 255)); // Plex orange
-    m_progressBar->setVisibility(brls::Visibility::GONE);
-    this->addView(m_progressBar);
-
-    // Button hint box (shown on focus for album items)
+    // Button hint box (shown on focus for album/artist/playlist items)
     // Small pill badge in top-right corner of album art
     m_buttonHintBox = new brls::Box();
     m_buttonHintBox->setAxis(brls::Axis::ROW);
@@ -91,101 +85,34 @@ MediaItemCell::~MediaItemCell() {
     }
 }
 
-void MediaItemCell::setItem(const MediaItem& item) {
+void MediaItemCell::setItem(const MusicItem& item) {
     m_item = item;
 
-    // Adjust thumbnail size based on media type
-    // Music (albums, artists, tracks) use square covers
-    // Episodes use landscape stills (episode thumbnail)
-    // Movies, TV shows use portrait posters
-    bool isMusic = (item.mediaType == MediaType::MUSIC_ARTIST ||
-                    item.mediaType == MediaType::MUSIC_ALBUM ||
-                    item.mediaType == MediaType::MUSIC_TRACK ||
-                    item.type == "playlist");
-    bool isEpisode = (item.mediaType == MediaType::EPISODE);
-    bool isClip = (item.mediaType == MediaType::CLIP);
-
-    if (isMusic) {
-        // Square album art
-        m_thumbnailImage->setWidth(110);
-        m_thumbnailImage->setHeight(110);
-        // Adjust box to fit square art + text
-        this->setWidth(120);
-        this->setHeight(150);
-    } else if (isEpisode || isClip) {
-        // Landscape episode still / extras clip
-        m_thumbnailImage->setWidth(140);
-        m_thumbnailImage->setHeight(80);
-        // Adjust box to fit landscape image + text
-        this->setWidth(150);
-        this->setHeight(125);
-    } else {
-        // Portrait poster
-        m_thumbnailImage->setWidth(110);
-        m_thumbnailImage->setHeight(165);
-        // Adjust box to fit portrait poster + text
-        this->setWidth(120);
-        this->setHeight(200);
-    }
+    // All items use square album art (music-only client)
+    m_thumbnailImage->setWidth(110);
+    m_thumbnailImage->setHeight(110);
+    this->setWidth(120);
+    this->setHeight(150);
 
     // Set title
     if (m_titleLabel) {
-        std::string title = item.title;
+        std::string title = item.name;
         // Truncate long titles
         if (title.length() > 15) {
             title = title.substr(0, 13) + "...";
         }
         m_originalTitle = title;  // Store truncated title for focus restore
         m_titleLabel->setText(title);
-
-        // Hide titles for movies and shows if setting is enabled
-        bool hideTitle = Application::getInstance().getSettings().hideTitlesInGrid &&
-            (item.mediaType == MediaType::MOVIE || item.mediaType == MediaType::SHOW);
-        m_titleLabel->setVisibility(hideTitle ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
-
-        // Shrink box height when title is hidden to remove blank space
-        if (hideTitle && !isMusic && !isEpisode) {
-            this->setHeight(178);
-        }
+        m_titleLabel->setVisibility(brls::Visibility::VISIBLE);
     }
 
-    // Set subtitle for episodes
+    // Set subtitle for tracks
     if (m_subtitleLabel) {
-        if (item.mediaType == MediaType::EPISODE) {
-            char subtitle[32];
-            snprintf(subtitle, sizeof(subtitle), "S%02dE%02d",
-                     item.parentIndex, item.index);
-            m_subtitleLabel->setText(subtitle);
+        if (item.mediaType == MediaType::TRACK && item.trackNumber > 0) {
+            m_subtitleLabel->setText("Track " + std::to_string(item.trackNumber));
             m_subtitleLabel->setVisibility(brls::Visibility::VISIBLE);
-        } else if (item.mediaType == MediaType::MUSIC_TRACK) {
-            // Show track number for music
-            if (item.index > 0) {
-                m_subtitleLabel->setText("Track " + std::to_string(item.index));
-                m_subtitleLabel->setVisibility(brls::Visibility::VISIBLE);
-            } else {
-                m_subtitleLabel->setVisibility(brls::Visibility::GONE);
-            }
         } else {
             m_subtitleLabel->setVisibility(brls::Visibility::GONE);
-        }
-    }
-
-    // Show progress bar only for items with meaningful watch progress
-    // Require at least 1% watched and at least 30 seconds of viewOffset
-    // to avoid showing bars for items that were barely started or have stale data
-    if (m_progressBar) {
-        if (item.viewOffset > 30000 && item.duration > 0) {
-            float progress = (float)item.viewOffset / (float)item.duration;
-            // Only show if between 1% and 95% (fully watched items shouldn't show bar)
-            if (progress > 0.01f && progress < 0.95f) {
-                float barWidth = isEpisode ? 140.0f : 110.0f;
-                m_progressBar->setWidth(std::min(barWidth * progress, barWidth));
-                m_progressBar->setVisibility(brls::Visibility::VISIBLE);
-            } else {
-                m_progressBar->setVisibility(brls::Visibility::GONE);
-            }
-        } else {
-            m_progressBar->setVisibility(brls::Visibility::GONE);
         }
     }
 
@@ -196,37 +123,9 @@ void MediaItemCell::setItem(const MediaItem& item) {
 void MediaItemCell::loadThumbnail() {
     if (!m_thumbnailImage) return;
 
-    PlexClient& client = PlexClient::getInstance();
+    if (m_item.imageUrl.empty()) return;
 
-    // Use square dimensions for music/playlists, landscape for episodes, portrait for movies/TV
-    bool isMusic = (m_item.mediaType == MediaType::MUSIC_ARTIST ||
-                    m_item.mediaType == MediaType::MUSIC_ALBUM ||
-                    m_item.mediaType == MediaType::MUSIC_TRACK ||
-                    m_item.type == "playlist");
-    bool isEpisode = (m_item.mediaType == MediaType::EPISODE);
-    bool isClip = (m_item.mediaType == MediaType::CLIP);
-
-    int width, height;
-    if (isMusic) {
-        width = 110; height = 110;
-    } else if (isEpisode || isClip) {
-        width = 140; height = 80;   // Match display size (save ~75% memory vs 2x)
-    } else {
-        width = 110; height = 165;
-    }
-
-    // For episodes, use episode's own thumb (episode still) - landscape format
-    // Fall back to grandparentThumb (show poster) only if episode thumb is missing
-    std::string thumbPath = m_item.thumb;
-    if (isEpisode && thumbPath.empty() && !m_item.grandparentThumb.empty()) {
-        thumbPath = m_item.grandparentThumb;
-    }
-
-    if (thumbPath.empty()) return;
-
-    std::string url = client.getThumbnailUrl(thumbPath, width, height);
-
-    ImageLoader::loadAsync(url, [](brls::Image* image) {
+    ImageLoader::loadAsync(m_item.imageUrl, [](brls::Image* image) {
         // Show thumbnail once texture is loaded successfully
         image->setVisibility(brls::Visibility::VISIBLE);
     }, m_thumbnailImage, m_alive);
@@ -240,7 +139,7 @@ void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float he
                           brls::Style style, brls::FrameContext* ctx) {
     brls::Box::draw(vg, x, y, width, height, style, ctx);
 
-    // Touch press feedback overlay (like Suwayomi MangaItemCell)
+    // Touch press feedback overlay
     if (m_pressed) {
         nvgBeginPath(vg);
         nvgRoundedRect(vg, x, y, width, height, 8);
@@ -251,10 +150,10 @@ void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float he
 
 void MediaItemCell::onFocusGained() {
     brls::Box::onFocusGained();
-    // Focused background color (like Suwayomi's getFocusedRowBg)
+    // Focused background color
     this->setBackgroundColor(nvgRGBA(60, 60, 80, 255));
     // Selection border
-    this->setBorderColor(nvgRGBA(229, 160, 13, 255));  // Plex orange
+    this->setBorderColor(nvgRGBA(229, 160, 13, 255));
     this->setBorderThickness(2.0f);
     updateFocusInfo(true);
 }
@@ -272,122 +171,10 @@ void MediaItemCell::onFocusLost() {
 void MediaItemCell::updateFocusInfo(bool focused) {
     if (!m_titleLabel || !m_descriptionLabel) return;
 
-    // For episodes, show extended info on focus
-    if (m_item.mediaType == MediaType::EPISODE) {
+    if (m_item.mediaType == MediaType::ALBUM) {
+        // Show full title and year for albums on focus
         if (focused) {
-            // Show full title
-            m_titleLabel->setText(m_item.title);
-
-            // Show duration and other info
-            std::string info;
-            if (m_item.duration > 0) {
-                int minutes = m_item.duration / 60000;
-                info = std::to_string(minutes) + " min";
-            }
-            if (!m_item.summary.empty()) {
-                // Show first 30 chars of summary to avoid overflow
-                std::string summary = m_item.summary;
-                if (summary.length() > 30) {
-                    summary = summary.substr(0, 27) + "...";
-                }
-                if (!info.empty()) info += "\n";
-                info += summary;
-            }
-            if (!info.empty()) {
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            // Restore truncated title
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::MOVIE) {
-        // Show runtime for movies on focus
-        if (focused) {
-            if (m_item.duration > 0) {
-                int minutes = m_item.duration / 60000;
-                std::string info = std::to_string(minutes) + " min";
-                if (m_item.year > 0) {
-                    info = std::to_string(m_item.year) + " - " + info;
-                }
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            // Show full title
-            m_titleLabel->setText(m_item.title);
-            // Show start button hint overlay
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::SHOW) {
-        // Show year for shows on focus
-        if (focused) {
-            std::string info;
-            if (m_item.year > 0) {
-                info = std::to_string(m_item.year);
-            }
-            if (m_item.leafCount > 0) {
-                if (!info.empty()) info += " - ";
-                info += std::to_string(m_item.leafCount) + " seasons";
-            }
-            if (!info.empty()) {
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            m_titleLabel->setText(m_item.title);
-            // Show start button hint overlay
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::SEASON) {
-        // Show season info on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.title);
-            std::string info;
-            if (m_item.leafCount > 0) {
-                info = std::to_string(m_item.leafCount) + " episodes";
-            }
-            if (!info.empty()) {
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            // Show start button hint overlay
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::MUSIC_ALBUM ||
-               m_item.mediaType == MediaType::MUSIC_ARTIST) {
-        // Show full title and year for music items on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.title);
+            m_titleLabel->setText(m_item.name);
             std::string info;
             if (m_item.year > 0) {
                 info = std::to_string(m_item.year);
@@ -396,9 +183,8 @@ void MediaItemCell::updateFocusInfo(bool focused) {
                 m_descriptionLabel->setText(info);
                 m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
             }
-            // Show button hint overlay for albums and artists (icon only, no text)
-            if (m_buttonHintBox && (m_item.mediaType == MediaType::MUSIC_ALBUM ||
-                                    m_item.mediaType == MediaType::MUSIC_ARTIST)) {
+            // Show button hint overlay
+            if (m_buttonHintBox) {
                 if (m_buttonHintIcon) {
                     m_buttonHintIcon->setImageFromRes("images/start_button.png");
                 }
@@ -410,10 +196,11 @@ void MediaItemCell::updateFocusInfo(bool focused) {
             m_descriptionLabel->setVisibility(brls::Visibility::GONE);
             if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
         }
-    } else if (m_item.type == "playlist") {
-        // Show full title and START button hint for playlists on focus
+    } else if (m_item.mediaType == MediaType::ARTIST) {
+        // Show full title for artists on focus
         if (focused) {
-            m_titleLabel->setText(m_item.title);
+            m_titleLabel->setText(m_item.name);
+            // Show button hint overlay
             if (m_buttonHintBox) {
                 if (m_buttonHintIcon) {
                     m_buttonHintIcon->setImageFromRes("images/start_button.png");
@@ -425,27 +212,44 @@ void MediaItemCell::updateFocusInfo(bool focused) {
             m_titleLabel->setText(m_originalTitle);
             if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
         }
-    } else if (m_item.mediaType == MediaType::CLIP) {
-        // Show full title and duration for extras on focus
+    } else if (m_item.mediaType == MediaType::TRACK) {
+        // Show full title and duration for tracks on focus
         if (focused) {
-            m_titleLabel->setText(m_item.title);
+            m_titleLabel->setText(m_item.name);
             if (m_item.duration > 0) {
-                int minutes = m_item.duration / 60000;
-                std::string info;
-                if (minutes > 0) {
-                    info = std::to_string(minutes) + " min";
-                } else {
-                    int seconds = m_item.duration / 1000;
-                    info = std::to_string(seconds) + " sec";
-                }
+                int minutes = m_item.duration / 60;
+                int seconds = m_item.duration % 60;
+                char info[16];
+                snprintf(info, sizeof(info), "%d:%02d", minutes, seconds);
                 m_descriptionLabel->setText(info);
                 m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
             }
         } else {
             m_titleLabel->setText(m_originalTitle);
             m_descriptionLabel->setVisibility(brls::Visibility::GONE);
+        }
+    } else if (m_item.mediaType == MediaType::PLAYLIST) {
+        // Show full title and item count for playlists on focus
+        if (focused) {
+            m_titleLabel->setText(m_item.name);
+            if (m_item.itemCount > 0) {
+                std::string info = std::to_string(m_item.itemCount) + " items";
+                m_descriptionLabel->setText(info);
+                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
+            }
+            if (m_buttonHintBox) {
+                if (m_buttonHintIcon) {
+                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
+                }
+                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
+                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
+            }
+        } else {
+            m_titleLabel->setText(m_originalTitle);
+            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
+            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
         }
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

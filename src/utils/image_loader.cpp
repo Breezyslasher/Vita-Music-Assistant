@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Asynchronous Image Loader implementation
+ * Vita Music Assistant - Asynchronous Image Loader implementation
  * Uses LRU eviction to keep memory bounded instead of clearing entire cache.
  */
 
@@ -12,7 +12,7 @@
 #include <psp2/io/fcntl.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 std::map<std::string, ImageLoader::CacheEntry> ImageLoader::s_cache;
 std::list<std::string> ImageLoader::s_lruOrder;
@@ -157,4 +157,4 @@ void ImageLoader::cancelAll() {
     s_generation.fetch_add(1);
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

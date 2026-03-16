@@ -5,6 +5,8 @@
 
 namespace vita_ma {
 
+struct QueueState;
+
 class NowPlayingView : public brls::Box {
 public:
     NowPlayingView();

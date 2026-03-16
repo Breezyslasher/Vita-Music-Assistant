@@ -1,5 +1,5 @@
 /**
- * VitaPlex - HTTP Client
+ * Vita Music Assistant - HTTP Client
  * Using libcurl for network requests
  */
 
@@ -9,7 +9,7 @@
 #include <map>
 #include <functional>
 
-namespace vitaplex {
+namespace vita_ma {
 
 // HTTP response
 struct HttpResponse {
@@ -101,4 +101,4 @@ private:
     static size_t headerCallback(void* contents, size_t size, size_t nmemb, void* userp);
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -32,11 +32,11 @@
         marginBottom="10"/>
     <brls:Label
         id="settings/version"
-        text="VitaPlex v2.0.0"
+        text="Vita Music Assistant v2.0.0"
         fontSize="18"
         marginBottom="10"/>
     <brls:Label
-        text="Plex Client for PlayStation Vita"
+        text="Music Assistant Client for PlayStation Vita"
         fontSize="16"
         marginBottom="10"/>
     <brls:Label

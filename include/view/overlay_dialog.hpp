@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Semi-Transparent Overlay Dialog
+ * Vita Music Assistant - Semi-Transparent Overlay Dialog
  * Configurable backdrop opacity dialog that renders as a full-screen overlay
  */
 
@@ -9,7 +9,7 @@
 #include <functional>
 #include <string>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class OverlayDialog : public brls::Box {
 public:
@@ -46,4 +46,4 @@ private:
     uint8_t m_contentAlpha = 230;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma
