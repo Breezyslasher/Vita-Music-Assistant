@@ -585,7 +585,7 @@ void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback c
 void MAClient::createPlaylist(const std::string& name, MAResponseCallback cb) {
     Json args;
     args["name"] = Json(name);
-    sendCommand("music/playlists/create", args, std::move(cb));
+    sendCommand("music/playlists/create_playlist", args, std::move(cb));
 }
 
 void MAClient::getLibraryRadios(MAResponseCallback cb, const std::string& search,
@@ -613,8 +613,9 @@ void MAClient::browse(const std::string& path, MAResponseCallback cb) {
 void MAClient::addToFavorites(const std::string& mediaType, const std::string& itemId,
                                MAResponseCallback cb) {
     Json args;
-    args["media_type"] = Json(mediaType);
-    args["item_id"] = Json(itemId);
+    // API expects a URI string like "library://track/123"
+    std::string uri = "library://" + mediaType + "/" + itemId;
+    args["item"] = Json(uri);
     sendCommand("music/favorites/add_item", args, std::move(cb));
 }
 
@@ -827,7 +828,7 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
 void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {
     Json args;
     args["item_id"] = Json(itemId);
-    sendCommand("music/playlists/delete", args, std::move(cb));
+    sendCommand("music/playlists/remove", args, std::move(cb));
 }
 
 // App singleton implementation (legacy, used for player ID storage)
