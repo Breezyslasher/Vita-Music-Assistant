@@ -156,14 +156,29 @@ bool WebSocketClient::connect(const std::string& url) {
 
         // Resolve hostname
         SceNetInAddr addr;
-        auto* he = sceNetResolverStartNtoa(host.c_str(), &addr, 0, 0, 0);
-        // Fallback: try direct IP
+        memset(&addr, 0, sizeof(addr));
+
+        // Try direct IP first
         if (sceNetInetPton(SCE_NET_AF_INET, host.c_str(), &addr) <= 0) {
-            brls::Logger::error("WS: DNS resolve failed for {}", host);
-            sceNetSocketClose(m_socket);
-            m_socket = -1;
-            m_state.store(WsState::DISCONNECTED);
-            return false;
+            // Not an IP address, try DNS resolution
+            int rid = sceNetResolverCreate("ws_resolver", NULL, 0);
+            if (rid >= 0) {
+                int ret = sceNetResolverStartNtoa(rid, host.c_str(), &addr, 0, 0, 0);
+                sceNetResolverDestroy(rid);
+                if (ret < 0) {
+                    brls::Logger::error("WS: DNS resolve failed for {}", host);
+                    sceNetSocketClose(m_socket);
+                    m_socket = -1;
+                    m_state.store(WsState::DISCONNECTED);
+                    return false;
+                }
+            } else {
+                brls::Logger::error("WS: Failed to create resolver for {}", host);
+                sceNetSocketClose(m_socket);
+                m_socket = -1;
+                m_state.store(WsState::DISCONNECTED);
+                return false;
+            }
         }
 
         SceNetSockaddrIn serverAddr;
