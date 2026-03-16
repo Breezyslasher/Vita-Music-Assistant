@@ -104,17 +104,7 @@ void PlayerActivity::onContentAvailable() {
     if (!m_isQueueMode) {
         MusicQueue& existingQueue = MusicQueue::getInstance();
         if (!existingQueue.isEmpty()) {
-            brls::Logger::info("PlayerActivity: Stopping background music for video playback");
-
-            // Report stopped timeline for the current music track
-            const QueueItem* track = existingQueue.getCurrentTrack();
-            if (track && !track->ratingKey.empty()) {
-                std::string key = "/library/metadata/" + track->ratingKey;
-                int pqItemID = track->playQueueItemID;
-                MAClient::instance().reportTimeline(
-                    track->ratingKey, key, "stopped", 0, track->duration * 1000, pqItemID);
-            }
-
+            brls::Logger::info("PlayerActivity: Stopping background music for new playback");
             MpvPlayer::getInstance().stop();
             existingQueue.clear();
         }
@@ -137,7 +127,7 @@ void PlayerActivity::onContentAvailable() {
             // Seek to position
             MpvPlayer& player = MpvPlayer::getInstance();
             double duration = 0.0;
-            // For music queue mode, prefer Plex API duration (full track length)
+            // For music queue mode, prefer queue metadata duration (full track length)
             // over MPV duration which may only reflect buffered/demuxed portion
             if (m_isQueueMode) {
                 const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -146,12 +136,7 @@ void PlayerActivity::onContentAvailable() {
             }
             if (duration <= 0)
                 duration = player.getDuration();
-            // Slider represents full video duration (including resume offset).
-            // Convert slider position back to MPV-relative seek position.
-            double baseOffsetSec = m_transcodeBaseOffsetMs / 1000.0;
-            double absDuration = baseOffsetSec + duration;
-            double seekPos = std::max(0.0, absDuration * progress - baseOffsetSec);
-            player.seekTo(seekPos);
+            player.seekTo(duration * progress);
         });
     }
 
@@ -194,11 +179,6 @@ void PlayerActivity::onContentAvailable() {
 
     this->registerAction("Back", brls::ControllerButton::BUTTON_B, [this](brls::View* view) {
         resetControlsIdleTimer();
-        // If track overlay is showing, dismiss it instead of leaving player
-        if (m_trackSelectMode != TrackSelectMode::NONE) {
-            hideTrackOverlay();
-            return true;
-        }
         // If queue overlay is showing, dismiss it instead of leaving player
         if (m_queueOverlayVisible) {
             hideQueueOverlay();
@@ -258,23 +238,6 @@ void PlayerActivity::onContentAvailable() {
             resetControlsIdleTimer();
             int interval = Application::getInstance().getSettings().seekInterval;
             seek(interval);
-            return true;
-        });
-
-        // X = cycle audio track (when controls visible), pause/unpause (when hidden)
-        this->registerAction("Audio Track", brls::ControllerButton::BUTTON_X, [this](brls::View* view) {
-            if (!m_controlsVisible) {
-                togglePlayPause();
-            } else {
-                resetControlsIdleTimer();
-                cycleAudioTrack();
-            }
-            return true;
-        });
-
-        this->registerAction("Subtitle", brls::ControllerButton::BUTTON_Y, [this](brls::View* view) {
-            resetControlsIdleTimer();
-            cycleSubtitleTrack();
             return true;
         });
     }
