@@ -235,27 +235,19 @@ bool Application::loadSettings() {
     m_settings.showDebugTab = extractBool("showDebugTab", true);
 
     // Load layout settings
-    m_settings.showLibrariesInSidebar = extractBool("showLibrariesInSidebar", false);
     m_settings.collapseSidebar = extractBool("collapseSidebar", false);
-    m_settings.hiddenLibraries = extractString("hiddenLibraries");
     m_settings.sidebarOrder = extractString("sidebarOrder");
 
     // Load content display settings
-    m_settings.showCollections = extractBool("showCollections", true);
     m_settings.showPlaylists = extractBool("showPlaylists", true);
-    m_settings.showGenres = extractBool("showGenres", true);
     m_settings.hideTitlesInGrid = extractBool("hideTitlesInGrid", false);
-    m_settings.skipSingleSeason = extractBool("skipSingleSeason", false);
 
     // Load playback settings
     m_settings.autoPlayNext = extractBool("autoPlayNext", true);
-    m_settings.resumePlayback = extractBool("resumePlayback", true);
     m_settings.seekInterval = extractInt("seekInterval");
     if (m_settings.seekInterval <= 0) m_settings.seekInterval = 10;
     m_settings.controlsAutoHideSeconds = extractInt("controlsAutoHideSeconds");
     if (m_settings.controlsAutoHideSeconds < 0) m_settings.controlsAutoHideSeconds = 5;
-    m_settings.autoSkipIntro = extractBool("autoSkipIntro", false);
-    m_settings.autoSkipCredits = extractBool("autoSkipCredits", false);
 
     // Load audio quality settings
     m_settings.audioQuality = static_cast<AudioQuality>(extractInt("audioQuality"));
@@ -300,25 +292,17 @@ bool Application::saveSettings() {
     json += "  \"showDebugTab\": " + std::string(m_settings.showDebugTab ? "true" : "false") + ",\n";
 
     // Layout settings
-    json += "  \"showLibrariesInSidebar\": " + std::string(m_settings.showLibrariesInSidebar ? "true" : "false") + ",\n";
     json += "  \"collapseSidebar\": " + std::string(m_settings.collapseSidebar ? "true" : "false") + ",\n";
-    json += "  \"hiddenLibraries\": \"" + m_settings.hiddenLibraries + "\",\n";
     json += "  \"sidebarOrder\": \"" + m_settings.sidebarOrder + "\",\n";
 
     // Content display settings
-    json += "  \"showCollections\": " + std::string(m_settings.showCollections ? "true" : "false") + ",\n";
     json += "  \"showPlaylists\": " + std::string(m_settings.showPlaylists ? "true" : "false") + ",\n";
-    json += "  \"showGenres\": " + std::string(m_settings.showGenres ? "true" : "false") + ",\n";
     json += "  \"hideTitlesInGrid\": " + std::string(m_settings.hideTitlesInGrid ? "true" : "false") + ",\n";
-    json += "  \"skipSingleSeason\": " + std::string(m_settings.skipSingleSeason ? "true" : "false") + ",\n";
 
     // Playback settings
     json += "  \"autoPlayNext\": " + std::string(m_settings.autoPlayNext ? "true" : "false") + ",\n";
-    json += "  \"resumePlayback\": " + std::string(m_settings.resumePlayback ? "true" : "false") + ",\n";
     json += "  \"seekInterval\": " + std::to_string(m_settings.seekInterval) + ",\n";
     json += "  \"controlsAutoHideSeconds\": " + std::to_string(m_settings.controlsAutoHideSeconds) + ",\n";
-    json += "  \"autoSkipIntro\": " + std::string(m_settings.autoSkipIntro ? "true" : "false") + ",\n";
-    json += "  \"autoSkipCredits\": " + std::string(m_settings.autoSkipCredits ? "true" : "false") + ",\n";
 
     // Audio quality settings
     json += "  \"audioQuality\": " + std::to_string(static_cast<int>(m_settings.audioQuality)) + ",\n";

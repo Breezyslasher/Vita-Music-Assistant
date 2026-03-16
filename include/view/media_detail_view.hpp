@@ -1,6 +1,6 @@
 /**
  * Vita Music Assistant - Media Detail View
- * Shows detailed information about a media item
+ * Shows detailed information about a music item
  */
 
 #pragma once
@@ -14,7 +14,7 @@ namespace vita_ma {
 
 class MediaDetailView : public brls::Box {
 public:
-    MediaDetailView(const MediaItem& item);
+    MediaDetailView(const MusicItem& item);
     ~MediaDetailView();
 
     static brls::View* create();
@@ -24,32 +24,22 @@ private:
     void loadChildren();
     void loadMusicCategories();
     void loadTrackList();              // Load tracks in vertical list (like Suwayomi chapters)
-    void loadExtras();                 // Load extras (trailers, featurettes, etc.)
     void onPlay(bool resume = false);
-    void onDownload();
-    void showDownloadOptions();
-    void downloadAll();
-    void downloadUnwatched(int maxCount = -1);
     void setupChildrenFocusTransfer();  // Set up focus navigation for children items
-    void showAlbumContextMenu(const MediaItem& album);  // Context menu for albums
-    void showMovieContextMenu(const MediaItem& movie);  // Context menu for movies
-    void showShowContextMenu(const MediaItem& show);    // Context menu for TV shows
+    void showAlbumContextMenu(const MusicItem& album);  // Context menu for albums
 
 public:
     // Static context menus callable from any view (home, search, library grid, etc.)
-    static void showMovieContextMenuStatic(const MediaItem& movie);
-    static void showShowContextMenuStatic(const MediaItem& show);
-    static void showSeasonContextMenuStatic(const MediaItem& season);
-    static void showArtistContextMenuStatic(const MediaItem& artist);
-    static void showAlbumContextMenuStatic(const MediaItem& album);
-    static void performTrackActionStatic(const MediaItem& track);
-    void performTrackAction(const MediaItem& track, size_t trackIndex);  // Handle track default action
-    void showTrackActionDialog(const MediaItem& track, size_t trackIndex);  // Ask user what to do
+    static void showArtistContextMenuStatic(const MusicItem& artist);
+    static void showAlbumContextMenuStatic(const MusicItem& album);
+    static void performTrackActionStatic(const MusicItem& track);
+    void performTrackAction(const MusicItem& track, size_t trackIndex);  // Handle track default action
+    void showTrackActionDialog(const MusicItem& track, size_t trackIndex);  // Ask user what to do
 
     brls::HScrollingFrame* createMediaRow(const std::string& title, brls::Box** contentOut);
 
-    MediaItem m_item;
-    std::vector<MediaItem> m_children;
+    MusicItem m_item;
+    std::vector<MusicItem> m_children;
 
     // Main layout
     brls::ScrollingFrame* m_scrollView = nullptr;
@@ -63,7 +53,6 @@ public:
     brls::Image* m_posterImage = nullptr;
     brls::Button* m_playButton = nullptr;
     brls::Button* m_resumeButton = nullptr;
-    brls::Button* m_downloadButton = nullptr;
     brls::Box* m_childrenBox = nullptr;
     brls::Label* m_childrenLabel = nullptr;
     brls::HScrollingFrame* m_childrenScroll = nullptr;
@@ -86,11 +75,6 @@ public:
     // Scrolling container for seasons+extras (prevents whole page from scrolling)
     brls::ScrollingFrame* m_mediaContentScroll = nullptr;
     brls::Box* m_mediaContentBox = nullptr;
-
-    // Extras (trailers, featurettes, deleted scenes)
-    brls::Label* m_extrasLabel = nullptr;
-    brls::HScrollingFrame* m_extrasScroll = nullptr;
-    brls::Box* m_extrasBox = nullptr;
 
     // Music videos row for artists
     brls::Box* m_musicVideosContent = nullptr;

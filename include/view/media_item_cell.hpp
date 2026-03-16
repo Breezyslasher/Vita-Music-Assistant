@@ -17,8 +17,8 @@ public:
     MediaItemCell();
     ~MediaItemCell() override;
 
-    void setItem(const MediaItem& item);
-    const MediaItem& getItem() const { return m_item; }
+    void setItem(const MusicItem& item);
+    const MusicItem& getItem() const { return m_item; }
 
     void onFocusGained() override;
     void onFocusLost() override;
@@ -33,7 +33,7 @@ private:
 
     bool m_pressed = false;  // Touch press feedback overlay
 
-    MediaItem m_item;
+    MusicItem m_item;
     std::string m_originalTitle;  // Store original truncated title
 
     // Alive flag - set to false in destructor to prevent use-after-free
@@ -43,8 +43,7 @@ private:
     brls::Image* m_thumbnailImage = nullptr;
     brls::Label* m_titleLabel = nullptr;
     brls::Label* m_subtitleLabel = nullptr;
-    brls::Label* m_descriptionLabel = nullptr;  // Shows on focus for episodes
-    brls::Rectangle* m_progressBar = nullptr;
+    brls::Label* m_descriptionLabel = nullptr;  // Shows on focus
     brls::Box* m_buttonHintBox = nullptr;       // Shows button image + text hints on focus
     brls::Image* m_buttonHintIcon = nullptr;
     brls::Label* m_buttonHintLabel = nullptr;

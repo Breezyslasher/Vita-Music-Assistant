@@ -1,6 +1,6 @@
 /**
  * Vita Music Assistant - Library Tab
- * Browse library sections and content
+ * Browse music library content (Artists, Albums, Tracks, Playlists)
  */
 
 #pragma once
@@ -12,11 +12,12 @@
 
 namespace vita_ma {
 
+// Forward declaration - defined in library_tab.cpp
+enum class MusicCategory;
+
 // View mode for library tab browsing
 enum class LibraryTabViewMode {
     ALL_ITEMS,
-    COLLECTIONS,
-    CATEGORIES,
     FILTERED
 };
 
@@ -29,18 +30,11 @@ public:
     void willDisappear(bool resetState) override;
 
 private:
-    void loadSections();
-    void loadContent(const std::string& sectionKey);
-    void loadCollections(const std::string& sectionKey);
-    void loadGenres(const std::string& sectionKey);
-    void onSectionSelected(const LibrarySection& section);
-    void onItemSelected(const MediaItem& item);
-    void onCollectionSelected(const MediaItem& collection);
-    void onGenreSelected(const GenreItem& genre);
-    void showAlbumContextMenu(const MediaItem& album);
+    void onCategorySelected(MusicCategory category);
+    void loadCategoryContent(MusicCategory category);
+    void onItemSelected(const MusicItem& item);
+    void showAlbumContextMenu(const MusicItem& album);
     void showAllItems();
-    void showCollections();
-    void showCategories();
     void updateViewModeButtons();
 
     // Button styling
@@ -55,23 +49,15 @@ private:
     // View mode buttons
     brls::Box* m_viewModeBox = nullptr;
     brls::Button* m_allBtn = nullptr;
-    brls::Button* m_collectionsBtn = nullptr;
-    brls::Button* m_categoriesBtn = nullptr;
     brls::Button* m_backBtn = nullptr;
 
     RecyclingGrid* m_contentGrid = nullptr;
 
-    std::vector<LibrarySection> m_sections;
-    std::vector<MediaItem> m_items;
-    std::vector<MediaItem> m_collections;
-    std::vector<GenreItem> m_genres;
-    std::string m_currentSection;
-    std::string m_currentSectionType;
-    std::string m_filterTitle;
+    std::vector<MusicItem> m_items;
+    int m_currentCategory = 1; // default to Albums (MusicCategory::ALBUMS)
+    std::string m_currentCategoryName = "Albums";
     LibraryTabViewMode m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     bool m_loaded = false;
-    bool m_collectionsLoaded = false;
-    bool m_genresLoaded = false;
 
     // Alive flag for crash prevention on quick tab switching
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);

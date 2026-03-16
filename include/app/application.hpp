@@ -1,84 +1,19 @@
 /**
  * Vita Music Assistant - Music Assistant Client for PlayStation Vita
  * Borealis-based Application
+ *
+ * Types (AppSettings, AudioQuality, etc.) are defined in app.h.
+ * This header provides the Application singleton that manages
+ * the borealis-based UI lifecycle.
  */
 
 #pragma once
 
+#include "app.h"
 #include <string>
 #include <functional>
 
-// Application version
-#define VMA_VERSION "2.0.0"
-#define VMA_VERSION_NUM 200
-
-// Music Assistant client identification
-#define MA_CLIENT_ID "vita-music-assistant-001"
-#define MA_CLIENT_NAME "Vita Music Assistant"
-#define MA_CLIENT_VERSION VMA_VERSION
-#define MA_PLATFORM "PlayStation Vita"
-#define MA_DEVICE "PS Vita"
-
 namespace vita_ma {
-
-// Theme options
-enum class AppTheme {
-    SYSTEM = 0,
-    LIGHT = 1,
-    DARK = 2
-};
-
-// Audio quality options
-enum class AudioQuality {
-    LOSSLESS = 0,       // FLAC lossless
-    HIGH = 1,           // 320kbps
-    NORMAL = 2,         // 192kbps
-    LOW = 3             // 96kbps
-};
-
-// Default action when selecting a track in album view
-enum class TrackDefaultAction {
-    PLAY_NEXT = 0,
-    PLAY_NOW_REPLACE = 1,
-    ADD_TO_BOTTOM = 2,
-    PLAY_NOW_CLEAR = 3,
-    ASK_EACH_TIME = 4
-};
-
-// Application settings structure
-struct AppSettings {
-    // UI Settings
-    AppTheme theme = AppTheme::DARK;
-    bool debugLogging = true;
-    bool showDebugTab = true;
-
-    // Layout Settings
-    bool collapseSidebar = false;
-    std::string sidebarOrder;
-
-    // Content Display Settings
-    bool showPlaylists = true;
-    bool hideTitlesInGrid = false;
-
-    // Playback Settings
-    bool autoPlayNext = true;
-    int seekInterval = 10;  // seconds
-    int controlsAutoHideSeconds = 5;
-
-    // Audio Settings
-    AudioQuality audioQuality = AudioQuality::NORMAL;
-
-    // Network Settings
-    int connectionTimeout = 180;
-
-    // Music Settings
-    TrackDefaultAction trackDefaultAction = TrackDefaultAction::ASK_EACH_TIME;
-    bool backgroundMusic = true;
-
-    // Remote Access
-    std::string remoteId;
-    bool remoteAccessEnabled = false;
-};
 
 /**
  * Application singleton - manages app lifecycle and global state

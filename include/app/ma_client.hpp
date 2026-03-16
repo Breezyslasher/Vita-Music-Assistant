@@ -178,6 +178,13 @@ public:
     // Get all players
     void getPlayers(MAResponseCallback cb);
 
+    // Delete a playlist
+    void deletePlaylist(const std::string& itemId, MAResponseCallback cb = nullptr);
+
+    // Get thumbnail URL for an image path
+    // Returns a full URL suitable for image loading
+    std::string getThumbnailUrl(const std::string& imageUrl, int width = 0, int height = 0);
+
     // Server info
     ServerInfo getServerInfo() const { return m_serverInfo; }
 

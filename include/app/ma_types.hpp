@@ -15,7 +15,7 @@
 namespace vita_ma {
 
 // Queue item
-struct QueueItem {
+struct MAQueueItem {
     std::string queueItemId;
     std::string uri;
     std::string name;
@@ -37,7 +37,7 @@ struct QueueState {
     bool shuffleEnabled = false;
     std::string repeatMode;    // "off", "one", "all"
     std::string state;         // "playing", "paused", "idle"
-    std::vector<QueueItem> items;
+    std::vector<MAQueueItem> items;
 };
 
 // Player info from MA server

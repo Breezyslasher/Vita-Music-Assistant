@@ -34,7 +34,7 @@ struct ServerInfo {
     int min_supported_schema = 0;
 };
 
-// Media types (Music Assistant focused - audio only)
+// Media types (Music Assistant - audio only)
 enum class MediaType {
     UNKNOWN,
     ARTIST,
@@ -63,6 +63,7 @@ struct MusicItem {
     // Album info
     int year = 0;
     std::string version;       // album version (deluxe, remaster, etc.)
+    std::string subtype;       // "album", "single", "ep", "compilation", "soundtrack", "live"
 
     // Artist info
     std::string biography;
@@ -94,6 +95,13 @@ struct Hub {
     std::vector<MusicItem> items;
 };
 
+// Theme options
+enum class AppTheme {
+    SYSTEM = 0,
+    LIGHT = 1,
+    DARK = 2
+};
+
 // Audio quality setting
 enum class AudioQuality {
     LOSSLESS = 0,       // FLAC lossless
@@ -102,11 +110,44 @@ enum class AudioQuality {
     LOW = 3             // 96kbps (for slow connections)
 };
 
+// Default action when selecting a track in album view
+enum class TrackDefaultAction {
+    PLAY_NEXT = 0,
+    PLAY_NOW_REPLACE = 1,
+    ADD_TO_BOTTOM = 2,
+    PLAY_NOW_CLEAR = 3,
+    ASK_EACH_TIME = 4
+};
+
 // Application settings
 struct AppSettings {
-    // Audio settings
+    // UI Settings
+    AppTheme theme = AppTheme::DARK;
+    bool debugLogging = true;
+    bool showDebugTab = true;
+
+    // Layout Settings
+    bool collapseSidebar = false;
+    std::string sidebarOrder;
+
+    // Content Display Settings
+    bool showPlaylists = true;
+    bool hideTitlesInGrid = false;
+
+    // Playback Settings
+    bool autoPlayNext = true;
+    int seekInterval = 10;  // seconds
+    int controlsAutoHideSeconds = 5;
+
+    // Audio Settings
     AudioQuality audioQuality = AudioQuality::NORMAL;
-    bool backgroundMusic = true;       // Allow leaving player without stopping music
+    bool backgroundMusic = true;
+
+    // Network Settings
+    int connectionTimeout = 180;
+
+    // Music Settings
+    TrackDefaultAction trackDefaultAction = TrackDefaultAction::ASK_EACH_TIME;
 
     // Debug settings
     bool enableFileLogging = false;

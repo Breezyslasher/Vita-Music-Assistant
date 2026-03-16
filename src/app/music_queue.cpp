@@ -36,22 +36,19 @@ void MusicQueue::clear() {
     notifyQueueChanged();
 }
 
-QueueItem MusicQueue::mediaItemToQueueItem(const MediaItem& item, int index) {
+QueueItem MusicQueue::mediaItemToQueueItem(const MusicItem& item, int index) {
     QueueItem qi;
-    qi.ratingKey = item.ratingKey;
-    qi.title = item.title;
-    qi.artist = item.grandparentTitle;  // Artist for tracks
-    qi.album = item.parentTitle;        // Album for tracks
-    // Use track thumb, falling back to album (parent) then artist (grandparent) thumb
-    qi.thumb = item.thumb;
-    if (qi.thumb.empty()) qi.thumb = item.parentThumb;
-    if (qi.thumb.empty()) qi.thumb = item.grandparentThumb;
-    qi.duration = item.duration / 1000; // Convert ms to seconds
+    qi.ratingKey = item.itemId;
+    qi.title = item.name;
+    qi.artist = item.artistName;
+    qi.album = item.albumName;
+    qi.thumb = item.imageUrl;
+    qi.duration = item.duration;  // Already in seconds
     qi.index = index;
     return qi;
 }
 
-void MusicQueue::addTrack(const MediaItem& item) {
+void MusicQueue::addTrack(const MusicItem& item) {
     int index = (int)m_queue.size();
     m_queue.push_back(mediaItemToQueueItem(item, index));
 
@@ -65,7 +62,7 @@ void MusicQueue::addTrack(const MediaItem& item) {
     notifyQueueChanged();
 }
 
-void MusicQueue::insertTrackAfterCurrent(const MediaItem& item) {
+void MusicQueue::insertTrackAfterCurrent(const MusicItem& item) {
     int insertPos = m_currentIndex + 1;
     if (insertPos < 0) insertPos = 0;
     if (insertPos > (int)m_queue.size()) insertPos = (int)m_queue.size();
@@ -93,7 +90,7 @@ void MusicQueue::insertTrackAfterCurrent(const MediaItem& item) {
     brls::Logger::info("MusicQueue: Inserted track after current at position {}", insertPos);
 }
 
-void MusicQueue::addTracks(const std::vector<MediaItem>& items) {
+void MusicQueue::addTracks(const std::vector<MusicItem>& items) {
     int startIndex = (int)m_queue.size();
     m_queue.reserve(m_queue.size() + items.size());
     for (size_t i = 0; i < items.size(); i++) {
@@ -101,7 +98,7 @@ void MusicQueue::addTracks(const std::vector<MediaItem>& items) {
     }
 
     // Append new indices to the end of shuffle order, then Fisher-Yates
-    // shuffle only the unplayed tail portion — O(n) instead of O(n²)
+    // shuffle only the unplayed tail portion — O(n) instead of O(n^2)
     if (m_shuffleEnabled && !m_queue.empty()) {
         // Append new track indices
         m_shuffleOrder.reserve(m_shuffleOrder.size() + items.size());
@@ -188,7 +185,7 @@ void MusicQueue::moveTrack(int fromIndex, int toIndex) {
     notifyQueueChanged();
 }
 
-void MusicQueue::setQueue(const std::vector<MediaItem>& items, int startIndex) {
+void MusicQueue::setQueue(const std::vector<MusicItem>& items, int startIndex) {
     clear();
 
     m_queue.reserve(items.size());
@@ -458,7 +455,7 @@ void MusicQueue::saveState() {
     file << "current=" << m_currentIndex << "\n";
     file << "count=" << m_queue.size() << "\n";
 
-    // Save queue items (just rating keys for now)
+    // Save queue items (just item IDs for now)
     for (const auto& item : m_queue) {
         file << "track=" << item.ratingKey << "\n";
     }
@@ -489,7 +486,7 @@ void MusicQueue::loadState() {
             m_currentIndex = std::stoi(value);
         }
         // Note: We don't restore the actual tracks here - that would require
-        // fetching metadata from Plex. The queue is typically rebuilt when
+        // fetching metadata from the server. The queue is typically rebuilt when
         // playing an album or playlist.
     }
 
@@ -518,50 +515,7 @@ int MusicQueue::getCurrentPlayQueueItemID() const {
     return 0;
 }
 
-void MusicQueue::setFromPlayQueue(const MAClient::PlayQueueContainer& pq, bool isShuffled) {
-    m_queue.clear();
-    m_shuffleOrder.clear();
-    m_shufflePosition = -1;
-    m_shuffleEnabled = isShuffled;
-
-    m_queue.reserve(pq.items.size());
-    int selectedIdx = 0;
-
-    for (size_t i = 0; i < pq.items.size(); i++) {
-        const auto& pqItem = pq.items[i];
-        QueueItem qi;
-        qi.ratingKey = pqItem.ratingKey;
-        qi.title = pqItem.title;
-        qi.artist = pqItem.grandparentTitle;
-        qi.album = pqItem.parentTitle;
-        qi.thumb = pqItem.thumb;
-        if (qi.thumb.empty()) qi.thumb = pqItem.parentThumb;
-        if (qi.thumb.empty()) qi.thumb = pqItem.grandparentThumb;
-        qi.duration = pqItem.duration / 1000;  // ms to seconds
-        qi.index = (int)i;
-        qi.playQueueItemID = pqItem.playQueueItemID;
-        m_queue.push_back(qi);
-
-        if (pqItem.playQueueItemID == pq.playQueueSelectedItemID) {
-            selectedIdx = (int)i;
-        }
-    }
-
-    m_currentIndex = selectedIdx;
-    m_playQueueID = pq.playQueueID;
-
-    // If shuffled, the server already gave us shuffled order - items are in play order
-    if (isShuffled) {
-        m_shuffleOrder.reserve(m_queue.size());
-        for (int i = 0; i < (int)m_queue.size(); i++) {
-            m_shuffleOrder.push_back(i);
-        }
-        m_shufflePosition = selectedIdx;
-    }
-
-    notifyQueueChanged();
-    brls::Logger::info("MusicQueue: Loaded {} items from server PQ {} (selected={})",
-                       m_queue.size(), m_playQueueID, m_currentIndex);
-}
+// NOTE: setFromPlayQueue has been removed pending a new PlayQueue type definition.
+// See the TODO in music_queue.hpp.
 
 } // namespace vita_ma

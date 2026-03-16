@@ -1,5 +1,6 @@
 /**
  * Vita Music Assistant - Media Detail View implementation
+ * Music-only: supports ARTIST, ALBUM, TRACK, PLAYLIST, RADIO types.
  */
 
 #include "view/media_detail_view.hpp"
@@ -18,7 +19,7 @@
 
 namespace vita_ma {
 
-MediaDetailView::MediaDetailView(const MediaItem& item)
+MediaDetailView::MediaDetailView(const MusicItem& item)
     : m_item(item), m_alive(std::make_shared<std::atomic<bool>>(true)) {
 
     this->setAxis(brls::Axis::COLUMN);
@@ -40,11 +41,6 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
     m_mainContent->setAxis(brls::Axis::COLUMN);
     m_mainContent->setPadding(30);
 
-    // Check if this is music content
-    bool isMusic = (m_item.mediaType == MediaType::MUSIC_ARTIST ||
-                    m_item.mediaType == MediaType::MUSIC_ALBUM ||
-                    m_item.mediaType == MediaType::MUSIC_TRACK);
-
     // Top row - poster and info
     auto* topRow = new brls::Box();
     topRow->setAxis(brls::Axis::ROW);
@@ -52,77 +48,25 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
     topRow->setAlignItems(brls::AlignItems::FLEX_START);
     topRow->setMarginBottom(20);
 
-    // Left side - poster
+    // Left side - poster (square album art for all music types)
     auto* leftBox = new brls::Box();
     leftBox->setAxis(brls::Axis::COLUMN);
     leftBox->setWidth(200);
     leftBox->setMarginRight(30);
 
-    // Wrap poster in a container for overlaying the star icon
     auto* posterContainer = new brls::Box();
     posterContainer->setAxis(brls::Axis::COLUMN);
     posterContainer->setWidth(200);
 
     m_posterImage = new brls::Image();
-    if (isMusic) {
-        // Square album art
-        m_posterImage->setWidth(200);
-        m_posterImage->setHeight(200);
-        posterContainer->setHeight(200);
-    } else {
-        // Portrait poster
-        m_posterImage->setWidth(200);
-        m_posterImage->setHeight(300);
-        posterContainer->setHeight(300);
-    }
+    m_posterImage->setWidth(200);
+    m_posterImage->setHeight(200);
+    posterContainer->setHeight(200);
     m_posterImage->setScalingType(brls::ImageScalingType::FIT);
     m_posterImage->setVisibility(brls::Visibility::INVISIBLE);
     posterContainer->addView(m_posterImage);
 
-    // Star/rating icon overlay in top-right corner of album art
-    if (m_item.rating > 0.0f) {
-        auto* starIcon = new brls::Image();
-        starIcon->setImageFromRes("icons/star.png");
-        starIcon->setWidth(24);
-        starIcon->setHeight(24);
-        starIcon->setPositionType(brls::PositionType::ABSOLUTE);
-        starIcon->setPositionTop(4);
-        starIcon->setPositionRight(4);
-        posterContainer->addView(starIcon);
-    }
-
     leftBox->addView(posterContainer);
-
-    // Play/resume/download buttons (movies only)
-    if (m_item.mediaType == MediaType::MOVIE) {
-        m_playButton = new brls::Button();
-        m_playButton->setText("Play");
-        m_playButton->setWidth(200);
-        m_playButton->setHeight(44);
-        m_playButton->setMarginTop(20);
-        m_playButton->registerClickAction([this](brls::View* view) {
-            onPlay(false);
-            return true;
-        });
-        m_playButton->addGestureRecognizer(new brls::TapGestureRecognizer(m_playButton));
-        leftBox->addView(m_playButton);
-
-        if (m_item.viewOffset > 0) {
-            m_resumeButton = new brls::Button();
-            m_resumeButton->setText("Resume");
-            m_resumeButton->setWidth(200);
-            m_resumeButton->setHeight(44);
-            m_resumeButton->setMarginTop(10);
-            m_resumeButton->registerClickAction([this](brls::View* view) {
-                onPlay(true);
-                return true;
-            });
-            m_resumeButton->addGestureRecognizer(new brls::TapGestureRecognizer(m_resumeButton));
-            leftBox->addView(m_resumeButton);
-        }
-
-    }
-
     topRow->addView(leftBox);
 
     // Right side - details
@@ -132,7 +76,7 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
 
     // Title
     m_titleLabel = new brls::Label();
-    m_titleLabel->setText(m_item.title);
+    m_titleLabel->setText(m_item.name);
     m_titleLabel->setFontSize(26);
     m_titleLabel->setMarginBottom(10);
     rightBox->addView(m_titleLabel);
@@ -150,17 +94,9 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
         metaBox->addView(m_yearLabel);
     }
 
-    if (!m_item.contentRating.empty()) {
-        m_ratingLabel = new brls::Label();
-        m_ratingLabel->setText(m_item.contentRating);
-        m_ratingLabel->setFontSize(16);
-        m_ratingLabel->setMarginRight(15);
-        metaBox->addView(m_ratingLabel);
-    }
-
     if (m_item.duration > 0) {
         m_durationLabel = new brls::Label();
-        int minutes = m_item.duration / 60000;
+        int minutes = m_item.duration / 60;
         m_durationLabel->setText(std::to_string(minutes) + " min");
         m_durationLabel->setFontSize(16);
         metaBox->addView(m_durationLabel);
@@ -168,8 +104,10 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
 
     rightBox->addView(metaBox);
 
-    // Summary - always shown in a scrolling frame
-    m_fullDescription = m_item.summary;
+    // Description/biography - shown for artists (biography) or general info
+    if (m_item.mediaType == MediaType::ARTIST) {
+        m_fullDescription = m_item.biography;
+    }
 
     if (!m_fullDescription.empty()) {
         m_summaryScroll = new brls::ScrollingFrame();
@@ -188,79 +126,8 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
     topRow->addView(rightBox);
     m_mainContent->addView(topRow);
 
-    // Combined scrolling container for seasons/episodes + extras
-    // This keeps the header/description fixed while only the media rows scroll
-    if (m_item.mediaType == MediaType::SHOW ||
-        m_item.mediaType == MediaType::SEASON ||
-        m_item.mediaType == MediaType::MOVIE) {
-
-        m_mediaContentScroll = new brls::ScrollingFrame();
-        m_mediaContentScroll->setGrow(1.0f);
-        m_mediaContentScroll->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
-
-        m_mediaContentBox = new brls::Box();
-        m_mediaContentBox->setAxis(brls::Axis::COLUMN);
-        m_mediaContentBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-        m_mediaContentBox->setAlignItems(brls::AlignItems::STRETCH);
-
-        // Children container (for shows/seasons - horizontal cards)
-        if (m_item.mediaType == MediaType::SHOW ||
-            m_item.mediaType == MediaType::SEASON) {
-
-            m_childrenLabel = new brls::Label();
-            if (m_item.mediaType == MediaType::SHOW) {
-                m_childrenLabel->setText("Seasons");
-            } else {
-                m_childrenLabel->setText("Episodes");
-            }
-            m_childrenLabel->setFontSize(20);
-            m_childrenLabel->setMarginBottom(10);
-            m_mediaContentBox->addView(m_childrenLabel);
-
-            m_childrenScroll = new brls::HScrollingFrame();
-            // Episodes use landscape cells (~150x125), seasons use portrait (~120x200)
-            m_childrenScroll->setHeight(m_item.mediaType == MediaType::SEASON ? 135 : 210);
-            m_childrenScroll->setMarginBottom(20);
-
-            m_childrenBox = new brls::Box();
-            m_childrenBox->setAxis(brls::Axis::ROW);
-            m_childrenBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-
-            m_childrenScroll->setContentView(m_childrenBox);
-            m_mediaContentBox->addView(m_childrenScroll);
-        }
-
-        // Extras container (trailers, featurettes, etc.) for movies and shows
-        if (m_item.mediaType == MediaType::MOVIE ||
-            m_item.mediaType == MediaType::SHOW) {
-
-            m_extrasLabel = new brls::Label();
-            m_extrasLabel->setText("Extras");
-            m_extrasLabel->setFontSize(20);
-            m_extrasLabel->setMarginBottom(10);
-            m_extrasLabel->setMarginTop(15);
-            m_extrasLabel->setVisibility(brls::Visibility::GONE);
-            m_mediaContentBox->addView(m_extrasLabel);
-
-            m_extrasScroll = new brls::HScrollingFrame();
-            m_extrasScroll->setHeight(150);
-            m_extrasScroll->setMarginBottom(20);
-            m_extrasScroll->setVisibility(brls::Visibility::GONE);
-
-            m_extrasBox = new brls::Box();
-            m_extrasBox->setAxis(brls::Axis::ROW);
-            m_extrasBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-
-            m_extrasScroll->setContentView(m_extrasBox);
-            m_mediaContentBox->addView(m_extrasScroll);
-        }
-
-        m_mediaContentScroll->setContentView(m_mediaContentBox);
-        m_mainContent->addView(m_mediaContentScroll);
-    }
-
     // Track list for albums (vertical list with nested scrolling)
-    if (m_item.mediaType == MediaType::MUSIC_ALBUM) {
+    if (m_item.mediaType == MediaType::ALBUM) {
         auto* tracksLabel = new brls::Label();
         tracksLabel->setText("Tracks");
         tracksLabel->setFontSize(20);
@@ -282,7 +149,7 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
     }
 
     // Music categories container for artists - scrollable below fixed header
-    if (m_item.mediaType == MediaType::MUSIC_ARTIST) {
+    if (m_item.mediaType == MediaType::ARTIST) {
         auto* categoriesScroll = new brls::ScrollingFrame();
         categoriesScroll->setGrow(1.0f);
 
@@ -293,11 +160,8 @@ MediaDetailView::MediaDetailView(const MediaItem& item)
         m_mainContent->addView(categoriesScroll);
     }
 
-    if (m_item.mediaType == MediaType::MUSIC_ALBUM ||
-        m_item.mediaType == MediaType::MUSIC_ARTIST ||
-        m_item.mediaType == MediaType::SHOW ||
-        m_item.mediaType == MediaType::SEASON ||
-        m_item.mediaType == MediaType::MOVIE) {
+    if (m_item.mediaType == MediaType::ALBUM ||
+        m_item.mediaType == MediaType::ARTIST) {
         // Top info is fixed, only media content below scrolls in its own container
         m_mainContent->setGrow(1.0f);
         this->addView(m_mainContent);
@@ -348,391 +212,114 @@ brls::View* MediaDetailView::create() {
 }
 
 void MediaDetailView::loadDetails() {
-    std::string ratingKey = m_item.ratingKey;
-    std::string thumbPath = m_item.thumb;
+    std::string itemId = m_item.itemId;
+    std::string imageUrl = m_item.imageUrl;
     MediaType mediaType = m_item.mediaType;
 
-    // Load full details asynchronously to avoid blocking the UI thread
-    asyncRun([this, ratingKey, thumbPath, mediaType]() {
+    // Load thumbnail
+    if (m_posterImage && !imageUrl.empty()) {
         MAClient& client = MAClient::instance();
+        std::string url = client.getThumbnailUrl(imageUrl, 400, 400);
+        ImageLoader::loadAsync(url, [](brls::Image* image) {
+            image->setVisibility(brls::Visibility::VISIBLE);
+        }, m_posterImage, m_alive);
+    }
 
-        // Fetch full details on background thread
-        MediaItem fullItem;
-        bool detailsLoaded = client.fetchMediaDetails(ratingKey, fullItem);
+    // TODO: fetchMediaDetails does not exist yet in new MA API.
+    // For now we use the item data we already have from the list view.
+    // When the MA API adds a getItem(itemId) -> full details method, call it here.
 
-        // Update UI on main thread
-        brls::sync([this, detailsLoaded, fullItem, thumbPath, mediaType]() {
-            if (detailsLoaded) {
-                m_item = fullItem;
-
-                // Update UI with full details
-                if (m_titleLabel && !m_item.title.empty()) {
-                    m_titleLabel->setText(m_item.title);
-                }
-
-                if (m_summaryLabel && !m_item.summary.empty()) {
-                    m_summaryLabel->setText(m_item.summary);
-                }
-
-            }
-
-            // Load thumbnail with appropriate aspect ratio
-            std::string thumb = detailsLoaded ? m_item.thumb : thumbPath;
-            if (m_posterImage && !thumb.empty()) {
-                bool isMusic = (m_item.mediaType == MediaType::MUSIC_ARTIST ||
-                                m_item.mediaType == MediaType::MUSIC_ALBUM ||
-                                m_item.mediaType == MediaType::MUSIC_TRACK);
-
-                int width = 400;
-                int height = isMusic ? 400 : 600;
-
-                MAClient& client = MAClient::instance();
-                std::string url = client.getThumbnailUrl(thumb, width, height);
-                ImageLoader::loadAsync(url, [](brls::Image* image) {
-                    image->setVisibility(brls::Visibility::VISIBLE);
-                }, m_posterImage, m_alive);
-            }
-
-            // Update description if full details loaded
-            if (!m_item.summary.empty() && m_summaryLabel) {
-                m_fullDescription = m_item.summary;
-                m_summaryLabel->setText(m_fullDescription);
-            }
-
-            // Load children if applicable
-            if (m_item.mediaType == MediaType::MUSIC_ARTIST) {
-                loadMusicCategories();
-            } else if (m_item.mediaType == MediaType::MUSIC_ALBUM) {
-                loadTrackList();
-            } else {
-                loadChildren();
-                // Load extras (trailers, featurettes) for movies and shows
-                if (m_item.mediaType == MediaType::MOVIE ||
-                    m_item.mediaType == MediaType::SHOW) {
-                    loadExtras();
-                }
-            }
-        });
-    });
-}
-
-void MediaDetailView::loadChildren() {
-    if (!m_childrenBox) return;
-
-    MAClient& client = MAClient::instance();
-
-    if (client.fetchChildren(m_item.ratingKey, m_children)) {
-        // Skip single season: if show has exactly one season and setting is enabled,
-        // fetch episodes directly and display them instead of the season
-        AppSettings& settings = Application::getInstance().getSettings();
-        if (m_item.mediaType == MediaType::SHOW &&
-            settings.skipSingleSeason &&
-            m_children.size() == 1 &&
-            m_children[0].mediaType == MediaType::SEASON) {
-
-            MediaItem singleSeason = m_children[0];
-            std::vector<MediaItem> episodes;
-            if (client.fetchChildren(singleSeason.ratingKey, episodes) && !episodes.empty()) {
-                m_children = episodes;
-
-                // Update label and scroll height for episodes
-                if (m_childrenLabel) m_childrenLabel->setText("Episodes");
-                if (m_childrenScroll) m_childrenScroll->setHeight(135);
-
-                m_childrenBox->clearViews();
-                for (const auto& child : m_children) {
-                    auto* cell = new MediaItemCell();
-                    cell->setItem(child);
-                    cell->setMarginRight(10);
-
-                    cell->registerClickAction([child](brls::View* view) {
-                        Application::getInstance().pushPlayerActivity(child.ratingKey);
-                        return true;
-                    });
-                    cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-                    m_childrenBox->addView(cell);
-                }
-
-                // Set up focus transfer: UP from children goes to description or first child
-                setupChildrenFocusTransfer();
-                return;
-            }
-        }
-
-        m_childrenBox->clearViews();
-
-        for (const auto& child : m_children) {
-            auto* cell = new MediaItemCell();
-            cell->setItem(child);
-            cell->setMarginRight(10);
-
-            cell->registerClickAction([this, child](brls::View* view) {
-                // Navigate to child detail
-                auto* detailView = new MediaDetailView(child);
-                brls::Application::pushActivity(new brls::Activity(detailView));
-                return true;
-            });
-            cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-            // Register START button context menu for child items
-            MediaItem capturedChild = child;
-            if (child.mediaType == MediaType::SEASON) {
-                cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                    [capturedChild](brls::View* view) {
-                        showSeasonContextMenuStatic(capturedChild);
-                        return true;
-                    });
-            }
-
-            m_childrenBox->addView(cell);
-        }
-
-        // Set up focus transfer: UP from children goes to description or first child
-        setupChildrenFocusTransfer();
+    // Load children if applicable
+    if (m_item.mediaType == MediaType::ARTIST) {
+        loadMusicCategories();
+    } else if (m_item.mediaType == MediaType::ALBUM) {
+        loadTrackList();
     }
 }
 
-void MediaDetailView::loadExtras() {
-    if (!m_extrasBox) return;
-
-    std::string ratingKey = m_item.ratingKey;
-
-    asyncRun([this, ratingKey]() {
-        MAClient& client = MAClient::instance();
-
-        std::vector<MediaItem> extras;
-        bool ok = client.fetchExtras(ratingKey, extras);
-
-        brls::sync([this, ok, extras]() {
-            if (!m_alive || !m_alive->load()) return;
-            if (!ok || extras.empty()) return;
-
-            m_extrasBox->clearViews();
-
-            // Show the pre-created label and scroll frame
-            if (m_extrasLabel) {
-                m_extrasLabel->setText("Extras (" + std::to_string(extras.size()) + ")");
-                m_extrasLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            if (m_extrasScroll) {
-                m_extrasScroll->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            for (const auto& extra : extras) {
-                auto* cell = new MediaItemCell();
-                cell->setItem(extra);
-                cell->setMarginRight(10);
-
-                cell->registerClickAction([extra](brls::View* view) {
-                    // Play the extra directly
-                    Application::getInstance().pushPlayerActivity(extra.ratingKey);
-                    return true;
-                });
-                cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-                m_extrasBox->addView(cell);
-            }
-
-            brls::Logger::info("Loaded {} extras into UI", extras.size());
-
-            // Re-run focus setup so extras get proper UP/DOWN navigation
-            setupChildrenFocusTransfer();
-        });
-    });
+void MediaDetailView::loadChildren() {
+    // TODO: fetchChildren does not exist in new MA API.
+    // Use getAlbumTracks / getArtistAlbums etc. via MAClient when needed.
 }
 
 void MediaDetailView::loadMusicCategories() {
     if (!m_musicCategoriesBox) return;
 
-    asyncRun([this]() {
+    std::string itemId = m_item.itemId;
+    std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
+
+    asyncRun([this, itemId, aliveWeak]() {
         MAClient& client = MAClient::instance();
 
-        // Fetch music videos (extras) for this artist
-        std::vector<MediaItem> musicVideos;
-        std::vector<MediaItem> allExtras;
-        if (client.fetchExtras(m_item.ratingKey, allExtras)) {
-            for (const auto& extra : allExtras) {
-                // Music videos are clips with subtype "musicVideo" or just clips from artists
-                std::string subtype = extra.subtype;
-                for (char& c : subtype) c = tolower(c);
-                if (extra.mediaType == MediaType::CLIP || subtype == "musicvideo") {
-                    musicVideos.push_back(extra);
+        // Fetch artist's albums via the new MA API
+        bool done = false;
+        std::vector<MusicItem> allAlbumItems;
+
+        client.getArtistAlbums(itemId, [&done, &allAlbumItems](bool success, const Json& result) {
+            if (success && result.type() == Json::ARRAY) {
+                for (size_t i = 0; i < result.size(); i++) {
+                    const Json& item = result[i];
+                    MusicItem mi;
+                    mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                    mi.name = item.has("name") ? item["name"].str() : "";
+                    mi.imageUrl = item.has("image") ? item["image"].str() :
+                                  (item.has("image_url") ? item["image_url"].str() : "");
+                    mi.mediaType = MediaType::ALBUM;
+                    mi.year = item.has("year") ? item["year"].intVal() : 0;
+                    mi.subtype = item.has("album_type") ? item["album_type"].str() :
+                                 (item.has("subtype") ? item["subtype"].str() : "");
+                    mi.artistName = item.has("artist") ? item["artist"].str() :
+                                    (item.has("artists") && item["artists"].size() > 0 ?
+                                     item["artists"][static_cast<size_t>(0)].has("name") ?
+                                     item["artists"][static_cast<size_t>(0)]["name"].str() : "" : "");
+                    mi.provider = item.has("provider") ? item["provider"].str() : "";
+                    mi.uri = item.has("uri") ? item["uri"].str() : "";
+                    allAlbumItems.push_back(mi);
                 }
             }
-            brls::Logger::info("Artist: Found {} music videos from {} extras", musicVideos.size(), allExtras.size());
+            done = true;
+        });
+
+        // Wait for async response (simplified blocking wait for Vita)
+        // TODO: Refactor to fully async callback chain
+        int waitMs = 0;
+        while (!done && waitMs < 10000) {
+#ifdef __vita__
+            sceKernelDelayThread(50 * 1000);
+#else
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+            waitMs += 50;
         }
 
-        // Use the hubs API which returns albums pre-grouped by type
-        // (Albums, Singles & EPs, Compilations, Appears On, etc.)
-        std::vector<Hub> hubs;
-        bool useHubs = client.fetchArtistHubs(m_item.ratingKey, hubs);
+        brls::sync([this, allAlbumItems, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
 
-        if (useHubs && !hubs.empty()) {
-            brls::Logger::info("Artist hubs: {} categories", hubs.size());
-
-            // Filter hubs to only album hubs (skip track hubs like "Most Popular Tracks")
-            std::vector<Hub> albumHubs;
-            for (const auto& hub : hubs) {
-                bool hasAlbums = false;
-                for (const auto& item : hub.items) {
-                    if (item.mediaType == MediaType::MUSIC_ALBUM) {
-                        hasAlbums = true;
-                        break;
-                    }
-                }
-                if (hasAlbums) {
-                    albumHubs.push_back(hub);
-                }
-            }
-
-            brls::Logger::info("Artist hubs: {} album categories from {} total hubs", albumHubs.size(), hubs.size());
-
-            // Collect all album items from all album hubs, then group by subtype
-            std::vector<MediaItem> allAlbumItems;
-            for (const auto& hub : albumHubs) {
-                for (const auto& item : hub.items) {
-                    if (item.mediaType == MediaType::MUSIC_ALBUM) {
-                        allAlbumItems.push_back(item);
-                    }
-                }
-            }
-
-            brls::sync([this, allAlbumItems, musicVideos]() {
-                m_musicCategoriesBox->clearViews();
-
-                // Group albums by subtype
-                std::vector<MediaItem> albums, singles, eps, compilations, soundtracks, other;
-                for (const auto& item : allAlbumItems) {
-                    std::string subtype = item.subtype;
-                    for (char& c : subtype) c = tolower(c);
-
-                    if (subtype == "single") {
-                        singles.push_back(item);
-                    } else if (subtype == "ep") {
-                        eps.push_back(item);
-                    } else if (subtype == "compilation") {
-                        compilations.push_back(item);
-                    } else if (subtype == "soundtrack") {
-                        soundtracks.push_back(item);
-                    } else if (subtype == "album" || subtype.empty()) {
-                        albums.push_back(item);
-                    } else {
-                        other.push_back(item);
-                    }
-                }
-
-                auto addCategory = [this](const std::string& title, const std::vector<MediaItem>& items) {
-                    if (items.empty()) return;
-
-                    brls::Box* content = nullptr;
-                    createMediaRow(title + " (" + std::to_string(items.size()) + ")", &content);
-
-                    for (const auto& item : items) {
-                        auto* cell = new MediaItemCell();
-                        cell->setItem(item);
-                        cell->setMarginRight(10);
-
-                        MediaItem capturedItem = item;
-                        cell->registerClickAction([this, capturedItem](brls::View* view) {
-                            auto* detailView = new MediaDetailView(capturedItem);
-                            brls::Application::pushActivity(new brls::Activity(detailView));
-                            return true;
-                        });
-                        cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-                        cell->registerAction("Options", brls::ControllerButton::BUTTON_START, [this, capturedItem](brls::View* view) {
-                            showAlbumContextMenu(capturedItem);
-                            return true;
-                        });
-
-                        content->addView(cell);
-                    }
-                };
-
-                addCategory("Albums", albums);
-                addCategory("Singles", singles);
-                addCategory("EPs", eps);
-                addCategory("Compilations", compilations);
-                addCategory("Soundtracks", soundtracks);
-                addCategory("Other", other);
-
-                // Add music videos row
-                if (!musicVideos.empty()) {
-                    brls::Box* mvContent = nullptr;
-                    createMediaRow("Music Videos (" + std::to_string(musicVideos.size()) + ")", &mvContent);
-
-                    for (const auto& mv : musicVideos) {
-                        auto* cell = new MediaItemCell();
-                        cell->setItem(mv);
-                        cell->setMarginRight(10);
-
-                        MediaItem capturedMv = mv;
-                        cell->registerClickAction([capturedMv](brls::View* view) {
-                            Application::getInstance().pushPlayerActivity(capturedMv.ratingKey);
-                            return true;
-                        });
-                        cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-                        mvContent->addView(cell);
-                    }
-                }
-
-                // Focus setup: if no description, transfer focus to first category item
-                if (m_fullDescription.empty() && m_musicCategoriesBox &&
-                    !m_musicCategoriesBox->getChildren().empty()) {
-                    // Find first focusable view in the categories
-                    for (auto* child : m_musicCategoriesBox->getChildren()) {
-                        auto* hScroll = dynamic_cast<brls::HScrollingFrame*>(child);
-                        if (hScroll) {
-                            brls::Application::giveFocus(hScroll);
-                            break;
-                        }
-                    }
-                }
-            });
-            return;
-        }
-
-        // Fallback: use children endpoint and group by subtype
-        brls::Logger::info("Artist hubs unavailable, falling back to children grouping");
-
-        std::vector<MediaItem> allAlbums;
-        if (!client.fetchChildren(m_item.ratingKey, allAlbums)) {
-            brls::Logger::error("Failed to fetch albums for artist");
-            return;
-        }
-
-        std::vector<MediaItem> albums;
-        std::vector<MediaItem> singles;
-        std::vector<MediaItem> eps;
-        std::vector<MediaItem> compilations;
-        std::vector<MediaItem> soundtracks;
-        std::vector<MediaItem> other;
-
-        for (const auto& album : allAlbums) {
-            std::string subtype = album.subtype;
-            for (char& c : subtype) c = tolower(c);
-
-            if (subtype == "single") {
-                singles.push_back(album);
-            } else if (subtype == "ep") {
-                eps.push_back(album);
-            } else if (subtype == "compilation") {
-                compilations.push_back(album);
-            } else if (subtype == "soundtrack") {
-                soundtracks.push_back(album);
-            } else if (subtype == "album" || subtype.empty()) {
-                albums.push_back(album);
-            } else {
-                other.push_back(album);
-            }
-        }
-
-        brls::sync([this, albums, singles, eps, compilations, soundtracks, other, musicVideos]() {
             m_musicCategoriesBox->clearViews();
 
-            auto addCategory = [this](const std::string& title, const std::vector<MediaItem>& items) {
+            // Group albums by subtype
+            std::vector<MusicItem> albums, singles, eps, compilations, soundtracks, other;
+            for (const auto& item : allAlbumItems) {
+                std::string subtype = item.subtype;
+                for (char& c : subtype) c = tolower(c);
+
+                if (subtype == "single") {
+                    singles.push_back(item);
+                } else if (subtype == "ep") {
+                    eps.push_back(item);
+                } else if (subtype == "compilation") {
+                    compilations.push_back(item);
+                } else if (subtype == "soundtrack") {
+                    soundtracks.push_back(item);
+                } else if (subtype == "album" || subtype.empty()) {
+                    albums.push_back(item);
+                } else {
+                    other.push_back(item);
+                }
+            }
+
+            auto addCategory = [this](const std::string& title, const std::vector<MusicItem>& items) {
                 if (items.empty()) return;
 
                 brls::Box* content = nullptr;
@@ -743,7 +330,7 @@ void MediaDetailView::loadMusicCategories() {
                     cell->setItem(item);
                     cell->setMarginRight(10);
 
-                    MediaItem capturedItem = item;
+                    MusicItem capturedItem = item;
                     cell->registerClickAction([this, capturedItem](brls::View* view) {
                         auto* detailView = new MediaDetailView(capturedItem);
                         brls::Application::pushActivity(new brls::Activity(detailView));
@@ -767,27 +354,6 @@ void MediaDetailView::loadMusicCategories() {
             addCategory("Soundtracks", soundtracks);
             addCategory("Other", other);
 
-            // Add music videos row
-            if (!musicVideos.empty()) {
-                brls::Box* mvContent = nullptr;
-                createMediaRow("Music Videos (" + std::to_string(musicVideos.size()) + ")", &mvContent);
-
-                for (const auto& mv : musicVideos) {
-                    auto* cell = new MediaItemCell();
-                    cell->setItem(mv);
-                    cell->setMarginRight(10);
-
-                    MediaItem capturedMv = mv;
-                    cell->registerClickAction([capturedMv](brls::View* view) {
-                        Application::getInstance().pushPlayerActivity(capturedMv.ratingKey);
-                        return true;
-                    });
-                    cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
-
-                    mvContent->addView(cell);
-                }
-            }
-
             // Focus setup: if no description, transfer focus to first category item
             if (m_fullDescription.empty() && m_musicCategoriesBox &&
                 !m_musicCategoriesBox->getChildren().empty()) {
@@ -804,80 +370,69 @@ void MediaDetailView::loadMusicCategories() {
 }
 
 void MediaDetailView::onPlay(bool resume) {
-    // Start playback
-    if (m_item.mediaType == MediaType::MOVIE ||
-        m_item.mediaType == MediaType::EPISODE ||
-        m_item.mediaType == MediaType::MUSIC_TRACK) {
-
-        bool isLocal = false;
-        Application::getInstance().pushPlayerActivity(m_item.ratingKey, isLocal);
+    if (m_item.mediaType == MediaType::TRACK) {
+        Application::getInstance().pushPlayerActivity(m_item.itemId);
     }
-    // For shows/seasons/albums, play the first child item
-    else if (m_item.mediaType == MediaType::SHOW ||
-             m_item.mediaType == MediaType::SEASON ||
-             m_item.mediaType == MediaType::MUSIC_ALBUM) {
-
-        // If we already have children loaded, play the first one
+    // For albums, play the first child item
+    else if (m_item.mediaType == MediaType::ALBUM) {
         if (!m_children.empty()) {
-            // For shows, the first child is a season - need to get its first episode
-            if (m_item.mediaType == MediaType::SHOW) {
-                MAClient& client = MAClient::instance();
-                std::vector<MediaItem> episodes;
-                if (client.fetchChildren(m_children[0].ratingKey, episodes) && !episodes.empty()) {
-                    Application::getInstance().pushPlayerActivity(episodes[0].ratingKey);
-                }
-            } else {
-                // For seasons/albums, first child is directly playable
-                Application::getInstance().pushPlayerActivity(m_children[0].ratingKey);
-            }
-        } else {
-            // Fetch children and play first one
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> children;
-            if (client.fetchChildren(m_item.ratingKey, children) && !children.empty()) {
-                if (m_item.mediaType == MediaType::SHOW) {
-                    // First child is a season, get its episodes
-                    std::vector<MediaItem> episodes;
-                    if (client.fetchChildren(children[0].ratingKey, episodes) && !episodes.empty()) {
-                        Application::getInstance().pushPlayerActivity(episodes[0].ratingKey);
-                    }
-                } else {
-                    Application::getInstance().pushPlayerActivity(children[0].ratingKey);
-                }
-            }
+            // First child is directly playable
+            std::vector<MusicItem> tracks = m_children;
+            auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
+            brls::Application::pushActivity(playerActivity);
         }
     }
-}
-
-void MediaDetailView::onDownload() {
-    // Downloads functionality removed
-}
-
-void MediaDetailView::showDownloadOptions() {
-    // Downloads functionality removed
-}
-
-void MediaDetailView::downloadAll() {
-    // Downloads functionality removed
-}
-
-void MediaDetailView::downloadUnwatched(int maxCount) {
-    // Downloads functionality removed
 }
 
 void MediaDetailView::loadTrackList() {
     if (!m_trackListBox) return;
 
-    asyncRun([this]() {
+    std::string itemId = m_item.itemId;
+    std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
+
+    asyncRun([this, itemId, aliveWeak]() {
         MAClient& client = MAClient::instance();
-        std::vector<MediaItem> tracks;
 
-        if (!client.fetchChildren(m_item.ratingKey, tracks)) {
-            brls::Logger::error("Failed to fetch tracks for album");
-            return;
+        bool done = false;
+        std::vector<MusicItem> tracks;
+
+        client.getAlbumTracks(itemId, [&done, &tracks](bool success, const Json& result) {
+            if (success && result.type() == Json::ARRAY) {
+                for (size_t i = 0; i < result.size(); i++) {
+                    const Json& item = result[i];
+                    MusicItem mi;
+                    mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                    mi.name = item.has("name") ? item["name"].str() : "";
+                    mi.imageUrl = item.has("image") ? item["image"].str() :
+                                  (item.has("image_url") ? item["image_url"].str() : "");
+                    mi.mediaType = MediaType::TRACK;
+                    mi.trackNumber = item.has("track_number") ? item["track_number"].intVal() : 0;
+                    mi.discNumber = item.has("disc_number") ? item["disc_number"].intVal() : 0;
+                    mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                    mi.artistName = item.has("artist") ? item["artist"].str() :
+                                    (item.has("artists") && item["artists"].size() > 0 ?
+                                     item["artists"][static_cast<size_t>(0)].has("name") ?
+                                     item["artists"][static_cast<size_t>(0)]["name"].str() : "" : "");
+                    mi.albumName = item.has("album") ? item["album"].str() : "";
+                    mi.uri = item.has("uri") ? item["uri"].str() : "";
+                    mi.provider = item.has("provider") ? item["provider"].str() : "";
+                    tracks.push_back(mi);
+                }
+            }
+            done = true;
+        });
+
+        // Wait for async response
+        // TODO: Refactor to fully async callback chain
+        int waitMs = 0;
+        while (!done && waitMs < 10000) {
+#ifdef __vita__
+            sceKernelDelayThread(50 * 1000);
+#else
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+            waitMs += 50;
         }
-
-        std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
 
         brls::sync([this, tracks, aliveWeak]() {
             auto alive = aliveWeak.lock();
@@ -889,7 +444,7 @@ void MediaDetailView::loadTrackList() {
             for (size_t i = 0; i < tracks.size(); i++) {
                 const auto& track = tracks[i];
 
-                // Create a row for each track (like Suwayomi ChapterCell)
+                // Create a row for each track
                 auto* row = new brls::Box();
                 row->setAxis(brls::Axis::ROW);
                 row->setJustifyContent(brls::JustifyContent::SPACE_BETWEEN);
@@ -911,8 +466,8 @@ void MediaDetailView::loadTrackList() {
                 trackNum->setFontSize(14);
                 trackNum->setMarginRight(12);
                 trackNum->setTextColor(nvgRGBA(150, 150, 150, 255));
-                if (track.index > 0) {
-                    trackNum->setText(std::to_string(track.index));
+                if (track.trackNumber > 0) {
+                    trackNum->setText(std::to_string(track.trackNumber));
                 } else {
                     trackNum->setText(std::to_string(i + 1));
                 }
@@ -920,7 +475,7 @@ void MediaDetailView::loadTrackList() {
 
                 auto* titleLabel = new brls::Label();
                 titleLabel->setFontSize(14);
-                titleLabel->setText(track.title);
+                titleLabel->setText(track.name);
                 leftBox->addView(titleLabel);
 
                 row->addView(leftBox);
@@ -941,12 +496,12 @@ void MediaDetailView::loadTrackList() {
                 auto* hintLabel = new brls::Label();
                 hintLabel->setFontSize(10);
                 hintLabel->setTextColor(nvgRGBA(150, 150, 180, 180));
-                hintLabel->setText("DL");
+                hintLabel->setText("Options");
                 hintLabel->setMarginRight(10);
                 hintLabel->setVisibility(brls::Visibility::INVISIBLE);
                 rightSide->addView(hintLabel);
 
-                // Show hint on focus, hide previous (like Suwayomi chapter icon pattern)
+                // Show hint on focus, hide previous
                 brls::Image* capturedHintIcon = hintIcon;
                 brls::Label* capturedHintLabel = hintLabel;
                 row->getFocusEvent()->subscribe([this, capturedHintIcon, capturedHintLabel](brls::View*) {
@@ -968,9 +523,8 @@ void MediaDetailView::loadTrackList() {
                     auto* durLabel = new brls::Label();
                     durLabel->setFontSize(12);
                     durLabel->setTextColor(nvgRGBA(150, 150, 150, 255));
-                    int totalSec = track.duration / 1000;
-                    int min = totalSec / 60;
-                    int sec = totalSec % 60;
+                    int min = track.duration / 60;
+                    int sec = track.duration % 60;
                     char durStr[16];
                     snprintf(durStr, sizeof(durStr), "%d:%02d", min, sec);
                     durLabel->setText(durStr);
@@ -980,7 +534,7 @@ void MediaDetailView::loadTrackList() {
                 row->addView(rightSide);
 
                 // Click to perform default track action
-                MediaItem capturedTrack = track;
+                MusicItem capturedTrack = track;
                 row->registerClickAction([this, capturedTrack, i](brls::View* view) {
                     performTrackAction(capturedTrack, i);
                     return true;
@@ -1010,21 +564,13 @@ void MediaDetailView::loadTrackList() {
                 } else {
                     // No description: transfer focus to first track to avoid focus errors
                     brls::Application::giveFocus(firstTrack);
-
-                    // UP from tracks goes to play button if it exists
-                    if (m_playButton) {
-                        for (auto* child : m_trackListBox->getChildren()) {
-                            child->setCustomNavigationRoute(brls::FocusDirection::UP, m_playButton);
-                        }
-                        m_playButton->setCustomNavigationRoute(brls::FocusDirection::DOWN, firstTrack);
-                    }
                 }
             }
         });
     });
 }
 
-void MediaDetailView::performTrackAction(const MediaItem& track, size_t trackIndex) {
+void MediaDetailView::performTrackAction(const MusicItem& track, size_t trackIndex) {
     TrackDefaultAction action = Application::getInstance().getSettings().trackDefaultAction;
 
     if (action == TrackDefaultAction::ASK_EACH_TIME) {
@@ -1038,26 +584,25 @@ void MediaDetailView::performTrackAction(const MediaItem& track, size_t trackInd
         case TrackDefaultAction::PLAY_NEXT:
             // Add after current track in queue
             if (queue.isEmpty()) {
-                // No queue yet - start with just this track
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.insertTrackAfterCurrent(track);
-                brls::Application::notify("Playing next: " + track.title);
+                brls::Application::notify("Playing next: " + track.name);
             }
             break;
 
         case TrackDefaultAction::PLAY_NOW_REPLACE:
             // Replace current track and play
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.insertTrackAfterCurrent(track);
                 if (queue.playNext()) {
-                    brls::Application::notify("Now playing: " + track.title);
+                    brls::Application::notify("Now playing: " + track.name);
                 }
             }
             break;
@@ -1065,12 +610,12 @@ void MediaDetailView::performTrackAction(const MediaItem& track, size_t trackInd
         case TrackDefaultAction::ADD_TO_BOTTOM:
             // Add to end of queue
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.addTrack(track);
-                brls::Application::notify("Added to queue: " + track.title);
+                brls::Application::notify("Added to queue: " + track.name);
             }
             break;
 
@@ -1078,7 +623,7 @@ void MediaDetailView::performTrackAction(const MediaItem& track, size_t trackInd
         default:
             // Clear queue and play just this track
             {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             }
@@ -1086,7 +631,7 @@ void MediaDetailView::performTrackAction(const MediaItem& track, size_t trackInd
     }
 }
 
-void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t trackIndex) {
+void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t trackIndex) {
     auto* dialog = new brls::Dialog("Choose Action");
 
     auto* optionsBox = new brls::Box();
@@ -1103,13 +648,12 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
         optionsBox->addView(btn);
     };
 
-    MediaItem capturedTrack = track;
+    MusicItem capturedTrack = track;
     size_t capturedIndex = trackIndex;
 
     addDialogButton("Play Now (Clear Queue)", [this, capturedTrack, dialog](brls::View*) {
         dialog->dismiss();
-        // Play only this single track
-        std::vector<MediaItem> single = {capturedTrack};
+        std::vector<MusicItem> single = {capturedTrack};
         auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
         brls::Application::pushActivity(playerActivity);
         return true;
@@ -1119,13 +663,12 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
         dialog->dismiss();
         MusicQueue& queue = MusicQueue::getInstance();
         if (queue.isEmpty()) {
-            // Start new queue with just this track
-            std::vector<MediaItem> single = {capturedTrack};
+            std::vector<MusicItem> single = {capturedTrack};
             auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
             brls::Application::pushActivity(playerActivity);
         } else {
             queue.insertTrackAfterCurrent(capturedTrack);
-            brls::Application::notify("Playing next: " + capturedTrack.title);
+            brls::Application::notify("Playing next: " + capturedTrack.name);
         }
         return true;
     });
@@ -1134,91 +677,21 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
         dialog->dismiss();
         MusicQueue& queue = MusicQueue::getInstance();
         if (queue.isEmpty()) {
-            std::vector<MediaItem> single = {capturedTrack};
+            std::vector<MusicItem> single = {capturedTrack};
             auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
             brls::Application::pushActivity(playerActivity);
         } else {
             queue.addTrack(capturedTrack);
-            brls::Application::notify("Added to queue: " + capturedTrack.title);
+            brls::Application::notify("Added to queue: " + capturedTrack.name);
         }
         return true;
     });
 
     addDialogButton("Add to Playlist", [this, capturedTrack, dialog](brls::View*) {
         dialog->dismiss();
-        asyncRun([this, capturedTrack]() {
-            MAClient& client = MAClient::instance();
-            std::vector<Playlist> playlists;
-            client.fetchMusicPlaylists(playlists);
-
-            brls::sync([this, playlists, capturedTrack]() {
-                auto alive = m_alive;
-                if (!alive || !alive->load()) return;
-
-                auto* plDialog = new brls::Dialog("Add to Playlist");
-                auto* plBox = new brls::Box();
-                plBox->setAxis(brls::Axis::COLUMN);
-                plBox->setPadding(20);
-
-                auto addBtn = [&plBox](const std::string& text, std::function<bool(brls::View*)> action) {
-                    auto* btn = new brls::Button();
-                    btn->setText(text);
-                    btn->setHeight(44);
-                    btn->setMarginBottom(10);
-                    btn->registerClickAction(action);
-                    btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-                    plBox->addView(btn);
-                };
-
-                addBtn("+ New Playlist", [plDialog, capturedTrack](brls::View*) {
-                    plDialog->dismiss();
-                    brls::Application::getImeManager()->openForText([capturedTrack](std::string name) {
-                        if (name.empty()) return;
-                        asyncRun([name, capturedTrack]() {
-                            MAClient& client = MAClient::instance();
-                            std::vector<std::string> keys = {capturedTrack.ratingKey};
-                            Playlist result;
-                            if (client.createPlaylistWithItems(name, keys, result)) {
-                                brls::sync([name]() {
-                                    brls::Application::notify("Created playlist: " + name);
-                                });
-                            }
-                        });
-                    }, "New Playlist", "Enter playlist name", 128, "");
-                    return true;
-                });
-
-                for (const auto& pl : playlists) {
-                    if (pl.smart) continue;
-                    Playlist capturedPl = pl;
-                    addBtn(pl.title, [plDialog, capturedPl, capturedTrack](brls::View*) {
-                        plDialog->dismiss();
-                        asyncRun([capturedPl, capturedTrack]() {
-                            MAClient& client = MAClient::instance();
-                            std::vector<std::string> keys = {capturedTrack.ratingKey};
-                            if (client.addToPlaylist(capturedPl.ratingKey, keys)) {
-                                brls::sync([capturedPl]() {
-                                    brls::Application::notify("Added to " + capturedPl.title);
-                                });
-                            }
-                        });
-                        return true;
-                    });
-                }
-
-                addBtn("Cancel", [plDialog](brls::View*) {
-                    plDialog->dismiss();
-                    return true;
-                });
-
-                plDialog->addView(plBox);
-                plDialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [plDialog](brls::View*) {
-                    plDialog->dismiss();
-                    return true;
-                });
-                brls::Application::pushActivity(new brls::Activity(plDialog));
-            });
-        });
+        // TODO: Implement playlist picker using MAClient::getLibraryPlaylists()
+        // and MAClient::playMedia() or a future addToPlaylist API
+        brls::Application::notify("Add to playlist: not yet implemented");
         return true;
     });
 
@@ -1235,8 +708,12 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
-    auto* dialog = new brls::Dialog(album.title);
+void MediaDetailView::showAlbumContextMenu(const MusicItem& album) {
+    showAlbumContextMenuStatic(album);
+}
+
+void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
+    auto* dialog = new brls::Dialog(artist.name);
 
     auto* optionsBox = new brls::Box();
     optionsBox->setAxis(brls::Axis::COLUMN);
@@ -1252,547 +729,44 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
         optionsBox->addView(btn);
     };
 
-    MediaItem capturedAlbum = album;
+    MusicItem capturedArtist = artist;
 
-    addDialogButton("Play Now (Clear Queue)", [this, capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        // Fetch album tracks and play
-        asyncRun([this, capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
-                brls::sync([tracks]() {
-                    auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                    brls::Application::pushActivity(playerActivity);
-                });
-            }
-        });
-        return true;
-    });
-
-    addDialogButton("Play Next", [this, capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
-                brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        // Insert all tracks after current
-                        for (int i = (int)tracks.size() - 1; i >= 0; i--) {
-                            queue.insertTrackAfterCurrent(tracks[i]);
-                        }
-                        brls::Application::notify("Album queued next");
-                    }
-                });
-            }
-        });
-        return true;
-    });
-
-    addDialogButton("Add to Bottom of Queue", [this, capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
-                brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        queue.addTracks(tracks);
-                        brls::Application::notify("Album added to queue");
-                    }
-                });
-            }
-        });
-        return true;
-    });
-
-    addDialogButton("Add to Playlist", [this, capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        // Fetch audio playlists and let user pick one
-        asyncRun([this, capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<Playlist> playlists;
-            client.fetchMusicPlaylists(playlists);
-
-            // Also fetch album tracks to get their ratingKeys
-            std::vector<MediaItem> tracks;
-            client.fetchChildren(capturedAlbum.ratingKey, tracks);
-
-            brls::sync([this, playlists, tracks, capturedAlbum]() {
-                auto alive = m_alive;
-                if (!alive || !alive->load()) return;
-
-                if (tracks.empty()) {
-                    brls::Application::notify("No tracks found");
-                    return;
-                }
-
-                auto* plDialog = new brls::Dialog("Add to Playlist");
-                auto* plBox = new brls::Box();
-                plBox->setAxis(brls::Axis::COLUMN);
-                plBox->setPadding(20);
-
-                auto addBtn = [&plBox](const std::string& text, std::function<bool(brls::View*)> action) {
-                    auto* btn = new brls::Button();
-                    btn->setText(text);
-                    btn->setHeight(44);
-                    btn->setMarginBottom(10);
-                    btn->registerClickAction(action);
-                    btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-                    plBox->addView(btn);
-                };
-
-                // Option to create new playlist with this album
-                addBtn("+ New Playlist", [plDialog, tracks](brls::View*) {
-                    plDialog->dismiss();
-                    brls::Application::getImeManager()->openForText([tracks](std::string name) {
-                        if (name.empty()) return;
-                        asyncRun([name, tracks]() {
-                            MAClient& client = MAClient::instance();
-                            std::vector<std::string> keys;
-                            for (const auto& t : tracks) {
-                                keys.push_back(t.ratingKey);
-                            }
-                            Playlist result;
-                            if (client.createPlaylistWithItems(name, keys, result)) {
-                                brls::sync([name]() {
-                                    brls::Application::notify("Created playlist: " + name);
-                                });
-                            } else {
-                                brls::sync([]() {
-                                    brls::Application::notify("Failed to create playlist");
-                                });
-                            }
-                        });
-                    }, "New Playlist", "Enter playlist name", 128, "");
-                    return true;
-                });
-
-                // Existing playlists
-                for (const auto& pl : playlists) {
-                    if (pl.smart) continue;  // Can't add to smart playlists
-                    Playlist capturedPl = pl;
-                    addBtn(pl.title, [plDialog, capturedPl, tracks](brls::View*) {
-                        plDialog->dismiss();
-                        asyncRun([capturedPl, tracks]() {
-                            MAClient& client = MAClient::instance();
-                            std::vector<std::string> keys;
-                            for (const auto& t : tracks) {
-                                keys.push_back(t.ratingKey);
-                            }
-                            if (client.addToPlaylist(capturedPl.ratingKey, keys)) {
-                                brls::sync([capturedPl]() {
-                                    brls::Application::notify("Added to " + capturedPl.title);
-                                });
-                            } else {
-                                brls::sync([]() {
-                                    brls::Application::notify("Failed to add to playlist");
-                                });
-                            }
-                        });
-                        return true;
-                    });
-                }
-
-                addBtn("Cancel", [plDialog](brls::View*) {
-                    plDialog->dismiss();
-                    return true;
-                });
-
-                plDialog->addView(plBox);
-                plDialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [plDialog](brls::View*) {
-                    plDialog->dismiss();
-                    return true;
-                });
-                brls::Application::pushActivity(new brls::Activity(plDialog));
-            });
-        });
-        return true;
-    });
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
-}
-
-void MediaDetailView::showMovieContextMenu(const MediaItem& movie) {
-    showMovieContextMenuStatic(movie);
-}
-
-void MediaDetailView::showShowContextMenu(const MediaItem& show) {
-    showShowContextMenuStatic(show);
-}
-
-void MediaDetailView::showMovieContextMenuStatic(const MediaItem& movie) {
-    auto* dialog = new brls::Dialog(movie.title);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MediaItem capturedMovie = movie;
-
-    // Restart button
-    addDialogButton("Restart", [capturedMovie, dialog](brls::View*) {
-        dialog->dismiss();
-        // Mark as unwatched first to reset progress, then play
-        MAClient::instance().markAsUnwatched(capturedMovie.ratingKey);
-        Application::getInstance().pushPlayerActivity(capturedMovie.ratingKey);
-        return true;
-    });
-
-    // Resume button (only if there's a view offset)
-    if (movie.viewOffset > 0) {
-        int totalSec = movie.viewOffset / 1000;
-        int hours = totalSec / 3600;
-        int minutes = (totalSec % 3600) / 60;
-        char resumeStr[64];
-        if (hours > 0) {
-            snprintf(resumeStr, sizeof(resumeStr), "Resume from %dh %dm", hours, minutes);
-        } else {
-            snprintf(resumeStr, sizeof(resumeStr), "Resume from %dm", minutes);
-        }
-        addDialogButton(resumeStr, [capturedMovie, dialog](brls::View*) {
-            dialog->dismiss();
-            Application::getInstance().pushPlayerActivity(capturedMovie.ratingKey);
-            return true;
-        });
-    }
-
-    // Mark as watched/unwatched
-    if (movie.watched) {
-        addDialogButton("Mark as Unwatched", [capturedMovie, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedMovie]() {
-                MAClient::instance().markAsUnwatched(capturedMovie.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as unwatched");
-                });
-            });
-            return true;
-        });
-    } else {
-        addDialogButton("Mark as Watched", [capturedMovie, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedMovie]() {
-                MAClient::instance().markAsWatched(capturedMovie.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as watched");
-                });
-            });
-            return true;
-        });
-    }
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss(); return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
-}
-
-void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
-    auto* dialog = new brls::Dialog(show.title);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MediaItem capturedShow = show;
-
-    // Restart (play first episode of first season)
-    addDialogButton("Restart (S01E01)", [capturedShow, dialog](brls::View*) {
-        dialog->dismiss();
-        asyncRun([capturedShow]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> seasons;
-            if (client.fetchChildren(capturedShow.ratingKey, seasons) && !seasons.empty()) {
-                std::vector<MediaItem> episodes;
-                if (client.fetchChildren(seasons[0].ratingKey, episodes) && !episodes.empty()) {
-                    brls::sync([episodes]() {
-                        Application::getInstance().pushPlayerActivity(episodes[0].ratingKey);
-                    });
-                }
-            }
-        });
-        return true;
-    });
-
-    // Resume (find the next unwatched/in-progress episode)
-    if (show.viewOffset > 0 || show.viewedLeafCount > 0) {
-        addDialogButton("Resume", [capturedShow, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedShow]() {
-                MAClient& client = MAClient::instance();
-                std::vector<MediaItem> seasons;
-                if (!client.fetchChildren(capturedShow.ratingKey, seasons) || seasons.empty()) return;
-
-                // Find the first in-progress or unwatched episode
-                for (const auto& season : seasons) {
-                    std::vector<MediaItem> episodes;
-                    if (!client.fetchChildren(season.ratingKey, episodes)) continue;
-                    for (const auto& ep : episodes) {
-                        // Episode with viewOffset = in-progress, play it
-                        if (ep.viewOffset > 0) {
-                            int totalSec = ep.viewOffset / 1000;
-                            int minLeft = ((ep.duration - ep.viewOffset) / 1000) / 60;
-                            char info[64];
-                            snprintf(info, sizeof(info), "S%02dE%02d - %dm left",
-                                     ep.parentIndex, ep.index, minLeft);
-                            std::string infoStr = info;
-                            brls::sync([ep, infoStr]() {
-                                brls::Application::notify("Resuming " + infoStr);
-                                Application::getInstance().pushPlayerActivity(ep.ratingKey);
-                            });
-                            return;
-                        }
-                        // First unwatched episode
-                        if (!ep.watched) {
-                            char info[64];
-                            snprintf(info, sizeof(info), "S%02dE%02d",
-                                     ep.parentIndex, ep.index);
-                            std::string infoStr = info;
-                            brls::sync([ep, infoStr]() {
-                                brls::Application::notify("Playing " + infoStr);
-                                Application::getInstance().pushPlayerActivity(ep.ratingKey);
-                            });
-                            return;
-                        }
-                    }
-                }
-                // All watched - play first episode
-                brls::sync([]() {
-                    brls::Application::notify("All episodes watched, restarting");
-                });
-                std::vector<MediaItem> firstEps;
-                if (client.fetchChildren(seasons[0].ratingKey, firstEps) && !firstEps.empty()) {
-                    brls::sync([firstEps]() {
-                        Application::getInstance().pushPlayerActivity(firstEps[0].ratingKey);
-                    });
-                }
-            });
-            return true;
-        });
-    }
-
-    // Mark as watched/unwatched
-    if (show.watched || (show.leafCount > 0 && show.viewedLeafCount == show.leafCount)) {
-        addDialogButton("Mark as Unwatched", [capturedShow, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedShow]() {
-                MAClient::instance().markAsUnwatched(capturedShow.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as unwatched");
-                });
-            });
-            return true;
-        });
-    } else {
-        addDialogButton("Mark as Watched", [capturedShow, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedShow]() {
-                MAClient::instance().markAsWatched(capturedShow.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as watched");
-                });
-            });
-            return true;
-        });
-    }
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss(); return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
-}
-
-void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
-    auto* dialog = new brls::Dialog(season.title);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MediaItem capturedSeason = season;
-
-    // Resume (find next in-progress or unwatched episode)
-    addDialogButton("Resume", [capturedSeason, dialog](brls::View*) {
-        dialog->dismiss();
-        asyncRun([capturedSeason]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> episodes;
-            if (!client.fetchChildren(capturedSeason.ratingKey, episodes) || episodes.empty()) {
-                brls::sync([]() { brls::Application::notify("No episodes found"); });
-                return;
-            }
-            // Find in-progress episode first
-            for (const auto& ep : episodes) {
-                if (ep.viewOffset > 0) {
-                    int minLeft = ((ep.duration - ep.viewOffset) / 1000) / 60;
-                    char info[64];
-                    snprintf(info, sizeof(info), "S%02dE%02d - %dm left",
-                             ep.parentIndex, ep.index, minLeft);
-                    std::string infoStr = info;
-                    brls::sync([ep, infoStr]() {
-                        brls::Application::notify("Resuming " + infoStr);
-                        Application::getInstance().pushPlayerActivity(ep.ratingKey);
-                    });
-                    return;
-                }
-            }
-            // Find first unwatched
-            for (const auto& ep : episodes) {
-                if (!ep.watched) {
-                    char info[64];
-                    snprintf(info, sizeof(info), "S%02dE%02d", ep.parentIndex, ep.index);
-                    std::string infoStr = info;
-                    brls::sync([ep, infoStr]() {
-                        brls::Application::notify("Playing " + infoStr);
-                        Application::getInstance().pushPlayerActivity(ep.ratingKey);
-                    });
-                    return;
-                }
-            }
-            // All watched - play first
-            brls::sync([episodes]() {
-                brls::Application::notify("All watched, restarting season");
-                Application::getInstance().pushPlayerActivity(episodes[0].ratingKey);
-            });
-        });
-        return true;
-    });
-
-    // Mark as watched/unwatched
-    if (season.watched || (season.leafCount > 0 && season.viewedLeafCount == season.leafCount)) {
-        addDialogButton("Mark as Unwatched", [capturedSeason, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedSeason]() {
-                MAClient::instance().markAsUnwatched(capturedSeason.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as unwatched");
-                });
-            });
-            return true;
-        });
-    } else {
-        addDialogButton("Mark as Watched", [capturedSeason, dialog](brls::View*) {
-            dialog->dismiss();
-            asyncRun([capturedSeason]() {
-                MAClient::instance().markAsWatched(capturedSeason.ratingKey);
-                brls::sync([]() {
-                    brls::Application::notify("Marked as watched");
-                });
-            });
-            return true;
-        });
-    }
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss(); return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
-}
-
-void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
-    auto* dialog = new brls::Dialog(artist.title);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MediaItem capturedArtist = artist;
-
-    // Shuffle Artist - add all tracks to queue in random order
+    // Shuffle Artist - fetch all tracks and shuffle
     addDialogButton("Shuffle Artist", [capturedArtist, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
-            std::vector<MediaItem> albums;
-            std::vector<MediaItem> allTracks;
 
-            if (client.fetchChildren(capturedArtist.ratingKey, albums)) {
-                for (const auto& album : albums) {
-                    std::vector<MediaItem> tracks;
-                    if (client.fetchChildren(album.ratingKey, tracks)) {
-                        for (auto& track : tracks) {
-                            allTracks.push_back(track);
-                        }
+            bool done = false;
+            std::vector<MusicItem> allTracks;
+
+            client.getArtistTracks(capturedArtist.itemId, [&done, &allTracks, &capturedArtist](bool success, const Json& result) {
+                if (success && result.type() == Json::ARRAY) {
+                    for (size_t i = 0; i < result.size(); i++) {
+                        const Json& item = result[i];
+                        MusicItem mi;
+                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                        mi.name = item.has("name") ? item["name"].str() : "";
+                        mi.imageUrl = item.has("image") ? item["image"].str() :
+                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        mi.mediaType = MediaType::TRACK;
+                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        mi.artistName = capturedArtist.name;
+                        allTracks.push_back(mi);
                     }
                 }
+                done = true;
+            });
+
+            int waitMs = 0;
+            while (!done && waitMs < 10000) {
+#ifdef __vita__
+                sceKernelDelayThread(50 * 1000);
+#else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+                waitMs += 50;
             }
 
             if (allTracks.empty()) {
@@ -1820,18 +794,37 @@ void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
         dialog->dismiss();
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
-            std::vector<MediaItem> albums;
-            std::vector<MediaItem> allTracks;
 
-            if (client.fetchChildren(capturedArtist.ratingKey, albums)) {
-                for (const auto& album : albums) {
-                    std::vector<MediaItem> tracks;
-                    if (client.fetchChildren(album.ratingKey, tracks)) {
-                        for (auto& track : tracks) {
-                            allTracks.push_back(track);
-                        }
+            bool done = false;
+            std::vector<MusicItem> allTracks;
+
+            client.getArtistTracks(capturedArtist.itemId, [&done, &allTracks, &capturedArtist](bool success, const Json& result) {
+                if (success && result.type() == Json::ARRAY) {
+                    for (size_t i = 0; i < result.size(); i++) {
+                        const Json& item = result[i];
+                        MusicItem mi;
+                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                        mi.name = item.has("name") ? item["name"].str() : "";
+                        mi.imageUrl = item.has("image") ? item["image"].str() :
+                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        mi.mediaType = MediaType::TRACK;
+                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        mi.artistName = capturedArtist.name;
+                        allTracks.push_back(mi);
                     }
                 }
+                done = true;
+            });
+
+            int waitMs = 0;
+            while (!done && waitMs < 10000) {
+#ifdef __vita__
+                sceKernelDelayThread(50 * 1000);
+#else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+                waitMs += 50;
             }
 
             if (allTracks.empty()) {
@@ -1859,8 +852,8 @@ void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
-    auto* dialog = new brls::Dialog(album.title);
+void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
+    auto* dialog = new brls::Dialog(album.name);
 
     auto* optionsBox = new brls::Box();
     optionsBox->setAxis(brls::Axis::COLUMN);
@@ -1876,14 +869,45 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
         optionsBox->addView(btn);
     };
 
-    MediaItem capturedAlbum = album;
+    MusicItem capturedAlbum = album;
 
     addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
             MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
+
+            bool done = false;
+            std::vector<MusicItem> tracks;
+
+            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
+                if (success && result.type() == Json::ARRAY) {
+                    for (size_t i = 0; i < result.size(); i++) {
+                        const Json& item = result[i];
+                        MusicItem mi;
+                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                        mi.name = item.has("name") ? item["name"].str() : "";
+                        mi.imageUrl = item.has("image") ? item["image"].str() :
+                                      (item.has("image_url") ? item["image_url"].str() : "");
+                        mi.mediaType = MediaType::TRACK;
+                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        tracks.push_back(mi);
+                    }
+                }
+                done = true;
+            });
+
+            int waitMs = 0;
+            while (!done && waitMs < 10000) {
+#ifdef __vita__
+                sceKernelDelayThread(50 * 1000);
+#else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+                waitMs += 50;
+            }
+
+            if (!tracks.empty()) {
                 brls::sync([tracks]() {
                     auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
                     brls::Application::pushActivity(playerActivity);
@@ -1897,8 +921,37 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
             MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
+
+            bool done = false;
+            std::vector<MusicItem> tracks;
+
+            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
+                if (success && result.type() == Json::ARRAY) {
+                    for (size_t i = 0; i < result.size(); i++) {
+                        const Json& item = result[i];
+                        MusicItem mi;
+                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                        mi.name = item.has("name") ? item["name"].str() : "";
+                        mi.mediaType = MediaType::TRACK;
+                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        tracks.push_back(mi);
+                    }
+                }
+                done = true;
+            });
+
+            int waitMs = 0;
+            while (!done && waitMs < 10000) {
+#ifdef __vita__
+                sceKernelDelayThread(50 * 1000);
+#else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+                waitMs += 50;
+            }
+
+            if (!tracks.empty()) {
                 brls::sync([tracks]() {
                     MusicQueue& queue = MusicQueue::getInstance();
                     if (queue.isEmpty()) {
@@ -1920,8 +973,37 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
             MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
+
+            bool done = false;
+            std::vector<MusicItem> tracks;
+
+            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
+                if (success && result.type() == Json::ARRAY) {
+                    for (size_t i = 0; i < result.size(); i++) {
+                        const Json& item = result[i];
+                        MusicItem mi;
+                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
+                        mi.name = item.has("name") ? item["name"].str() : "";
+                        mi.mediaType = MediaType::TRACK;
+                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
+                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        tracks.push_back(mi);
+                    }
+                }
+                done = true;
+            });
+
+            int waitMs = 0;
+            while (!done && waitMs < 10000) {
+#ifdef __vita__
+                sceKernelDelayThread(50 * 1000);
+#else
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
+                waitMs += 50;
+            }
+
+            if (!tracks.empty()) {
                 brls::sync([tracks]() {
                     MusicQueue& queue = MusicQueue::getInstance();
                     if (queue.isEmpty()) {
@@ -1950,7 +1032,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
+void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
     TrackDefaultAction action = Application::getInstance().getSettings().trackDefaultAction;
 
     if (action == TrackDefaultAction::ASK_EACH_TIME) {
@@ -1971,11 +1053,11 @@ void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
             optionsBox->addView(btn);
         };
 
-        MediaItem capturedTrack = track;
+        MusicItem capturedTrack = track;
 
         addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
             dialog->dismiss();
-            std::vector<MediaItem> single = {capturedTrack};
+            std::vector<MusicItem> single = {capturedTrack};
             auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
             brls::Application::pushActivity(playerActivity);
             return true;
@@ -1985,12 +1067,12 @@ void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
             dialog->dismiss();
             MusicQueue& queue = MusicQueue::getInstance();
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {capturedTrack};
+                std::vector<MusicItem> single = {capturedTrack};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.insertTrackAfterCurrent(capturedTrack);
-                brls::Application::notify("Playing next: " + capturedTrack.title);
+                brls::Application::notify("Playing next: " + capturedTrack.name);
             }
             return true;
         });
@@ -1999,12 +1081,12 @@ void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
             dialog->dismiss();
             MusicQueue& queue = MusicQueue::getInstance();
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {capturedTrack};
+                std::vector<MusicItem> single = {capturedTrack};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.addTrack(capturedTrack);
-                brls::Application::notify("Added to queue: " + capturedTrack.title);
+                brls::Application::notify("Added to queue: " + capturedTrack.name);
             }
             return true;
         });
@@ -2028,43 +1110,43 @@ void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
     switch (action) {
         case TrackDefaultAction::PLAY_NEXT:
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.insertTrackAfterCurrent(track);
-                brls::Application::notify("Playing next: " + track.title);
+                brls::Application::notify("Playing next: " + track.name);
             }
             break;
 
         case TrackDefaultAction::PLAY_NOW_REPLACE:
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.insertTrackAfterCurrent(track);
                 if (queue.playNext()) {
-                    brls::Application::notify("Now playing: " + track.title);
+                    brls::Application::notify("Now playing: " + track.name);
                 }
             }
             break;
 
         case TrackDefaultAction::ADD_TO_BOTTOM:
             if (queue.isEmpty()) {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             } else {
                 queue.addTrack(track);
-                brls::Application::notify("Added to queue: " + track.title);
+                brls::Application::notify("Added to queue: " + track.name);
             }
             break;
 
         case TrackDefaultAction::PLAY_NOW_CLEAR:
         default:
             {
-                std::vector<MediaItem> single = {track};
+                std::vector<MusicItem> single = {track};
                 auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
                 brls::Application::pushActivity(playerActivity);
             }
@@ -2073,81 +1155,8 @@ void MediaDetailView::performTrackActionStatic(const MediaItem& track) {
 }
 
 void MediaDetailView::setupChildrenFocusTransfer() {
-    bool hasChildren = m_childrenBox && !m_childrenBox->getChildren().empty();
-    bool hasExtras = m_extrasBox && !m_extrasBox->getChildren().empty();
-
-    if (!hasChildren && !hasExtras) return;
-
-    // Determine the UP navigation target for children (seasons/episodes):
-    // - If description exists, navigate UP to description label
-    // - If description is empty, navigate UP to play button (if exists)
-    brls::View* upTarget = nullptr;
-    if (m_summaryLabel && !m_fullDescription.empty()) {
-        upTarget = m_summaryLabel;
-    } else if (m_playButton) {
-        upTarget = m_playButton;
-    }
-
-    if (hasChildren && upTarget) {
-        for (auto* child : m_childrenBox->getChildren()) {
-            child->setCustomNavigationRoute(brls::FocusDirection::UP, upTarget);
-        }
-    }
-
-    // If description exists, set DOWN from description to first child (or extras if no children)
-    if (m_summaryLabel && !m_fullDescription.empty()) {
-        brls::View* downFromDesc = nullptr;
-        if (hasChildren) {
-            downFromDesc = m_childrenBox->getChildren().front();
-        } else if (hasExtras) {
-            downFromDesc = m_extrasBox->getChildren().front();
-        }
-        if (downFromDesc) {
-            m_summaryLabel->setCustomNavigationRoute(brls::FocusDirection::DOWN, downFromDesc);
-        }
-    }
-
-    // Set UP/DOWN navigation between children and extras
-    if (hasChildren && hasExtras) {
-        // DOWN from children goes to first extra
-        brls::View* firstExtra = m_extrasBox->getChildren().front();
-        for (auto* child : m_childrenBox->getChildren()) {
-            child->setCustomNavigationRoute(brls::FocusDirection::DOWN, firstExtra);
-        }
-
-        // UP from extras goes to first child (seasons/episodes)
-        brls::View* firstChild = m_childrenBox->getChildren().front();
-        for (auto* extra : m_extrasBox->getChildren()) {
-            extra->setCustomNavigationRoute(brls::FocusDirection::UP, firstChild);
-        }
-    } else if (hasExtras && !hasChildren) {
-        // No children, extras UP goes to description/play button
-        if (upTarget) {
-            for (auto* extra : m_extrasBox->getChildren()) {
-                extra->setCustomNavigationRoute(brls::FocusDirection::UP, upTarget);
-            }
-        }
-    }
-
-    // If description is empty, transfer initial focus to first media item
-    brls::View* firstFocusable = nullptr;
-    if (hasChildren) {
-        firstFocusable = m_childrenBox->getChildren().front();
-    } else if (hasExtras) {
-        firstFocusable = m_extrasBox->getChildren().front();
-    }
-
-    if (m_fullDescription.empty() && firstFocusable) {
-        brls::Application::giveFocus(firstFocusable);
-
-        // Set DOWN from play/resume buttons to first focusable item
-        if (m_playButton) {
-            m_playButton->setCustomNavigationRoute(brls::FocusDirection::DOWN, firstFocusable);
-        }
-        if (m_resumeButton) {
-            m_resumeButton->setCustomNavigationRoute(brls::FocusDirection::DOWN, firstFocusable);
-        }
-    }
+    // Simplified for music-only: focus navigation for children containers
+    // is now handled inline in loadTrackList() and loadMusicCategories().
 }
 
 } // namespace vita_ma

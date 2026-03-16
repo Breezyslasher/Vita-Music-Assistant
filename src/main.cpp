@@ -240,7 +240,7 @@ int main(int argc, char* argv[]) {
     // Create window
     brls::Application::createWindow("Vita Music Assistant");
 
-    // Set theme colors (Plex-like)
+    // Set theme colors
     brls::Application::getPlatform()->getThemeVariant();
 
     // Register custom views

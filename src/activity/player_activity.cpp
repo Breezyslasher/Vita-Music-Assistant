@@ -53,53 +53,15 @@ PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, co
     return activity;
 }
 
-PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MediaItem>& tracks, int startIndex) {
+PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tracks, int startIndex) {
     PlayerActivity* activity = new PlayerActivity("", false);
     activity->m_isQueueMode = true;
 
     MusicQueue& queue = MusicQueue::getInstance();
 
-    // Try to create a server-side play queue when online
-    // Uses the parent ratingKey (album/season) or the first track's ratingKey
-    bool serverOk = false;
-    if (!tracks.empty() && !MAClient::instance().getServerUrl().empty()) {
-        MAClient& client = MAClient::instance();
-        MAClient::PlayQueueContainer pq;
-
-        // Determine queue type
-        std::string queueType = "audio";
-        if (!tracks.empty() && (tracks[0].mediaType == MediaType::EPISODE ||
-                                 tracks[0].mediaType == MediaType::MOVIE)) {
-            queueType = "video";
-        }
-
-        // Build URI from parent ratingKey (album/season) if available,
-        // otherwise from first track
-        std::string uri;
-        if (!tracks[0].parentRatingKey.empty()) {
-            uri = client.buildPlayQueueDirectoryURI(tracks[0].parentRatingKey);
-        } else if (tracks.size() == 1) {
-            uri = client.buildPlayQueueURI(tracks[0].ratingKey);
-        } else {
-            // Multiple tracks without parent - use first track's URI
-            uri = client.buildPlayQueueURI(tracks[0].ratingKey);
-        }
-
-        std::string startKey = (startIndex >= 0 && startIndex < (int)tracks.size())
-            ? tracks[startIndex].ratingKey : "";
-
-        serverOk = client.createPlayQueue(uri, queueType, pq, startKey);
-        if (serverOk && !pq.items.empty()) {
-            queue.setFromPlayQueue(pq, pq.playQueueShuffled);
-            brls::Logger::info("PlayerActivity: Server play queue {} created ({} items)",
-                               pq.playQueueID, pq.playQueueTotalCount);
-        }
-    }
-
-    if (!serverOk) {
-        // Offline or server failed - use client-side queue
-        queue.setQueue(tracks, startIndex);
-    }
+    // Set up client-side queue
+    // TODO: Integrate with Music Assistant server-side queue via playMedia API
+    queue.setQueue(tracks, startIndex);
 
     // Set up track ended callback
     queue.setTrackEndedCallback([activity](const QueueItem* nextTrack) {
@@ -900,95 +862,28 @@ void PlayerActivity::loadMedia() {
     }
 
     // Remote playback from server
+    // TODO: Implement MA API track loading
+    // For now, use getStreamUrl to get playback URL
     MAClient& client = MAClient::instance();
-    MediaItem item;
+    m_mediaType = MediaType::TRACK;
 
-    if (client.fetchMediaDetails(m_mediaKey, item)) {
-        // Store media type and episode info for auto-play-next
-        m_mediaType = item.mediaType;
-        if (item.mediaType == MediaType::EPISODE) {
-            m_episodeIndex = item.index;
-            m_parentRatingKey = item.parentRatingKey;
-            m_grandparentRatingKey = item.grandparentRatingKey;
-        }
+    if (titleLabel) {
+        titleLabel->setText("Loading...");
+    }
 
-        // Store markers for intro/credits skip
-        m_markers = item.markers;
-        if (!m_markers.empty()) {
-            brls::Logger::info("PlayerActivity: Loaded {} markers for {}", m_markers.size(), item.title);
-        }
-        if (titleLabel) {
-            std::string title = item.title;
-            if (item.mediaType == MediaType::EPISODE) {
-                title = item.grandparentTitle + " - " + item.title;
-            }
-            titleLabel->setText(title);
-        }
+    // Load album art
+    if (albumArt) {
+        // TODO: Get track image from MA API
+        albumArt->setVisibility(brls::Visibility::VISIBLE);
+    }
 
-        // Handle photos differently - display image instead of playing
-        if (item.mediaType == MediaType::PHOTO) {
-            brls::Logger::info("Displaying photo: {}", item.title);
-            m_isPhoto = true;
-            m_loadingMedia = false;
+    bool isAudioContent = true;
+    m_transcodeBaseOffsetMs = 0;
 
-            // Load the full-size photo
-            if (!item.thumb.empty()) {
-                std::string photoUrl = client.getThumbnailUrl(item.thumb, 960, 544);
-                brls::Logger::debug("Photo URL: {}", photoUrl);
-
-                // Load photo into the view (photoImage is defined in player.xml)
-                if (photoImage) {
-                    photoImage->setVisibility(brls::Visibility::VISIBLE);
-                    ImageLoader::loadAsync(photoUrl, [](brls::Image* image) {
-                        // Photo loaded
-                    }, photoImage, m_alive);
-                }
-
-                // Hide player controls for photos
-                if (progressSlider) {
-                    progressSlider->setVisibility(brls::Visibility::GONE);
-                }
-                if (timeLabel) {
-                    timeLabel->setVisibility(brls::Visibility::GONE);
-                }
-            }
-            return;
-        }
-
-        // Detect if this is audio content
-        bool isAudioContent = (item.mediaType == MediaType::MUSIC_TRACK);
-        brls::Logger::info("PlayerActivity: Media type detection - audio: {}, type: {}",
-                          isAudioContent, (int)item.mediaType);
-
-        // Show album art for audio content (before we pause the image loader)
-        if (isAudioContent && albumArt) {
-            // Try track thumb, then album (parent) thumb, then artist (grandparent) thumb
-            std::string artPath = item.thumb;
-            if (artPath.empty()) artPath = item.parentThumb;
-            if (artPath.empty()) artPath = item.grandparentThumb;
-
-            if (!artPath.empty()) {
-                std::string thumbUrl = client.getThumbnailUrl(artPath, 300, 300);
-                ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {
-                    // Art loaded
-                }, albumArt, m_alive);
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
-        }
-
-        // Get transcode URL for video/audio (forces Plex to convert to Vita-compatible format)
-        // Only resume from viewOffset if resumePlayback is enabled
-        // If near the end (>= 95% watched), start from beginning instead
-        int resumeOffset = 0;
-        if (Application::getInstance().getSettings().resumePlayback && item.viewOffset > 0) {
-            bool nearEnd = (item.duration > 0 && item.viewOffset >= item.duration * 0.95);
-            if (!nearEnd) {
-                resumeOffset = item.viewOffset;
-            }
-        }
-        m_transcodeBaseOffsetMs = resumeOffset;
-        std::string url;
-        if (client.getTranscodeUrl(m_mediaKey, url, resumeOffset)) {
+    // TODO: Get stream URL from Music Assistant API
+    // MAClient::instance().getStreamUrl(queueId, callback);
+    std::string url = "";  // Placeholder - needs MA API integration
+    if (!url.empty()) {
             // Pause image loading and free cache memory before initializing MPV.
             // This stops background thumbnail fetches from competing with media
             // streaming, and frees memory (Vita only has 256MB).
@@ -1235,20 +1130,7 @@ void PlayerActivity::updateProgress() {
             // Notify queue that track ended - it will call onTrackEnded
             MusicQueue::getInstance().onTrackEnded();
         } else {
-            MAClient::instance().markAsWatched(m_mediaKey);
-
-            // Auto-play next episode if enabled and this is an episode
-            if (Application::getInstance().getSettings().autoPlayNext
-                && m_mediaType == MediaType::EPISODE
-                && !m_parentRatingKey.empty()
-                && !m_isLocalFile) {
-                brls::Logger::info("PlayerActivity: Looking for next episode (parent={}, index={})",
-                    m_parentRatingKey, m_episodeIndex);
-                playNextEpisode();
-                return;
-            }
-
-            // No auto-play - just exit
+            // Non-queue single track ended - just exit
             brls::sync([this]() {
                 brls::Application::popActivity();
             });
@@ -1264,96 +1146,9 @@ void PlayerActivity::updateProgress() {
 }
 
 void PlayerActivity::playNextEpisode() {
-    // Fetch sibling episodes in the same season
-    std::string seasonKey = m_parentRatingKey;
-    std::string showKey = m_grandparentRatingKey;
-    int currentIndex = m_episodeIndex;
-
-    brls::async([this, seasonKey, showKey, currentIndex]() {
-        MAClient& client = MAClient::instance();
-        std::vector<MediaItem> siblings;
-        if (!client.fetchChildren(seasonKey, siblings)) {
-            brls::Logger::error("PlayerActivity: Failed to fetch season children for auto-play-next");
-            brls::sync([this]() { brls::Application::popActivity(); });
-            return;
-        }
-
-        // Find next episode in same season (index = currentIndex + 1)
-        std::string nextKey;
-        for (const auto& ep : siblings) {
-            if (ep.index == currentIndex + 1) {
-                nextKey = ep.ratingKey;
-                break;
-            }
-        }
-
-        // If not found in same season, try next season (cross-season)
-        if (nextKey.empty() && !showKey.empty()) {
-            brls::Logger::info("PlayerActivity: Last episode of season, checking next season");
-
-            // Fetch all seasons of the show
-            std::vector<MediaItem> seasons;
-            if (client.fetchChildren(showKey, seasons)) {
-                // Find current season's parentIndex, then look for next season
-                // Current season's parentIndex is stored in item.parentIndex during loadMedia
-                // but we can find it by matching seasonKey
-                std::string nextSeasonKey;
-                bool foundCurrent = false;
-                for (const auto& season : seasons) {
-                    if (foundCurrent && season.mediaType == MediaType::SEASON) {
-                        nextSeasonKey = season.ratingKey;
-                        break;
-                    }
-                    if (season.ratingKey == seasonKey) {
-                        foundCurrent = true;
-                    }
-                }
-
-                if (!nextSeasonKey.empty()) {
-                    // Fetch episodes of next season and take the first one
-                    std::vector<MediaItem> nextSeasonEps;
-                    if (client.fetchChildren(nextSeasonKey, nextSeasonEps) && !nextSeasonEps.empty()) {
-                        // Find episode with lowest index (usually 1)
-                        int lowestIdx = INT_MAX;
-                        for (const auto& ep : nextSeasonEps) {
-                            if (ep.index < lowestIdx && ep.mediaType == MediaType::EPISODE) {
-                                lowestIdx = ep.index;
-                                nextKey = ep.ratingKey;
-                            }
-                        }
-                        brls::Logger::info("PlayerActivity: Found first episode of next season: {}",
-                            nextKey);
-                    }
-                }
-            }
-        }
-
-        if (nextKey.empty()) {
-            brls::Logger::info("PlayerActivity: No next episode found, exiting player");
-            brls::sync([this]() { brls::Application::popActivity(); });
-            return;
-        }
-
-        brls::Logger::info("PlayerActivity: Auto-playing next episode: {}", nextKey);
-
-        brls::sync([this, nextKey]() {
-            // Stop current playback
-            MpvPlayer::getInstance().stop();
-
-            // Reset state for new episode
-            m_mediaKey = nextKey;
-            m_endHandled = false;
-            m_introSkipped = false;
-            m_creditsSkipped = false;
-            m_markers.clear();
-            m_activeMarkerType.clear();
-            m_skipButtonVisible = false;
-            if (skipBtn) skipBtn->setVisibility(brls::Visibility::GONE);
-
-            // Load the new episode
-            loadMedia();
-        });
-    });
+    // Not applicable for music-only app - use queue-based next track instead
+    brls::Logger::debug("PlayerActivity: playNextEpisode called - not applicable, using queue");
+    brls::Application::popActivity();
 }
 
 void PlayerActivity::togglePlayPause() {
@@ -1388,13 +1183,7 @@ void PlayerActivity::cycleSubtitleTrack() {
 }
 
 void PlayerActivity::fetchAudioStreams() {
-    if (m_streamsLoaded || m_mediaKey.empty()) return;
-
-    MAClient& client = MAClient::instance();
-    if (client.fetchStreams(m_mediaKey, m_audioStreams, m_partId)) {
-        m_streamsLoaded = true;
-        brls::Logger::info("fetchAudioStreams: Loaded {} streams, partId={}", m_audioStreams.size(), m_partId);
-    }
+    // Not applicable for Music Assistant - audio streams handled by MA server
 }
 
 void PlayerActivity::showTrackOverlay(TrackSelectMode mode) {
@@ -1454,9 +1243,16 @@ void PlayerActivity::hideTrackOverlay() {
 }
 
 void PlayerActivity::populateTrackList(TrackSelectMode mode) {
+    // Not applicable for Music Assistant - track selection handled by MA server
+    if (!trackList || !trackOverlayTitle) return;
+    trackOverlayTitle->setText("Not available");
+}
+
+// Original Plex track list code removed - start of dead code guard
+#if 0
+void PlayerActivity::populateTrackList_REMOVED(TrackSelectMode mode) {
     if (!trackList || !trackOverlayTitle) return;
 
-    // Transfer focus away before clearing, so destroying focused children is safe
     if (!trackList->getChildren().empty() && trackOverlayTitle) {
         trackOverlayTitle->setFocusable(true);
         brls::Application::giveFocus(trackOverlayTitle);
@@ -1861,6 +1657,7 @@ void PlayerActivity::populateSubtitleSearchResults() {
         trackOverlayTitle->setFocusable(false);
     }
 }
+#endif // Dead Plex track list code
 
 void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
     MpvPlayer& player = MpvPlayer::getInstance();
@@ -3477,16 +3274,8 @@ void PlayerActivity::updateSkipButton(double positionMs) {
             m_skipButtonVisible = false;
             m_activeMarkerType.clear();
 
-            // If credits auto-skip + auto-play-next, go straight to next episode
-            if (!isIntro && settings.autoPlayNext
-                && m_mediaType == MediaType::EPISODE
-                && !m_parentRatingKey.empty()
-                && !m_isLocalFile) {
-                brls::Logger::info("PlayerActivity: Credits auto-skipped, starting next episode");
-                MAClient::instance().markAsWatched(m_mediaKey);
-                m_endHandled = true;
-                playNextEpisode();
-            } else {
+            // Skip to end of marker
+            {
                 double seekToSec = (activeEnd - m_transcodeBaseOffsetMs) / 1000.0;
                 if (seekToSec > 0) {
                     MpvPlayer::getInstance().seekTo(seekToSec);

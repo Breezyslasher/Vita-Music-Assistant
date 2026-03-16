@@ -6,6 +6,7 @@
 #include "view/media_item_cell.hpp"
 #include "view/media_detail_view.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "app/music_queue.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/image_loader.hpp"
@@ -61,13 +62,6 @@ MusicTab::MusicTab() {
         m_mainContainer->addView(m_playlistsRow);
     }
 
-    // Collections row (hidden by default, shown when data loads)
-    if (settings.showCollections) {
-        m_collectionsRow = createHorizontalRow("Collections");
-        m_collectionsRow->setVisibility(brls::Visibility::GONE);
-        m_mainContainer->addView(m_collectionsRow);
-    }
-
     // Album categories (scrolling rows organized by type)
     m_albumCategoriesScroll = new brls::ScrollingFrame();
     m_albumCategoriesScroll->setGrow(1.0f);
@@ -93,10 +87,10 @@ MusicTab::MusicTab() {
     m_contentGrid = new RecyclingGrid();
     m_contentGrid->setGrow(1.0f);
     m_contentGrid->setHeight(400);
-    m_contentGrid->setOnItemSelected([this](const MediaItem& item) {
+    m_contentGrid->setOnItemSelected([this](const MusicItem& item) {
         onItemSelected(item);
     });
-    m_contentGrid->setOnItemStartAction([this](const MediaItem& item) {
+    m_contentGrid->setOnItemStartAction([this](const MusicItem& item) {
         showAlbumContextMenu(item);
     });
     m_mainContainer->addView(m_contentGrid);
@@ -165,8 +159,6 @@ brls::Box* MusicTab::createHorizontalRow(const std::string& title) {
     // Store container reference based on title
     if (title == "Playlists") {
         m_playlistsContainer = container;
-    } else if (title == "Collections") {
-        m_collectionsContainer = container;
     }
 
     return rowBox;
@@ -214,123 +206,29 @@ void MusicTab::onFocusGained() {
 }
 
 void MusicTab::loadSections() {
-    brls::Logger::debug("MusicTab::loadSections - Starting async load");
-
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, aliveWeak]() {
-        brls::Logger::debug("MusicTab: Fetching library sections (async)...");
-        MAClient& client = MAClient::instance();
-        std::vector<LibrarySection> allSections;
-
-        if (client.fetchLibrarySections(allSections)) {
-            // Filter for music sections only (type = "artist")
-            std::vector<LibrarySection> musicSections;
-            for (const auto& section : allSections) {
-                if (section.type == "artist") {
-                    musicSections.push_back(section);
-                }
-            }
-
-            brls::Logger::info("MusicTab: Got {} music sections", musicSections.size());
-
-            // Update UI on main thread
-            brls::sync([this, musicSections, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_sections = musicSections;
-                m_sectionsBox->clearViews();
-
-                for (const auto& section : m_sections) {
-                    brls::Logger::debug("MusicTab: Adding section button: {}", section.title);
-                    auto* btn = new brls::Button();
-                    btn->setText(section.title);
-                    btn->setMarginRight(10);
-                    styleButton(btn, false);
-
-                    LibrarySection capturedSection = section;
-                    btn->registerClickAction([this, capturedSection, btn](brls::View* view) {
-                        m_currentSection = capturedSection.key;
-                        m_viewingPlaylist = false;
-                        m_titleLabel->setText("Music - " + capturedSection.title);
-                        m_activeSectionBtn = btn;
-                        updateSectionButtonStyles();
-                        loadContent(capturedSection.key);
-                        loadCollections(capturedSection.key);
-                        loadPlaylists();
-                        return true;
-                    });
-
-                    m_sectionsBox->addView(btn);
-                }
-
-                // Load first section by default
-                if (!m_sections.empty()) {
-                    brls::Logger::debug("MusicTab: Loading first section: {}", m_sections[0].title);
-                    m_currentSection = m_sections[0].key;
-                    m_titleLabel->setText("Music - " + m_sections[0].title);
-                    // Mark first button as active
-                    if (!m_sectionsBox->getChildren().empty()) {
-                        m_activeSectionBtn = dynamic_cast<brls::Button*>(m_sectionsBox->getChildren()[0]);
-                        updateSectionButtonStyles();
-                    }
-                    loadContent(m_sections[0].key);
-                    loadCollections(m_sections[0].key);
-                }
-
-                m_loaded = true;
-                brls::Logger::debug("MusicTab: Sections loading complete");
-            });
-        } else {
-            brls::Logger::error("MusicTab: Failed to fetch sections");
-            brls::sync([this, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-                m_loaded = true;
-            });
-        }
-    });
+    brls::Logger::debug("MusicTab::loadSections - TODO: implement with MA async API");
+    // TODO: Use MAClient async API to fetch library data
+    // MAClient::instance().getLibraryArtists([this](bool success, const Json& result) { ... });
 
     // Load playlists (audio playlists)
     const auto& settings = Application::getInstance().getSettings();
     if (settings.showPlaylists) {
         loadPlaylists();
     }
+
+    m_loaded = true;
 }
 
 void MusicTab::loadContent(const std::string& sectionKey) {
-    brls::Logger::debug("MusicTab::loadContent - section: {} (async)", sectionKey);
-
-    std::string key = sectionKey;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, key, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<MediaItem> items;
-
-        // type=8 for artists (top-level items in a music library)
-        if (client.fetchLibraryContent(key, items, 8)) {
-            brls::Logger::info("MusicTab: Got {} items for section {}", items.size(), key);
-
-            // Update UI on main thread
-            brls::sync([this, items, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_items = items;
-                m_contentGrid->setDataSource(m_items);
-            });
-        } else {
-            brls::Logger::error("MusicTab: Failed to load content for section {}", key);
-        }
-    });
+    brls::Logger::debug("MusicTab::loadContent - section: {} - TODO: implement with MA async API", sectionKey);
+    // TODO: Use MAClient async API to fetch library content
+    // MAClient::instance().getLibraryArtists([this](bool success, const Json& result) { ... });
 
     // Also load albums organized by type
     loadAlbumsByType(sectionKey);
 }
 
-brls::Box* MusicTab::createAlbumScrollRow(const std::string& title, const std::vector<MediaItem>& items) {
+brls::Box* MusicTab::createAlbumScrollRow(const std::string& title, const std::vector<MusicItem>& items) {
     if (items.empty()) return nullptr;
 
     auto* rowBox = new brls::Box();
@@ -356,7 +254,7 @@ brls::Box* MusicTab::createAlbumScrollRow(const std::string& title, const std::v
         cell->setItem(item);
         cell->setMarginRight(10);
 
-        MediaItem capturedItem = item;
+        MusicItem capturedItem = item;
         cell->registerClickAction([this, capturedItem](brls::View* view) {
             onItemSelected(capturedItem);
             return true;
@@ -378,207 +276,29 @@ brls::Box* MusicTab::createAlbumScrollRow(const std::string& title, const std::v
 }
 
 void MusicTab::loadAlbumsByType(const std::string& sectionKey) {
-    std::string key = sectionKey;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, key, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<MediaItem> allAlbums;
-
-        // type=9 for albums
-        if (!client.fetchLibraryContent(key, allAlbums, 9)) {
-            brls::Logger::error("MusicTab: Failed to load albums for section {}", key);
-            return;
-        }
-
-        brls::Logger::info("MusicTab: Got {} albums for section {}", allAlbums.size(), key);
-
-        // Group albums by subtype
-        std::vector<MediaItem> albums;
-        std::vector<MediaItem> singles;
-        std::vector<MediaItem> eps;
-        std::vector<MediaItem> compilations;
-        std::vector<MediaItem> soundtracks;
-        std::vector<MediaItem> live;
-        std::vector<MediaItem> other;
-
-        for (const auto& album : allAlbums) {
-            std::string subtype = album.subtype;
-            for (char& c : subtype) c = tolower(c);
-
-            if (subtype == "single") {
-                singles.push_back(album);
-            } else if (subtype == "ep") {
-                eps.push_back(album);
-            } else if (subtype == "compilation") {
-                compilations.push_back(album);
-            } else if (subtype == "soundtrack") {
-                soundtracks.push_back(album);
-            } else if (subtype == "live") {
-                live.push_back(album);
-            } else if (subtype == "album" || subtype.empty()) {
-                albums.push_back(album);
-            } else {
-                other.push_back(album);
-            }
-        }
-
-        brls::Logger::info("MusicTab albums grouped: {} albums, {} singles, {} EPs, {} compilations, {} soundtracks, {} live, {} other",
-            albums.size(), singles.size(), eps.size(), compilations.size(), soundtracks.size(), live.size(), other.size());
-
-        brls::sync([this, albums, singles, eps, compilations, soundtracks, live, other, aliveWeak]() {
-            auto alive = aliveWeak.lock();
-            if (!alive || !*alive) return;
-
-            if (!m_albumCategoriesBox) return;
-
-            m_albumCategoriesBox->clearViews();
-
-            auto addRow = [this](const std::string& title, const std::vector<MediaItem>& items) {
-                auto* row = createAlbumScrollRow(title, items);
-                if (row) {
-                    m_albumCategoriesBox->addView(row);
-                }
-            };
-
-            addRow("Albums", albums);
-            addRow("Singles", singles);
-            addRow("EPs", eps);
-            addRow("Compilations", compilations);
-            addRow("Soundtracks", soundtracks);
-            addRow("Live", live);
-            addRow("Other", other);
-
-            // Show the categories section if we have any content
-            bool hasContent = !albums.empty() || !singles.empty() || !eps.empty() ||
-                             !compilations.empty() || !soundtracks.empty() || !live.empty() || !other.empty();
-            if (m_albumCategoriesScroll) {
-                m_albumCategoriesScroll->setVisibility(hasContent ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
-            }
-        });
-    });
+    brls::Logger::debug("MusicTab::loadAlbumsByType - section: {} - TODO: implement with MA async API", sectionKey);
+    // TODO: Use MAClient async API to fetch albums
+    // MAClient::instance().getLibraryAlbums([this](bool success, const Json& result) { ... });
 }
 
 void MusicTab::loadPlaylists() {
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<Playlist> playlists;
-
-        if (client.fetchMusicPlaylists(playlists)) {
-            brls::Logger::info("MusicTab: Got {} music playlists", playlists.size());
-
-            brls::sync([this, playlists, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_playlists = playlists;
-                if (m_playlistsContainer && m_playlistsRow) {
-                    m_playlistsContainer->clearViews();
-
-                    for (const auto& playlist : m_playlists) {
-                        auto* btn = new brls::Button();
-
-                        // Show track count in button
-                        std::string label = playlist.title;
-                        if (playlist.leafCount > 0) {
-                            label += " (" + std::to_string(playlist.leafCount) + ")";
-                        }
-                        btn->setText(label);
-                        btn->setMarginRight(10);
-                        btn->setHeight(40);
-                        styleButton(btn, false);
-
-                        Playlist capturedPlaylist = playlist;
-                        btn->registerClickAction([this, capturedPlaylist](brls::View* view) {
-                            onPlaylistSelected(capturedPlaylist);
-                            return true;
-                        });
-
-                        // START button for context menu (Play All, Delete, etc.)
-                        btn->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                            [this, capturedPlaylist](brls::View* view) {
-                                showPlaylistOptionsDialog(capturedPlaylist);
-                                return true;
-                            });
-
-                        m_playlistsContainer->addView(btn);
-                    }
-
-                    m_playlistsRow->setVisibility(brls::Visibility::VISIBLE);
-                }
-            });
-        } else {
-            brls::Logger::debug("MusicTab: Failed to load playlists or none found");
-        }
-    });
+    brls::Logger::debug("MusicTab::loadPlaylists - TODO: implement with MA async API");
+    // TODO: Use MAClient async API to fetch playlists
+    // MAClient::instance().getLibraryPlaylists([this](bool success, const Json& result) { ... });
 }
 
 void MusicTab::refreshPlaylists() {
     loadPlaylists();
 }
 
-void MusicTab::loadCollections(const std::string& sectionKey) {
-    std::string key = sectionKey;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, key, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<MediaItem> collections;
-
-        if (client.fetchCollections(key, collections) && !collections.empty()) {
-            brls::Logger::info("MusicTab: Got {} collections for section {}", collections.size(), key);
-
-            brls::sync([this, collections, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_collections = collections;
-                if (m_collectionsContainer && m_collectionsRow) {
-                    m_collectionsContainer->clearViews();
-
-                    for (const auto& collection : m_collections) {
-                        auto* btn = new brls::Button();
-                        btn->setText(collection.title);
-                        btn->setMarginRight(10);
-                        btn->setHeight(40);
-                        styleButton(btn, false);
-
-                        MediaItem capturedCollection = collection;
-                        btn->registerClickAction([this, capturedCollection](brls::View* view) {
-                            onCollectionSelected(capturedCollection);
-                            return true;
-                        });
-
-                        m_collectionsContainer->addView(btn);
-                    }
-
-                    m_collectionsRow->setVisibility(brls::Visibility::VISIBLE);
-                }
-            });
-        } else {
-            brls::Logger::debug("MusicTab: No collections for section {}", key);
-            brls::sync([this, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                if (m_collectionsRow) {
-                    m_collectionsRow->setVisibility(brls::Visibility::GONE);
-                }
-            });
-        }
-    });
-}
-
-void MusicTab::onItemSelected(const MediaItem& item) {
+void MusicTab::onItemSelected(const MusicItem& item) {
     // For tracks in a playlist, play the whole playlist with queue
-    if (item.mediaType == MediaType::MUSIC_TRACK) {
+    if (item.mediaType == MediaType::TRACK) {
         if (m_viewingPlaylist && !m_currentPlaylistId.empty()) {
             // Find the index of this track in the current items
             int startIndex = 0;
             for (size_t i = 0; i < m_items.size(); i++) {
-                if (m_items[i].ratingKey == item.ratingKey) {
+                if (m_items[i].itemId == item.itemId) {
                     startIndex = (int)i;
                     break;
                 }
@@ -586,7 +306,7 @@ void MusicTab::onItemSelected(const MediaItem& item) {
             playPlaylistWithQueue(m_currentPlaylistId, startIndex);
         } else {
             // Single track playback
-            Application::getInstance().pushPlayerActivity(item.ratingKey);
+            Application::getInstance().pushPlayerActivity(item.itemId);
         }
         return;
     }
@@ -596,118 +316,16 @@ void MusicTab::onItemSelected(const MediaItem& item) {
     brls::Application::pushActivity(new brls::Activity(detailView));
 }
 
-void MusicTab::onPlaylistSelected(const Playlist& playlist) {
-    brls::Logger::debug("MusicTab: Selected playlist: {}", playlist.title);
-
-    std::string playlistId = playlist.ratingKey;
-    std::string playlistTitle = playlist.title;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, playlistId, playlistTitle, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<PlaylistItem> items;
-
-        if (client.fetchPlaylistItems(playlistId, items)) {
-            brls::Logger::info("MusicTab: Got {} items in playlist", items.size());
-
-            // Convert PlaylistItem to MediaItem for display
-            std::vector<MediaItem> mediaItems;
-            for (const auto& item : items) {
-                mediaItems.push_back(item.media);
-            }
-
-            brls::sync([this, mediaItems, playlistTitle, playlistId, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_titleLabel->setText("Playlist - " + playlistTitle);
-                m_items = mediaItems;
-                m_currentPlaylistId = playlistId;
-                m_viewingPlaylist = true;
-                m_contentGrid->setDataSource(m_items);
-
-                // Transfer focus to the content grid so the playlist button
-                // doesn't keep its hover state
-                if (!m_items.empty()) {
-                    brls::Application::giveFocus(m_contentGrid);
-                }
-            });
-        } else {
-            brls::Logger::error("MusicTab: Failed to load playlist content");
-            brls::sync([aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-                brls::Application::notify("Cannot load playlist - server unreachable");
-            });
-        }
-    });
+void MusicTab::onPlaylistSelected(const MusicItem& playlist) {
+    brls::Logger::debug("MusicTab: Selected playlist: {} - TODO: implement with MA async API", playlist.name);
+    // TODO: Use MAClient async API to fetch playlist tracks
+    // MAClient::instance().getPlaylistTracks(playlist.itemId, [this, playlist](bool success, const Json& result) { ... });
 }
 
 void MusicTab::playPlaylistWithQueue(const std::string& playlistId, int startIndex) {
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, playlistId, startIndex, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<PlaylistItem> items;
-
-        if (client.fetchPlaylistItems(playlistId, items) && !items.empty()) {
-            // Convert to MediaItem for queue
-            std::vector<MediaItem> tracks;
-            for (const auto& item : items) {
-                tracks.push_back(item.media);
-            }
-
-            brls::sync([tracks, startIndex, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                // Create player with queue
-                brls::Application::pushActivity(
-                    PlayerActivity::createWithQueue(tracks, startIndex)
-                );
-            });
-        } else {
-            brls::sync([]() {
-                brls::Application::notify("Cannot play playlist - server unreachable");
-            });
-        }
-    });
-}
-
-void MusicTab::onCollectionSelected(const MediaItem& collection) {
-    brls::Logger::debug("MusicTab: Selected collection: {}", collection.title);
-
-    std::string collectionKey = collection.ratingKey;
-    std::string collectionTitle = collection.title;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    asyncRun([this, collectionKey, collectionTitle, aliveWeak]() {
-        MAClient& client = MAClient::instance();
-        std::vector<MediaItem> items;
-
-        if (client.fetchChildren(collectionKey, items)) {
-            brls::Logger::info("MusicTab: Got {} items in collection", items.size());
-
-            brls::sync([this, items, collectionTitle, aliveWeak]() {
-                auto alive = aliveWeak.lock();
-                if (!alive || !*alive) return;
-
-                m_titleLabel->setText("Collection - " + collectionTitle);
-                m_items = items;
-                m_viewingPlaylist = false;
-                m_currentPlaylistId = "";
-                m_contentGrid->setDataSource(m_items);
-
-                // Transfer focus to the content grid so the collection button
-                // doesn't keep its hover state
-                if (!m_items.empty()) {
-                    brls::Application::giveFocus(m_contentGrid);
-                }
-            });
-        } else {
-            brls::Logger::error("MusicTab: Failed to load collection content");
-        }
-    });
+    brls::Logger::debug("MusicTab::playPlaylistWithQueue - TODO: implement with MA async API");
+    // TODO: Use MAClient async API to fetch playlist tracks and create queue
+    // MAClient::instance().getPlaylistTracks(playlistId, [startIndex](bool success, const Json& result) { ... });
 }
 
 void MusicTab::showCreatePlaylistDialog() {
@@ -717,31 +335,14 @@ void MusicTab::showCreatePlaylistDialog() {
     brls::Application::getImeManager()->openForText([this, aliveWeak](std::string playlistName) {
         if (playlistName.empty()) return;
 
-        asyncRun([this, playlistName, aliveWeak]() {
-            MAClient& client = MAClient::instance();
-            Playlist result;
-
-            if (client.createPlaylist(playlistName, "audio", result)) {
-                brls::Logger::info("MusicTab: Created playlist: {}", result.title);
-
-                brls::sync([this, aliveWeak]() {
-                    auto alive = aliveWeak.lock();
-                    if (!alive || !*alive) return;
-
-                    refreshPlaylists();
-                });
-            } else {
-                brls::Logger::error("MusicTab: Failed to create playlist");
-                brls::sync([]() {
-                    brls::Application::notify("Failed to create playlist");
-                });
-            }
-        });
+        brls::Logger::debug("MusicTab::showCreatePlaylistDialog - TODO: implement with MA async API");
+        // TODO: Use MAClient async API to create playlist
+        // MAClient::instance().createPlaylist(playlistName, [this, aliveWeak](bool success, const Json& result) { ... });
     }, "New Playlist", "Enter playlist name", 128, "");
 }
 
-void MusicTab::showAlbumContextMenu(const MediaItem& album) {
-    auto* dialog = new brls::Dialog(album.title);
+void MusicTab::showAlbumContextMenu(const MusicItem& album) {
+    auto* dialog = new brls::Dialog(album.name);
 
     auto* optionsBox = new brls::Box();
     optionsBox->setAxis(brls::Axis::COLUMN);
@@ -757,64 +358,29 @@ void MusicTab::showAlbumContextMenu(const MediaItem& album) {
         optionsBox->addView(btn);
     };
 
-    MediaItem capturedAlbum = album;
+    MusicItem capturedAlbum = album;
 
     addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
-                brls::sync([tracks]() {
-                    auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                    brls::Application::pushActivity(playerActivity);
-                });
-            }
-        });
+        brls::Logger::debug("MusicTab: Play Now - TODO: implement with MA async API");
+        // TODO: Use MAClient async API to fetch album tracks and play
+        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
         return true;
     });
 
     addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
-                brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        for (int i = (int)tracks.size() - 1; i >= 0; i--) {
-                            queue.insertTrackAfterCurrent(tracks[i]);
-                        }
-                        brls::Application::notify("Album queued next");
-                    }
-                });
-            }
-        });
+        brls::Logger::debug("MusicTab: Play Next - TODO: implement with MA async API");
+        // TODO: Use MAClient async API to fetch album tracks and queue next
+        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
         return true;
     });
 
     addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-            std::vector<MediaItem> tracks;
-            if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
-                brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        queue.addTracks(tracks);
-                        brls::Application::notify("Album added to queue");
-                    }
-                });
-            }
-        });
+        brls::Logger::debug("MusicTab: Add to Queue - TODO: implement with MA async API");
+        // TODO: Use MAClient async API to fetch album tracks and add to queue
+        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
         return true;
     });
 
@@ -831,19 +397,19 @@ void MusicTab::showAlbumContextMenu(const MediaItem& album) {
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-void MusicTab::showPlaylistOptionsDialog(const Playlist& playlist) {
-    auto* dialog = new brls::Dialog(playlist.title);
+void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
+    auto* dialog = new brls::Dialog(playlist.name);
 
     auto* optionsBox = new brls::Box();
     optionsBox->setAxis(brls::Axis::COLUMN);
     optionsBox->setPadding(20);
 
     auto* trackCount = new brls::Label();
-    trackCount->setText("Tracks: " + std::to_string(playlist.leafCount));
+    trackCount->setText("Tracks: " + std::to_string(playlist.itemCount));
     trackCount->setMarginBottom(10);
     optionsBox->addView(trackCount);
 
-    if (playlist.smart) {
+    if (!playlist.isEditable) {
         auto* smartLabel = new brls::Label();
         smartLabel->setText("(Smart Playlist - cannot be edited)");
         smartLabel->setFontSize(14);
@@ -862,67 +428,31 @@ void MusicTab::showPlaylistOptionsDialog(const Playlist& playlist) {
         optionsBox->addView(btn);
     };
 
-    Playlist capturedPlaylist = playlist;
+    MusicItem capturedPlaylist = playlist;
 
     addDialogButton("Play All", [this, capturedPlaylist, dialog](brls::View*) {
         dialog->dismiss();
-        playPlaylistWithQueue(capturedPlaylist.ratingKey, 0);
+        playPlaylistWithQueue(capturedPlaylist.itemId, 0);
         return true;
     });
 
     addDialogButton("Add to Queue", [capturedPlaylist, dialog](brls::View*) {
         dialog->dismiss();
-        std::string playlistId = capturedPlaylist.ratingKey;
-        asyncRun([playlistId]() {
-            MAClient& client = MAClient::instance();
-            std::vector<PlaylistItem> items;
-            if (client.fetchPlaylistItems(playlistId, items) && !items.empty()) {
-                std::vector<MediaItem> tracks;
-                for (const auto& item : items) {
-                    tracks.push_back(item.media);
-                }
-                brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        brls::Application::pushActivity(
-                            PlayerActivity::createWithQueue(tracks, 0));
-                    } else {
-                        queue.addTracks(tracks);
-                        brls::Application::notify("Playlist added to queue");
-                    }
-                });
-            } else {
-                brls::sync([]() {
-                    brls::Application::notify("Cannot queue playlist - server unreachable");
-                });
-            }
-        });
+        brls::Logger::debug("MusicTab: Add playlist to queue - TODO: implement with MA async API");
+        // TODO: Use MAClient async API to fetch playlist tracks and add to queue
+        // MAClient::instance().getPlaylistTracks(capturedPlaylist.itemId, [](bool success, const Json& result) { ... });
         return true;
     });
 
-    // Delete button (only for non-smart playlists)
-    if (!capturedPlaylist.smart) {
+    // Delete button (only for editable playlists)
+    if (capturedPlaylist.isEditable) {
         addDialogButton("Delete", [this, capturedPlaylist, dialog](brls::View*) {
             dialog->dismiss();
             brls::Dialog* confirmDialog = new brls::Dialog("Delete this playlist?");
             confirmDialog->addButton("Yes, Delete", [this, capturedPlaylist]() {
-                std::weak_ptr<bool> aliveWeak = m_alive;
-                std::string playlistId = capturedPlaylist.ratingKey;
-
-                asyncRun([this, playlistId, aliveWeak]() {
-                    MAClient& client = MAClient::instance();
-
-                    if (client.deletePlaylist(playlistId)) {
-                        brls::Logger::info("MusicTab: Deleted playlist");
-
-                        brls::sync([this, aliveWeak]() {
-                            auto alive = aliveWeak.lock();
-                            if (!alive || !*alive) return;
-
-                            refreshPlaylists();
-                        });
-                    }
-                });
+                brls::Logger::debug("MusicTab: Delete playlist - TODO: implement with MA async API");
+                // TODO: Use MAClient async API to delete playlist
+                // MAClient::instance().deletePlaylist(capturedPlaylist.itemId, [this](bool success, const Json& result) { ... });
             });
             confirmDialog->addButton("Cancel", []() {});
             confirmDialog->open();

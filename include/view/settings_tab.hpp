@@ -32,7 +32,6 @@ private:
     void onSeekIntervalChanged(int index);
     void onControlsAutoHideChanged(int index);
     void onConnectionTimeoutChanged(int index);
-    void onManageHiddenLibraries();
     void onManageSidebarOrder();
 
     brls::ScrollingFrame* m_scrollView = nullptr;
@@ -48,25 +47,17 @@ private:
     brls::BooleanCell* m_showDebugTabToggle = nullptr;
 
     // Layout section
-    brls::BooleanCell* m_sidebarLibrariesToggle = nullptr;
     brls::BooleanCell* m_collapseSidebarToggle = nullptr;
-    brls::DetailCell* m_hiddenLibrariesCell = nullptr;
     brls::DetailCell* m_sidebarOrderCell = nullptr;
 
     // Content display section
-    brls::BooleanCell* m_collectionsToggle = nullptr;
     brls::BooleanCell* m_playlistsToggle = nullptr;
-    brls::BooleanCell* m_genresToggle = nullptr;
     brls::BooleanCell* m_hideTitlesToggle = nullptr;
-    brls::BooleanCell* m_skipSingleSeasonToggle = nullptr;
 
     // Playback section
     brls::BooleanCell* m_autoPlayToggle = nullptr;
-    brls::BooleanCell* m_resumeToggle = nullptr;
     brls::SelectorCell* m_seekIntervalSelector = nullptr;
     brls::SelectorCell* m_controlsAutoHideSelector = nullptr;
-    brls::BooleanCell* m_autoSkipIntroToggle = nullptr;
-    brls::BooleanCell* m_autoSkipCreditsToggle = nullptr;
 
     // Audio section
     brls::SelectorCell* m_qualitySelector = nullptr;

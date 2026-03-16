@@ -42,14 +42,14 @@ public:
 
     // Queue management
     void clear();
-    void addTrack(const MediaItem& item);           // Add to end of queue
-    void addTracks(const std::vector<MediaItem>& items);
-    void insertTrackAfterCurrent(const MediaItem& item);  // Insert after current track (play next)
+    void addTrack(const MusicItem& item);           // Add to end of queue
+    void addTracks(const std::vector<MusicItem>& items);
+    void insertTrackAfterCurrent(const MusicItem& item);  // Insert after current track (play next)
     void removeTrack(int index);
     void moveTrack(int fromIndex, int toIndex);
 
     // Set queue from album/playlist (clears existing queue)
-    void setQueue(const std::vector<MediaItem>& items, int startIndex = 0);
+    void setQueue(const std::vector<MusicItem>& items, int startIndex = 0);
 
     // Playback control
     bool playTrack(int index);          // Play specific track in queue
@@ -105,15 +105,15 @@ public:
     // Get the playQueueItemID for the current track (for timeline reports)
     int getCurrentPlayQueueItemID() const;
 
-    // Set queue from server play queue response (replaces local state)
-    void setFromPlayQueue(const MAClient::PlayQueueContainer& pq, bool isShuffled);
+    // TODO: Set queue from server play queue response (replaces local state)
+    // void setFromPlayQueue(...) - removed pending PlayQueueContainer type definition
 
 private:
     MusicQueue();
     ~MusicQueue() = default;
 
     void notifyQueueChanged();
-    QueueItem mediaItemToQueueItem(const MediaItem& item, int index);
+    QueueItem mediaItemToQueueItem(const MusicItem& item, int index);
     void generateShuffleOrder();
     int getShuffledIndex(int logicalIndex) const;
     int getLogicalIndex(int shuffledIndex) const;

@@ -137,15 +137,6 @@ void SettingsTab::createLayoutSection() {
     header->setTitle("Layout");
     m_contentBox->addView(header);
 
-    // Show libraries in sidebar toggle
-    m_sidebarLibrariesToggle = new brls::BooleanCell();
-    m_sidebarLibrariesToggle->init("Libraries in Sidebar", settings.showLibrariesInSidebar, [&settings](bool value) {
-        settings.showLibrariesInSidebar = value;
-        Application::getInstance().saveSettings();
-        // Note: Requires app restart to take effect
-    });
-    m_contentBox->addView(m_sidebarLibrariesToggle);
-
     // Collapse sidebar toggle
     m_collapseSidebarToggle = new brls::BooleanCell();
     m_collapseSidebarToggle->init("Collapse Sidebar", settings.collapseSidebar, [&settings](bool value) {
@@ -154,24 +145,6 @@ void SettingsTab::createLayoutSection() {
         // Note: Requires app restart to take effect
     });
     m_contentBox->addView(m_collapseSidebarToggle);
-
-    // Manage hidden libraries
-    m_hiddenLibrariesCell = new brls::DetailCell();
-    m_hiddenLibrariesCell->setText("Manage Hidden Libraries");
-    int hiddenCount = 0;
-    if (!settings.hiddenLibraries.empty()) {
-        // Count comma-separated items
-        hiddenCount = 1;
-        for (char c : settings.hiddenLibraries) {
-            if (c == ',') hiddenCount++;
-        }
-    }
-    m_hiddenLibrariesCell->setDetailText(hiddenCount > 0 ? std::to_string(hiddenCount) + " hidden" : "None hidden");
-    m_hiddenLibrariesCell->registerClickAction([this](brls::View* view) {
-        onManageHiddenLibraries();
-        return true;
-    });
-    m_contentBox->addView(m_hiddenLibrariesCell);
 
     // Manage sidebar order
     m_sidebarOrderCell = new brls::DetailCell();
@@ -201,14 +174,6 @@ void SettingsTab::createContentDisplaySection() {
     header->setTitle("Content Display");
     m_contentBox->addView(header);
 
-    // Show collections toggle
-    m_collectionsToggle = new brls::BooleanCell();
-    m_collectionsToggle->init("Show Collections", settings.showCollections, [&settings](bool value) {
-        settings.showCollections = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_collectionsToggle);
-
     // Show playlists toggle
     m_playlistsToggle = new brls::BooleanCell();
     m_playlistsToggle->init("Show Playlists", settings.showPlaylists, [&settings](bool value) {
@@ -217,29 +182,13 @@ void SettingsTab::createContentDisplaySection() {
     });
     m_contentBox->addView(m_playlistsToggle);
 
-    // Show genres/categories toggle
-    m_genresToggle = new brls::BooleanCell();
-    m_genresToggle->init("Show Categories", settings.showGenres, [&settings](bool value) {
-        settings.showGenres = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_genresToggle);
-
     // Hide titles toggle
     m_hideTitlesToggle = new brls::BooleanCell();
-    m_hideTitlesToggle->init("Hide Movie/Show Titles", settings.hideTitlesInGrid, [&settings](bool value) {
+    m_hideTitlesToggle->init("Hide Titles in Grid", settings.hideTitlesInGrid, [&settings](bool value) {
         settings.hideTitlesInGrid = value;
         Application::getInstance().saveSettings();
     });
     m_contentBox->addView(m_hideTitlesToggle);
-
-    // Skip single season toggle
-    m_skipSingleSeasonToggle = new brls::BooleanCell();
-    m_skipSingleSeasonToggle->init("Skip Season for Single-Season Shows", settings.skipSingleSeason, [&settings](bool value) {
-        settings.skipSingleSeason = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_skipSingleSeasonToggle);
 
     // Info label
     auto* contentInfoLabel = new brls::Label();
@@ -261,19 +210,11 @@ void SettingsTab::createPlaybackSection() {
 
     // Auto-play next toggle
     m_autoPlayToggle = new brls::BooleanCell();
-    m_autoPlayToggle->init("Auto-Play Next Episode", settings.autoPlayNext, [&settings](bool value) {
+    m_autoPlayToggle->init("Auto-Play Next Track", settings.autoPlayNext, [&settings](bool value) {
         settings.autoPlayNext = value;
         Application::getInstance().saveSettings();
     });
     m_contentBox->addView(m_autoPlayToggle);
-
-    // Resume playback toggle
-    m_resumeToggle = new brls::BooleanCell();
-    m_resumeToggle->init("Resume Playback", settings.resumePlayback, [&settings](bool value) {
-        settings.resumePlayback = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_resumeToggle);
 
     // Seek interval selector
     m_seekIntervalSelector = new brls::SelectorCell();
@@ -300,30 +241,6 @@ void SettingsTab::createPlaybackSection() {
             onControlsAutoHideChanged(index);
         });
     m_contentBox->addView(m_controlsAutoHideSelector);
-
-    // Auto-skip intro toggle
-    m_autoSkipIntroToggle = new brls::BooleanCell();
-    m_autoSkipIntroToggle->init("Auto-Skip Intro", settings.autoSkipIntro, [&settings](bool value) {
-        settings.autoSkipIntro = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_autoSkipIntroToggle);
-
-    // Auto-skip credits toggle
-    m_autoSkipCreditsToggle = new brls::BooleanCell();
-    m_autoSkipCreditsToggle->init("Auto-Skip Credits", settings.autoSkipCredits, [&settings](bool value) {
-        settings.autoSkipCredits = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_autoSkipCreditsToggle);
-
-    // Info label for skip settings
-    auto* skipInfoLabel = new brls::Label();
-    skipInfoLabel->setText("When off, a skip button appears briefly");
-    skipInfoLabel->setFontSize(14);
-    skipInfoLabel->setMarginLeft(16);
-    skipInfoLabel->setMarginTop(8);
-    m_contentBox->addView(skipInfoLabel);
 
     // Music section
     auto* musicHeader = new brls::Header();
@@ -568,103 +485,6 @@ void SettingsTab::onControlsAutoHideChanged(int index) {
     }
 
     app.saveSettings();
-}
-
-void SettingsTab::onManageHiddenLibraries() {
-    Application& app = Application::getInstance();
-    AppSettings& settings = app.getSettings();
-
-    // Fetch library sections
-    std::vector<LibrarySection> sections;
-    MAClient::instance().fetchLibrarySections(sections);
-
-    if (sections.empty()) {
-        brls::Dialog* dialog = new brls::Dialog("No libraries found");
-        dialog->addButton("OK", []() {});
-        dialog->open();
-        return;
-    }
-
-    // Parse currently hidden libraries
-    std::set<std::string> hiddenKeys;
-    std::string hidden = settings.hiddenLibraries;
-    size_t pos = 0;
-    while ((pos = hidden.find(',')) != std::string::npos) {
-        std::string key = hidden.substr(0, pos);
-        if (!key.empty()) hiddenKeys.insert(key);
-        hidden.erase(0, pos + 1);
-    }
-    if (!hidden.empty()) hiddenKeys.insert(hidden);
-
-    // Create scrollable dialog content for many libraries
-    brls::Box* outerBox = new brls::Box();
-    outerBox->setAxis(brls::Axis::COLUMN);
-    outerBox->setWidth(400);
-    outerBox->setHeight(350);  // Fixed height for scrolling
-
-    auto* title = new brls::Label();
-    title->setText("Select libraries to hide:");
-    title->setFontSize(20);
-    title->setMarginBottom(15);
-    title->setMarginLeft(20);
-    title->setMarginTop(20);
-    outerBox->addView(title);
-
-    // Scrolling frame for checkboxes
-    brls::ScrollingFrame* scrollFrame = new brls::ScrollingFrame();
-    scrollFrame->setGrow(1.0f);
-
-    brls::Box* content = new brls::Box();
-    content->setAxis(brls::Axis::COLUMN);
-    content->setPaddingLeft(20);
-    content->setPaddingRight(20);
-
-    std::vector<std::pair<std::string, brls::BooleanCell*>> checkboxes;
-
-    for (const auto& section : sections) {
-        auto* checkbox = new brls::BooleanCell();
-        bool isHidden = (hiddenKeys.find(section.key) != hiddenKeys.end());
-        checkbox->init(section.title, isHidden, [](bool value) {});
-        content->addView(checkbox);
-        checkboxes.push_back({section.key, checkbox});
-    }
-
-    scrollFrame->setContentView(content);
-    outerBox->addView(scrollFrame);
-
-    brls::Dialog* dialog = new brls::Dialog(outerBox);
-
-    dialog->addButton("Cancel", []() {});
-
-    dialog->addButton("Save", [checkboxes, this]() {
-        Application& app = Application::getInstance();
-        AppSettings& settings = app.getSettings();
-
-        std::string newHidden;
-        for (const auto& pair : checkboxes) {
-            if (pair.second->isOn()) {
-                if (!newHidden.empty()) newHidden += ",";
-                newHidden += pair.first;
-            }
-        }
-
-        settings.hiddenLibraries = newHidden;
-        app.saveSettings();
-
-        // Update the cell text
-        int count = 0;
-        if (!newHidden.empty()) {
-            count = 1;
-            for (char c : newHidden) {
-                if (c == ',') count++;
-            }
-        }
-        if (m_hiddenLibrariesCell) {
-            m_hiddenLibrariesCell->setDetailText(count > 0 ? std::to_string(count) + " hidden" : "None hidden");
-        }
-    });
-
-    dialog->open();
 }
 
 void SettingsTab::onManageSidebarOrder() {
