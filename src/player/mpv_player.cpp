@@ -237,7 +237,7 @@ bool MpvPlayer::init() {
     // Request log messages for debugging
     // ========================================
 
-    mpv_request_log_messages(m_mpv, "warn");  // Use warn level to reduce log spam on Vita
+    mpv_request_log_messages(m_mpv, "info");  // Use info level for stream debugging
 
     // ========================================
     // Initialize MPV
@@ -783,6 +783,8 @@ void MpvPlayer::eventMainLoop() {
                         brls::Logger::error("mpv {}: {}", msg->prefix, msg->text);
                     } else if (msg->log_level <= MPV_LOG_LEVEL_WARN) {
                         brls::Logger::warning("mpv {}: {}", msg->prefix, msg->text);
+                    } else if (msg->log_level <= MPV_LOG_LEVEL_INFO) {
+                        brls::Logger::info("mpv {}: {}", msg->prefix, msg->text);
                     }
                 }
                 break;
