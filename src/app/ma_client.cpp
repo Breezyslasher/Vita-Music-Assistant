@@ -797,30 +797,18 @@ static std::string urlEncode(const std::string& str) {
 std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height) {
     if (imageUrl.empty()) return "";
 
-    // If it's already a full URL, return as-is
-    if (imageUrl.find("http://") == 0 || imageUrl.find("https://") == 0) {
-        return imageUrl;
-    }
+    int size = width > 0 ? width : (height > 0 ? height : 300);
 
     // Build server base URL
     std::string base = m_serverUrl;
     if (!base.empty() && base.back() == '/') base.pop_back();
 
-    // If it starts with /, treat as a server-relative path
-    if (!imageUrl.empty() && imageUrl.front() == '/') {
-        std::string url = base + imageUrl;
-        if (width > 0 || height > 0) {
-            url += (url.find('?') != std::string::npos) ? "&" : "?";
-            if (width > 0) url += "size=" + std::to_string(width);
-        }
-        return url;
-    }
-
-    // Otherwise, use the imageproxy endpoint with the path
+    // Route ALL images through the MA imageproxy for consistent resizing.
+    // This prevents downloading multi-megabyte full-res images on Vita's
+    // limited 256MB RAM. The imageproxy accepts both relative paths and
+    // full URLs in the 'path' parameter.
     std::string url = base + "/imageproxy?path=" + urlEncode(imageUrl);
-    if (width > 0) {
-        url += "&size=" + std::to_string(width);
-    }
+    url += "&size=" + std::to_string(size);
 
     return url;
 }
