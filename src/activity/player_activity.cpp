@@ -830,7 +830,7 @@ void PlayerActivity::updateProgress() {
     double position = player.getPosition();
     double duration = 0.0;
 
-    // For music queue mode, prefer Plex API duration (full track length)
+    // For music queue mode, prefer queue metadata duration (full track length)
     // over MPV duration which may only reflect buffered/demuxed portion
     if (m_isQueueMode) {
         const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
@@ -842,23 +842,16 @@ void PlayerActivity::updateProgress() {
         duration = player.getDuration();
 
     if (duration > 0) {
-        // For transcoded streams with a resume offset, MPV position/duration are
-        // relative to the stream start (offset point). Compute absolute values
-        // for correct UI display.
-        double baseOffsetSec = m_transcodeBaseOffsetMs / 1000.0;
-        double absPosition = baseOffsetSec + position;
-        double absDuration = baseOffsetSec + duration;
-
         if (progressSlider) {
             m_updatingSlider = true;
-            progressSlider->setProgress((float)(absPosition / absDuration));
+            progressSlider->setProgress((float)(position / duration));
             m_updatingSlider = false;
         }
 
         // Update time labels: elapsed on left, remaining on right
         {
-            int posMin = (int)absPosition / 60;
-            int posSec = (int)absPosition % 60;
+            int posMin = (int)position / 60;
+            int posSec = (int)position % 60;
             int remaining = std::max(0, (int)(duration - position));
             int remMin = remaining / 60;
             int remSec = remaining % 60;
@@ -871,10 +864,9 @@ void PlayerActivity::updateProgress() {
             if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
             if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
 
-            // Keep legacy time label updated for video mode
             if (timeLabel) {
-                int durMin = (int)absDuration / 60;
-                int durSec = (int)absDuration % 60;
+                int durMin = (int)duration / 60;
+                int durSec = (int)duration % 60;
                 char timeStr[32];
                 snprintf(timeStr, sizeof(timeStr), "%02d:%02d / %02d:%02d",
                          posMin, posSec, durMin, durSec);
@@ -883,15 +875,9 @@ void PlayerActivity::updateProgress() {
         }
     }
 
-    // Update skip intro/credits button
-    if (!m_markers.empty() && duration > 0) {
-        double posMs = (m_transcodeBaseOffsetMs + position * 1000.0);
-        updateSkipButton(posMs);
-    }
-
     // Auto-hide controls after inactivity
     int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
-    if (autoHide > 0 && m_controlsVisible && !m_isPhoto) {
+    if (autoHide > 0 && m_controlsVisible) {
         m_controlsIdleSeconds++;
         if (m_controlsIdleSeconds >= autoHide) {
             hideControls();
