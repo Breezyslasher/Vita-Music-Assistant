@@ -31,7 +31,7 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
     m_clientName = clientName;
 
     setState(SendspinState::CONNECTING);
-    brls::Logger::info("Sendspin: connecting to {}:{}", serverIp, sendspinPort);
+    brls::Logger::info("Sendspin: connecting to {}:{}/sendspin", serverIp, sendspinPort);
 
     // Set up WebSocket callbacks
     m_ws.setOnMessage([this](const std::string& msg) {
@@ -45,7 +45,8 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
     });
 
     // Connect to the MA server's Sendspin WebSocket port
-    std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort);
+    // The Sendspin protocol requires connecting to the /sendspin path
+    std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort) + "/sendspin";
     if (!m_ws.connect(url)) {
         brls::Logger::error("Sendspin: connection failed to {}", url);
         setState(SendspinState::ERROR);
