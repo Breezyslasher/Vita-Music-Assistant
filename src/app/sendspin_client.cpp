@@ -7,13 +7,7 @@
 #include <sstream>
 
 #ifdef __vita__
-#include <psp2/io/fcntl.h>
-#include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
-#else
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #endif
 
 namespace vita_ma {
@@ -33,6 +27,15 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
     setState(SendspinState::CONNECTING);
     brls::Logger::info("Sendspin: connecting to {}:{}/sendspin", serverIp, sendspinPort);
 
+    // Start the local HTTP audio stream server before connecting
+    if (!m_audioServer.isRunning()) {
+        if (!m_audioServer.start()) {
+            brls::Logger::error("Sendspin: failed to start audio stream server");
+            setState(SendspinState::ERROR);
+            return false;
+        }
+    }
+
     // Set up WebSocket callbacks
     m_ws.setOnMessage([this](const std::string& msg) {
         onTextMessage(msg);
@@ -45,7 +48,7 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
     });
 
     // Connect to the MA server's Sendspin WebSocket port
-    // The Sendspin protocol requires connecting to the /sendspin path
+    // No subprotocol - the Sendspin server doesn't use WebSocket subprotocols
     std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort) + "/sendspin";
     if (!m_ws.connect(url)) {
         brls::Logger::error("Sendspin: connection failed to {}", url);
@@ -65,12 +68,12 @@ void SendspinClient::disconnect() {
 
     brls::Logger::info("Sendspin: disconnecting");
     m_ws.disconnect();
-    cleanupAudioPipe();
+    m_audioServer.signalStreamEnd();
     setState(SendspinState::DISCONNECTED);
 }
 
 void SendspinClient::stopStream() {
-    cleanupAudioPipe();
+    m_audioServer.signalStreamEnd();
     if (m_state.load() == SendspinState::STREAMING ||
         m_state.load() == SendspinState::BUFFERING) {
         setState(SendspinState::CONNECTED);
@@ -174,29 +177,21 @@ void SendspinClient::onTextMessage(const std::string& message) {
         brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit",
             m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth);
 
-        // Initialize audio pipe for MPV
-        if (!initAudioPipe()) {
-            brls::Logger::error("Sendspin: failed to create audio pipe");
-            setState(SendspinState::ERROR);
-            return;
-        }
+        // Reset the audio server for the new stream
+        m_audioServer.resetStream();
 
         setState(SendspinState::BUFFERING);
 
-        // Start MPV playback from the pipe
-        brls::sync([this]() {
-            auto& mpv = MpvPlayer::getInstance();
-            if (!mpv.isInitialized()) {
-                mpv.init();
-            }
-            mpv.setAudioOnly(true);
-            mpv.loadUrl(getLocalStreamUrl());
-        });
+        // Start MPV playback from the local HTTP stream server.
+        // MPV will connect to the local server and block-read audio data
+        // as it arrives from Sendspin binary frames.
+        startMpvPlayback();
     }
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
-        // Stream ended - server may send another stream/start for next track
-        cleanupAudioPipe();
+        // Signal that no more data will arrive for this stream
+        m_audioServer.signalStreamEnd();
+
         if (m_state.load() == SendspinState::STREAMING ||
             m_state.load() == SendspinState::BUFFERING) {
             setState(SendspinState::CONNECTED);
@@ -204,14 +199,13 @@ void SendspinClient::onTextMessage(const std::string& message) {
     }
     else if (type == "stream/clear") {
         brls::Logger::info("Sendspin: stream/clear - clearing buffers");
-        cleanupAudioPipe();
+        m_audioServer.resetStream();
     }
     else if (type == "server/time") {
         // Time sync response - send back our time
         Json timeMsg;
         timeMsg["type"] = Json("client/time");
         Json timePayload;
-        // Use microsecond timestamp
         auto now = std::chrono::steady_clock::now();
         auto us = std::chrono::duration_cast<std::chrono::microseconds>(
             now.time_since_epoch()).count();
@@ -239,6 +233,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
 }
 
 void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
+    // This runs on the WebSocket receive thread - must be thread-safe
     if (size < SENDSPIN_HEADER_SIZE) return;
 
     // Parse binary header: 1 byte type + 8 bytes timestamp (big-endian)
@@ -250,7 +245,9 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
         size_t audioSize = size - SENDSPIN_HEADER_SIZE;
 
         if (audioSize > 0) {
-            feedAudioData(audioData, audioSize);
+            // Push audio data to the local HTTP server's queue.
+            // MPV reads from the HTTP server on its own thread.
+            m_audioServer.pushAudioData(audioData, audioSize);
 
             // Transition from buffering to streaming on first audio data
             if (m_state.load() == SendspinState::BUFFERING) {
@@ -263,7 +260,7 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
 void SendspinClient::onClose(int code, const std::string& reason) {
     brls::Logger::info("Sendspin: connection closed ({}: {})", code, reason);
-    cleanupAudioPipe();
+    m_audioServer.signalStreamEnd();
     setState(SendspinState::DISCONNECTED);
 }
 
@@ -277,54 +274,21 @@ void SendspinClient::setState(SendspinState state) {
 }
 
 std::string SendspinClient::getLocalStreamUrl() const {
-    if (!m_pipePath.empty()) {
-        return m_pipePath;
-    }
-    return "fd://0";
+    return m_audioServer.getStreamUrl(m_format.codec);
 }
 
-bool SendspinClient::initAudioPipe() {
-    std::lock_guard<std::mutex> lock(m_pipeMutex);
-    if (m_pipeFd >= 0) return true; // Already open
+void SendspinClient::startMpvPlayback() {
+    std::string url = getLocalStreamUrl();
+    brls::Logger::info("Sendspin: starting MPV with {}", url);
 
-#ifdef __vita__
-    m_pipePath = "ux0:data/VitaMA/audio_pipe";
-    m_pipeFd = sceIoOpen(m_pipePath.c_str(),
-        SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
-    return m_pipeFd >= 0;
-#else
-    m_pipePath = "/tmp/vita_ma_audio_pipe";
-    unlink(m_pipePath.c_str());
-    if (mkfifo(m_pipePath.c_str(), 0666) != 0) {
-        return false;
-    }
-    m_pipeFd = open(m_pipePath.c_str(), O_WRONLY | O_NONBLOCK);
-    return m_pipeFd >= 0;
-#endif
-}
-
-void SendspinClient::cleanupAudioPipe() {
-    std::lock_guard<std::mutex> lock(m_pipeMutex);
-    if (m_pipeFd >= 0) {
-#ifdef __vita__
-        sceIoClose(m_pipeFd);
-#else
-        close(m_pipeFd);
-        unlink(m_pipePath.c_str());
-#endif
-        m_pipeFd = -1;
-    }
-}
-
-void SendspinClient::feedAudioData(const uint8_t* data, size_t size) {
-    std::lock_guard<std::mutex> lock(m_pipeMutex);
-    if (m_pipeFd < 0 || size == 0) return;
-
-#ifdef __vita__
-    sceIoWrite(m_pipeFd, data, size);
-#else
-    write(m_pipeFd, data, size);
-#endif
+    brls::sync([url]() {
+        auto& mpv = MpvPlayer::getInstance();
+        mpv.setAudioOnly(true);
+        if (!mpv.isInitialized()) {
+            mpv.init();
+        }
+        mpv.loadUrl(url);
+    });
 }
 
 } // namespace vita_ma

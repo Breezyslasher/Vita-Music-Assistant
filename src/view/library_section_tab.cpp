@@ -332,6 +332,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
                     mi.imageUrl = obj["image"]["path"].str();
+                    if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
                 } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
@@ -756,6 +757,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
                     mi.imageUrl = obj["image"]["path"].str();
+                    if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
                 } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {

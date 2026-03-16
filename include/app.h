@@ -51,6 +51,7 @@ struct MusicItem {
     std::string sortName;
     std::string uri;           // library://track/123
     std::string imageUrl;
+    std::string imageProvider;  // MA provider instance ID for imageproxy
     MediaType mediaType = MediaType::UNKNOWN;
 
     // Track info

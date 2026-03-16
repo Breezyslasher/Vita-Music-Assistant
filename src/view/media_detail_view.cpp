@@ -220,7 +220,7 @@ void MediaDetailView::loadDetails() {
     // Load thumbnail
     if (m_posterImage && !imageUrl.empty()) {
         MAClient& client = MAClient::instance();
-        std::string url = client.getThumbnailUrl(imageUrl, 400, 400);
+        std::string url = client.getThumbnailUrl(imageUrl, 400, 400, m_item.imageProvider);
         ImageLoader::loadAsync(url, [](brls::Image* image) {
             image->setVisibility(brls::Visibility::VISIBLE);
         }, m_posterImage, m_alive);
@@ -267,6 +267,7 @@ void MediaDetailView::loadMusicCategories() {
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                         mi.imageUrl = item["image"]["path"].str();
+                        if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
                     } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -419,6 +420,7 @@ void MediaDetailView::loadTrackList() {
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                         mi.imageUrl = item["image"]["path"].str();
+                        if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
                     } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -773,6 +775,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -841,6 +844,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
@@ -932,6 +936,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
                             mi.imageUrl = item["image"]["path"].str();
+                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
                         } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {

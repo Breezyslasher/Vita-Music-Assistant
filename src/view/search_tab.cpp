@@ -31,6 +31,7 @@ static MusicItem musicItemFromJson(const Json& j) {
     // Extract image URL: try image object, then metadata.images array
     if (j.has("image") && j["image"].type() == Json::OBJECT && j["image"].has("path")) {
         item.imageUrl = j["image"]["path"].str();
+        if (j["image"].has("provider")) item.imageProvider = j["image"]["provider"].str();
     } else if (j.has("image") && j["image"].type() == Json::STRING) {
         item.imageUrl = j["image"].str();
     } else if (j.has("metadata") && j["metadata"].type() == Json::OBJECT) {

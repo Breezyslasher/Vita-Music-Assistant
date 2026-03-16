@@ -117,6 +117,7 @@ private:
     struct DeferredThumb {
         brls::Image* image;
         std::string thumbPath;      // Thumbnail URL/path (resolved lazily)
+        std::string thumbProvider;  // MA provider instance ID for imageproxy
         std::string ratingKey;      // For checking local downloads lazily
         bool loaded;
     };

@@ -167,6 +167,7 @@ void HomeTab::loadContent() {
                     // Extract image URL: try image object, then metadata.images array
                     if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
                         item.imageUrl = obj["image"]["path"].str();
+                        if (obj["image"].has("provider")) item.imageProvider = obj["image"]["provider"].str();
                     } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                         item.imageUrl = obj["image"].str();
                     } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {

@@ -791,7 +791,8 @@ static std::string urlEncode(const std::string& str) {
     return encoded;
 }
 
-std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height) {
+std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height,
+                                      const std::string& provider) {
     if (imageUrl.empty()) return "";
 
     int size = width > 0 ? width : (height > 0 ? height : 300);
@@ -806,6 +807,12 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
     // full URLs in the 'path' parameter.
     std::string url = base + "/imageproxy?path=" + urlEncode(imageUrl);
     url += "&size=" + std::to_string(size);
+
+    // Include provider instance ID so the imageproxy can resolve
+    // provider-specific paths (e.g. Plex /library/metadata/... paths)
+    if (!provider.empty()) {
+        url += "&provider=" + urlEncode(provider);
+    }
 
     return url;
 }

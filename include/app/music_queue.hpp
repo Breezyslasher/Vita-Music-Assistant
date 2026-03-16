@@ -28,6 +28,7 @@ struct QueueItem {
     std::string artist;       // grandparentTitle for tracks
     std::string album;        // parentTitle for tracks
     std::string thumb;
+    std::string thumbProvider; // MA provider instance ID for imageproxy
     int duration = 0;         // Duration in seconds
     int index = 0;            // Position in original queue (for unshuffle)
     int playQueueItemID = 0;  // Server-side play queue item ID (0 = offline/unsynced)

@@ -509,7 +509,7 @@ void PlayerActivity::loadFromQueue() {
         if (albumArt && !track->ratingKey.empty()) {
             if (!track->thumb.empty()) {
                 MAClient& client = MAClient::instance();
-                std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+                std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                     img->setVisibility(brls::Visibility::VISIBLE);
@@ -561,7 +561,7 @@ void PlayerActivity::loadFromQueue() {
 
     // Load album art from server
     if (albumArt && !track->thumb.empty()) {
-        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
+        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
         ImageLoader::setPaused(false);
         ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
             img->setVisibility(brls::Visibility::VISIBLE);
@@ -757,6 +757,7 @@ void PlayerActivity::loadMedia() {
             // Extract image URL: try image object, then metadata.images array
             if (result.has("image") && result["image"].type() == Json::OBJECT && result["image"].has("path")) {
                 item.imageUrl = result["image"]["path"].str();
+                if (result["image"].has("provider")) item.imageProvider = result["image"]["provider"].str();
             } else if (result.has("image") && result["image"].type() == Json::STRING) {
                 item.imageUrl = result["image"].str();
             } else if (result.has("metadata") && result["metadata"].type() == Json::OBJECT) {
@@ -1341,7 +1342,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
     thumb->setMarginRight(14);
 
     // Defer thumbnail loading - URL resolved lazily when row becomes visible
-    m_deferredThumbs.push_back({thumb, track.thumb, track.ratingKey, false});
+    m_deferredThumbs.push_back({thumb, track.thumb, track.thumbProvider, track.ratingKey, false});
     row->addView(thumb);
 
     // Text container: title on top, artist below
@@ -1984,7 +1985,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
 
         // Load from server
         if (!dt.thumbPath.empty()) {
-            std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100);
+            std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100, dt.thumbProvider);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {
                 // Thumbnail loaded
             }, dt.image, m_alive);
@@ -2042,8 +2043,9 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         displayIdxB < (int)m_deferredThumbs.size()) {
         auto& dtA = m_deferredThumbs[displayIdxA];
         auto& dtB = m_deferredThumbs[displayIdxB];
-        // Swap deferred thumb entries (thumbPath, ratingKey, loaded state)
+        // Swap deferred thumb entries (thumbPath, thumbProvider, ratingKey, loaded state)
         std::swap(dtA.thumbPath, dtB.thumbPath);
+        std::swap(dtA.thumbProvider, dtB.thumbProvider);
         std::swap(dtA.ratingKey, dtB.ratingKey);
         std::swap(dtA.loaded, dtB.loaded);
         // Re-point image pointers to their current rows
@@ -2054,13 +2056,13 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         if (!skipThumbReload) {
             MAClient& swapClient = MAClient::instance();
             if (dtA.loaded && !dtA.thumbPath.empty()) {
-                std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100);
+                std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100, dtA.thumbProvider);
                 ImageLoader::loadAsync(urlA, [](brls::Image*) {}, thumbA, m_alive);
             } else {
                 thumbA->setImageFromRes("img/default_music.png");
             }
             if (dtB.loaded && !dtB.thumbPath.empty()) {
-                std::string urlB = swapClient.getThumbnailUrl(dtB.thumbPath, 100, 100);
+                std::string urlB = swapClient.getThumbnailUrl(dtB.thumbPath, 100, 100, dtB.thumbProvider);
                 ImageLoader::loadAsync(urlB, [](brls::Image*) {}, thumbB, m_alive);
             } else {
                 thumbB->setImageFromRes("img/default_music.png");
