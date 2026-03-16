@@ -15,7 +15,14 @@
         id="login/title"
         text="Vita Music Assistant"
         fontSize="36"
-        marginBottom="40"/>
+        marginBottom="10"/>
+
+    <!-- Subtitle showing current auth mode -->
+    <brls:Label
+        id="login/subtitle"
+        text="Music Assistant Login"
+        fontSize="18"
+        marginBottom="30"/>
 
     <!-- Input container -->
     <brls:Box
@@ -23,7 +30,7 @@
         width="400"
         axis="column"
         alignItems="stretch"
-        marginBottom="30">
+        marginBottom="20">
 
         <!-- Server URL -->
         <brls:Label
@@ -46,7 +53,7 @@
             id="login/password_label"
             text="Password: Not set"
             fontSize="18"
-            marginBottom="30"
+            marginBottom="20"
             focusable="true"/>
 
     </brls:Box>
@@ -55,7 +62,7 @@
     <brls:Box
         axis="row"
         justifyContent="center"
-        marginBottom="30">
+        marginBottom="15">
 
         <brls:Button
             id="login/login_button"
@@ -64,18 +71,11 @@
             marginRight="20"/>
 
         <brls:Button
-            id="login/pin_button"
-            text="Use PIN"
+            id="login/mode_button"
+            text="Switch Mode"
             width="180"/>
 
     </brls:Box>
-
-    <!-- PIN Code display -->
-    <brls:Label
-        id="login/pin_code"
-        text=""
-        fontSize="48"
-        marginBottom="20"/>
 
     <!-- Status message -->
     <brls:Label
