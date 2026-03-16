@@ -970,11 +970,9 @@ void PlayerActivity::showTrackOverlay(TrackSelectMode mode) {
             return true;
         });
 
-        // Give focus to the currently selected track item for controller navigation
+        // Give focus to first track item for controller navigation
         if (trackList && !trackList->getChildren().empty()) {
-            int idx = std::min(m_selectedTrackIndex, (int)trackList->getChildren().size() - 1);
-            if (idx < 0) idx = 0;
-            brls::Application::giveFocus(trackList->getChildren()[idx]);
+            brls::Application::giveFocus(trackList->getChildren()[0]);
         }
         // Reset overlay title focusable state (was set temporarily during list rebuild)
         if (trackOverlayTitle) {
@@ -993,16 +991,8 @@ void PlayerActivity::hideTrackOverlay() {
     if (trackOverlay) {
         trackOverlay->setVisibility(brls::Visibility::GONE);
     }
-    // Restore focus to the appropriate button (only if visible and focusable)
-    if (prevMode == TrackSelectMode::SUBTITLE && subBtn &&
-        subBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(subBtn);
-    } else if (prevMode == TrackSelectMode::VIDEO && videoBtn &&
-               videoBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(videoBtn);
-    } else if (audioBtn && audioBtn->getVisibility() == brls::Visibility::VISIBLE) {
-        brls::Application::giveFocus(audioBtn);
-    } else if (m_isQueueMode && musicPlayBtn) {
+    // Restore focus to the appropriate button
+    if (m_isQueueMode && musicPlayBtn) {
         brls::Application::giveFocus(musicPlayBtn);
     } else if (playBtn) {
         brls::Application::giveFocus(playBtn);
@@ -1457,13 +1447,6 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                         if (tIdx != queue.getCurrentIndex()) {
                             int dIdx = findQueueRowDisplayIndex(row);
                             // Sync remove to server
-                            if (queue.isServerSynced() && tIdx < (int)queue.getQueue().size()) {
-                                int pqItemID = queue.getQueue()[tIdx].playQueueItemID;
-                                if (pqItemID > 0) {
-                                    MAClient::instance().removeFromPlayQueue(
-                                        queue.getPlayQueueID(), pqItemID);
-                                }
-                            }
                             queue.removeTrack(tIdx);
                             if (dIdx >= 0) {
                                 brls::sync([this, dIdx]() {
@@ -1695,20 +1678,6 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                                 ? sOrder[targetIdx] : targetIdx;
                     brls::Logger::info("Drag: drop displayIdx {} -> {} (trackIdx {} -> {}, shuffled={})",
                         origIdx, targetIdx, m_dragState.draggedTrackIdx, toTrackIdx, isShuffled);
-                    // Sync move to server if connected
-                    if (queue.isServerSynced()) {
-                        int pqItemID = m_dragState.draggedTrackIdx < (int)queue.getQueue().size()
-                            ? queue.getQueue()[m_dragState.draggedTrackIdx].playQueueItemID : 0;
-                        // Find the item to insert after (the one before target position)
-                        int afterPQItemID = 0;
-                        if (toTrackIdx > 0 && toTrackIdx - 1 < (int)queue.getQueue().size()) {
-                            afterPQItemID = queue.getQueue()[toTrackIdx - 1].playQueueItemID;
-                        }
-                        if (pqItemID > 0) {
-                            MAClient::instance().movePlayQueueItem(
-                                queue.getPlayQueueID(), pqItemID, afterPQItemID);
-                        }
-                    }
 
                     queue.moveTrack(m_dragState.draggedTrackIdx, toTrackIdx);
 
