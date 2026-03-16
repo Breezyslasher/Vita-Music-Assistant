@@ -121,7 +121,7 @@ void SendspinClient::sendClientHello() {
     cmds.push_back(Json("mute"));
     playerSupport["supported_commands"] = cmds;
 
-    payload["player_support"] = playerSupport;
+    payload["player@v1_support"] = playerSupport;
     msg["payload"] = payload;
 
     brls::Logger::info("Sendspin: sending client/hello as '{}'", m_clientName);
