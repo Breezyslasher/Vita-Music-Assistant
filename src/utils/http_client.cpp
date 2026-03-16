@@ -1,88 +1,125 @@
+/**
+ * VitaPlex - HTTP Client implementation using libcurl
+ */
+
 #include "utils/http_client.hpp"
+#include "app/application.hpp"
+
 #include <borealis.hpp>
 #include <curl/curl.h>
 #include <cstring>
-#include <fstream>
+#include <cstdio>
+#include <cctype>
 
-namespace vita_ma {
+namespace vitaplex {
 
-HttpClient& HttpClient::instance() {
+// Curl write callback data
+struct WriteCallbackData {
+    std::string* buffer;
+    int64_t totalSize;
+};
+
+bool HttpClient::globalInit() {
+    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (res != CURLE_OK) {
+        brls::Logger::error("curl_global_init failed: {}", curl_easy_strerror(res));
+        return false;
+    }
+    return true;
+}
+
+void HttpClient::globalCleanup() {
+    curl_global_cleanup();
+}
+
+HttpClient& HttpClient::shared() {
     static HttpClient instance;
     return instance;
 }
 
 HttpClient::HttpClient() {
     m_curl = curl_easy_init();
-    if (m_curl) {
-        auto* curl = static_cast<CURL*>(m_curl);
-
-        // SSL settings
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-        curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
-
-        // Timeouts
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-
-        // TCP keepalive
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 30L);
-        curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 15L);
-
-        // Follow redirects
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
-
-        // Buffer size
-        curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
-
-        // HTTP/1.1
-        curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-
-        // User agent
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "VitaMusicAssistant/1.0");
-
-        // Low speed limit
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 100L);
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 120L);
-    }
+    m_userAgent = PLEX_CLIENT_NAME "/" PLEX_CLIENT_VERSION " (" PLEX_PLATFORM ")";
 }
 
 HttpClient::~HttpClient() {
     if (m_curl) {
-        curl_easy_cleanup(static_cast<CURL*>(m_curl));
+        curl_easy_cleanup((CURL*)m_curl);
+        m_curl = nullptr;
     }
 }
 
 size_t HttpClient::writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t totalSize = size * nmemb;
-    auto* str = static_cast<std::string*>(userp);
-    str->append(static_cast<char*>(contents), totalSize);
-    return totalSize;
-}
+    WriteCallbackData* data = (WriteCallbackData*)userp;
 
-size_t HttpClient::headerCallback(char* buffer, size_t size, size_t nitems, void* userdata) {
-    size_t totalSize = size * nitems;
-    auto* headers = static_cast<std::map<std::string, std::string>*>(userdata);
-
-    std::string line(buffer, totalSize);
-    size_t colon = line.find(':');
-    if (colon != std::string::npos) {
-        std::string key = line.substr(0, colon);
-        std::string val = line.substr(colon + 1);
-        // Trim
-        while (!val.empty() && (val.front() == ' ' || val.front() == '\t')) val.erase(val.begin());
-        while (!val.empty() && (val.back() == '\r' || val.back() == '\n')) val.pop_back();
-        (*headers)[key] = val;
+    if (data && data->buffer) {
+        data->buffer->append((char*)contents, totalSize);
     }
 
     return totalSize;
 }
 
-HttpResponse HttpClient::get(const std::string& url,
-                              const std::map<std::string, std::string>& headers) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+size_t HttpClient::headerCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t totalSize = size * nmemb;
+    std::map<std::string, std::string>* headers = (std::map<std::string, std::string>*)userp;
+
+    if (headers) {
+        std::string header((char*)contents, totalSize);
+        size_t colonPos = header.find(':');
+        if (colonPos != std::string::npos) {
+            std::string key = header.substr(0, colonPos);
+            std::string value = header.substr(colonPos + 1);
+
+            // Trim whitespace
+            while (!value.empty() && (value[0] == ' ' || value[0] == '\t')) {
+                value = value.substr(1);
+            }
+            while (!value.empty() && (value.back() == '\r' || value.back() == '\n' ||
+                   value.back() == ' ' || value.back() == '\t')) {
+                value.pop_back();
+            }
+
+            (*headers)[key] = value;
+        }
+    }
+
+    return totalSize;
+}
+
+HttpResponse HttpClient::get(const std::string& url) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "GET";
+    return request(req);
+}
+
+HttpResponse HttpClient::post(const std::string& url, const std::string& body,
+                              const std::string& contentType) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "POST";
+    req.body = body;
+    req.headers["Content-Type"] = contentType;
+    return request(req);
+}
+
+HttpResponse HttpClient::put(const std::string& url, const std::string& body) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "PUT";
+    req.body = body;
+    return request(req);
+}
+
+HttpResponse HttpClient::del(const std::string& url) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "DELETE";
+    return request(req);
+}
+
+HttpResponse HttpClient::request(const HttpRequest& req) {
     HttpResponse response;
 
     if (!m_curl) {
@@ -90,184 +127,396 @@ HttpResponse HttpClient::get(const std::string& url,
         return response;
     }
 
-    auto* curl = static_cast<CURL*>(m_curl);
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    CURL* curl = (CURL*)m_curl;
+
+    // Reset curl handle
+    curl_easy_reset(curl);
+
+    // Set URL
+    curl_easy_setopt(curl, CURLOPT_URL, req.url.c_str());
+
+    // Set timeout - use up to 60 second connect timeout for slow connections
+    int timeout = req.timeout > 0 ? req.timeout : m_timeout;
+    int connectTimeout = timeout > 60 ? 60 : (timeout > 30 ? 30 : 15);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connectTimeout);
+
+    // Enable DNS caching for faster reconnects
+    curl_easy_setopt(curl, CURLOPT_DNS_CACHE_TIMEOUT, 300);  // 5 minutes
+
+    // Follow redirects
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, req.followRedirects ? 1L : 0L);
+
+    // SSL options (Vita specific)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+
+    // User agent
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, m_userAgent.c_str());
+
+    // Response buffer
+    WriteCallbackData writeData;
+    writeData.buffer = &response.body;
+    writeData.totalSize = 0;
+
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &writeData);
+
+    // Headers callback
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, headerCallback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
 
-    // Set headers
+    // Build headers list
     struct curl_slist* headerList = nullptr;
-    for (auto& h : m_defaultHeaders) {
-        std::string hdr = h.first + ": " + h.second;
-        headerList = curl_slist_append(headerList, hdr.c_str());
+
+    // Add default headers
+    for (const auto& h : m_defaultHeaders) {
+        std::string header = h.first + ": " + h.second;
+        headerList = curl_slist_append(headerList, header.c_str());
     }
-    for (auto& h : headers) {
-        std::string hdr = h.first + ": " + h.second;
-        headerList = curl_slist_append(headerList, hdr.c_str());
+
+    // Add request-specific headers
+    for (const auto& h : req.headers) {
+        std::string header = h.first + ": " + h.second;
+        headerList = curl_slist_append(headerList, header.c_str());
     }
+
     if (headerList) {
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
     }
 
+    // Set HTTP method and body
+    if (req.method == "POST") {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        if (!req.body.empty()) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req.body.c_str());
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)req.body.length());
+        }
+    } else if (req.method == "PUT") {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+        if (!req.body.empty()) {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req.body.c_str());
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)req.body.length());
+        }
+    } else if (req.method == "DELETE") {
+        curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    } else if (req.method == "HEAD") {
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    }
+
+    // Perform request
+    brls::Logger::debug("HTTP {} {}", req.method, req.url);
     CURLcode res = curl_easy_perform(curl);
 
+    // Cleanup headers
+    if (headerList) {
+        curl_slist_free_all(headerList);
+    }
+
+    // Check result
     if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status_code);
-        response.success = (response.status_code >= 200 && response.status_code < 300);
+        long httpCode;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+        response.statusCode = (int)httpCode;
+        response.success = (httpCode >= 200 && httpCode < 300);
+
+        brls::Logger::debug("HTTP response: {} ({} bytes)", response.statusCode, response.body.length());
     } else {
         response.error = curl_easy_strerror(res);
-        brls::Logger::error("HTTP GET error: {} ({})", response.error, url);
+        brls::Logger::error("HTTP error: {}", response.error);
     }
-
-    if (headerList) curl_slist_free_all(headerList);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
 
     return response;
-}
-
-HttpResponse HttpClient::post(const std::string& url, const std::string& body,
-                               const std::map<std::string, std::string>& headers) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    HttpResponse response;
-
-    if (!m_curl) {
-        response.error = "CURL not initialized";
-        return response;
-    }
-
-    auto* curl = static_cast<CURL*>(m_curl);
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
-    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, headerCallback);
-    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
-
-    struct curl_slist* headerList = nullptr;
-    for (auto& h : m_defaultHeaders) {
-        std::string hdr = h.first + ": " + h.second;
-        headerList = curl_slist_append(headerList, hdr.c_str());
-    }
-    for (auto& h : headers) {
-        std::string hdr = h.first + ": " + h.second;
-        headerList = curl_slist_append(headerList, hdr.c_str());
-    }
-    headerList = curl_slist_append(headerList, "Content-Type: application/json");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
-
-    CURLcode res = curl_easy_perform(curl);
-
-    if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status_code);
-        response.success = (response.status_code >= 200 && response.status_code < 300);
-    } else {
-        response.error = curl_easy_strerror(res);
-    }
-
-    curl_slist_free_all(headerList);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
-
-    return response;
-}
-
-std::vector<uint8_t> HttpClient::downloadBinary(const std::string& url) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<uint8_t> data;
-
-    if (!m_curl) return data;
-
-    auto* curl = static_cast<CURL*>(m_curl);
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-
-    // Write to vector
-    auto writeCb = [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
-        size_t totalSize = size * nmemb;
-        auto* vec = static_cast<std::vector<uint8_t>*>(userp);
-        auto* bytes = static_cast<uint8_t*>(contents);
-        vec->insert(vec->end(), bytes, bytes + totalSize);
-        return totalSize;
-    };
-
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, static_cast<curl_write_callback>(writeCb));
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
-
-    CURLcode res = curl_easy_perform(curl);
-    if (res != CURLE_OK) {
-        data.clear();
-    }
-
-    return data;
-}
-
-bool HttpClient::downloadFile(const std::string& url, const std::string& filepath,
-                               std::function<void(float)> progressCb) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_curl) return false;
-
-    std::ofstream file(filepath, std::ios::binary);
-    if (!file.is_open()) return false;
-
-    auto* curl = static_cast<CURL*>(m_curl);
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-
-    auto writeCb = [](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
-        auto* f = static_cast<std::ofstream*>(userp);
-        size_t totalSize = size * nmemb;
-        f->write(static_cast<char*>(contents), totalSize);
-        return totalSize;
-    };
-
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, static_cast<curl_write_callback>(writeCb));
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &file);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, nullptr);
-
-    CURLcode res = curl_easy_perform(curl);
-    file.close();
-
-    return res == CURLE_OK;
-}
-
-std::string HttpClient::urlEncode(const std::string& str) {
-    std::string result;
-    for (char c : str) {
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-            result += c;
-        } else {
-            char buf[4];
-            snprintf(buf, sizeof(buf), "%%%02X", static_cast<unsigned char>(c));
-            result += buf;
-        }
-    }
-    return result;
-}
-
-std::string HttpClient::urlDecode(const std::string& str) {
-    std::string result;
-    for (size_t i = 0; i < str.size(); i++) {
-        if (str[i] == '%' && i + 2 < str.size()) {
-            char hex[3] = {str[i + 1], str[i + 2], '\0'};
-            result += static_cast<char>(strtol(hex, nullptr, 16));
-            i += 2;
-        } else if (str[i] == '+') {
-            result += ' ';
-        } else {
-            result += str[i];
-        }
-    }
-    return result;
 }
 
 void HttpClient::setDefaultHeader(const std::string& key, const std::string& value) {
     m_defaultHeaders[key] = value;
 }
 
-} // namespace vita_ma
+void HttpClient::removeDefaultHeader(const std::string& key) {
+    m_defaultHeaders.erase(key);
+}
+
+void HttpClient::clearDefaultHeaders() {
+    m_defaultHeaders.clear();
+}
+
+std::string HttpClient::urlEncode(const std::string& str) {
+    std::string encoded;
+    static const char* hex = "0123456789ABCDEF";
+
+    for (unsigned char c : str) {
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += (char)c;
+        } else if (c == ' ') {
+            encoded += '+';
+        } else {
+            encoded += '%';
+            encoded += hex[c >> 4];
+            encoded += hex[c & 0x0F];
+        }
+    }
+
+    return encoded;
+}
+
+std::string HttpClient::urlDecode(const std::string& str) {
+    std::string decoded;
+
+    for (size_t i = 0; i < str.length(); i++) {
+        if (str[i] == '%' && i + 2 < str.length()) {
+            int val = 0;
+            char high = str[i + 1];
+            char low = str[i + 2];
+
+            if (high >= '0' && high <= '9') val = (high - '0') << 4;
+            else if (high >= 'A' && high <= 'F') val = (high - 'A' + 10) << 4;
+            else if (high >= 'a' && high <= 'f') val = (high - 'a' + 10) << 4;
+
+            if (low >= '0' && low <= '9') val |= (low - '0');
+            else if (low >= 'A' && low <= 'F') val |= (low - 'A' + 10);
+            else if (low >= 'a' && low <= 'f') val |= (low - 'a' + 10);
+
+            decoded += (char)val;
+            i += 2;
+        } else if (str[i] == '+') {
+            decoded += ' ';
+        } else {
+            decoded += str[i];
+        }
+    }
+
+    return decoded;
+}
+
+bool HttpClient::get(const std::string& url, std::string& response) {
+    HttpResponse res = get(url);
+    if (res.success) {
+        response = res.body;
+        return true;
+    }
+    return false;
+}
+
+bool HttpClient::get(const std::string& url, std::string& response,
+                     const std::map<std::string, std::string>& headers) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "GET";
+    req.headers = headers;
+    HttpResponse res = request(req);
+    if (res.success) {
+        response = res.body;
+        return true;
+    }
+    return false;
+}
+
+bool HttpClient::post(const std::string& url, const std::string& body, std::string& response,
+                      const std::map<std::string, std::string>& headers) {
+    HttpRequest req;
+    req.url = url;
+    req.method = "POST";
+    req.body = body;
+    req.headers = headers;
+    HttpResponse res = request(req);
+    if (res.success) {
+        response = res.body;
+        return true;
+    }
+    return false;
+}
+
+bool HttpClient::put(const std::string& url, const std::string& body, std::string& response) {
+    HttpResponse res = put(url, body);
+    if (res.success) {
+        response = res.body;
+        return true;
+    }
+    return false;
+}
+
+bool HttpClient::del(const std::string& url, std::string& response) {
+    HttpResponse res = del(url);
+    if (res.success) {
+        response = res.body;
+        return true;
+    }
+    return false;
+}
+
+// Download callback data structure
+struct DownloadCallbackData {
+    HttpClient::WriteCallback writeCallback;
+    HttpClient::SizeCallback sizeCallback;
+    bool sizeReported;
+    bool cancelled;
+};
+
+static size_t downloadWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    DownloadCallbackData* data = static_cast<DownloadCallbackData*>(userp);
+    size_t totalSize = size * nmemb;
+
+    if (data && data->writeCallback) {
+        // Call user's write callback
+        if (!data->writeCallback(static_cast<const char*>(contents), totalSize)) {
+            data->cancelled = true;
+            return 0; // Return 0 to signal curl to abort
+        }
+    }
+
+    return totalSize;
+}
+
+static size_t downloadHeaderCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    DownloadCallbackData* data = static_cast<DownloadCallbackData*>(userp);
+    size_t totalSize = size * nmemb;
+
+    if (data && data->sizeCallback && !data->sizeReported) {
+        std::string header(static_cast<char*>(contents), totalSize);
+
+        // Look for Content-Length header
+        if (header.find("Content-Length:") == 0 || header.find("content-length:") == 0) {
+            size_t colonPos = header.find(':');
+            if (colonPos != std::string::npos) {
+                std::string value = header.substr(colonPos + 1);
+                // Trim whitespace
+                while (!value.empty() && (value[0] == ' ' || value[0] == '\t')) {
+                    value = value.substr(1);
+                }
+                // Use strtoll instead of stoll to avoid exceptions (fatal on Vita)
+                char* endPtr = nullptr;
+                int64_t contentLength = strtoll(value.c_str(), &endPtr, 10);
+                if (endPtr != value.c_str() && contentLength > 0) {
+                    data->sizeCallback(contentLength);
+                    data->sizeReported = true;
+                }
+            }
+        }
+    }
+
+    return totalSize;
+}
+
+bool HttpClient::downloadFile(const std::string& url, WriteCallback writeCallback, SizeCallback sizeCallback,
+                              const std::map<std::string, std::string>& headers) {
+    if (!m_curl) {
+        brls::Logger::error("CURL not initialized for download");
+        return false;
+    }
+
+    CURL* curl = (CURL*)m_curl;
+
+    // Reset curl handle
+    curl_easy_reset(curl);
+
+    // Set URL
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+    // No overall timeout for downloads - large transcoded files can take a long time.
+    // The low-speed limit below handles stalled connections instead.
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+
+    // Critical: disable signals for thread-safe operation.
+    // Without this, curl uses SIGALRM for timeouts which can cause CURLE_RECV_ERROR
+    // in multi-threaded apps (downloads run on a background thread).
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+
+    // Follow redirects
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+    // SSL options (Vita specific)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+
+    // User agent
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, m_userAgent.c_str());
+
+    // Set a smaller receive buffer to avoid overwhelming the Vita's network stack
+    curl_easy_setopt(curl, CURLOPT_BUFFERSIZE, 16384L);
+
+    // Enable TCP keepalive to prevent idle connection drops during transcoding
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 30L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 15L);
+
+    // Prefer HTTP/1.1 for better compatibility with Vita's network stack
+    curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+
+    // Setup callback data
+    DownloadCallbackData callbackData;
+    callbackData.writeCallback = writeCallback;
+    callbackData.sizeCallback = sizeCallback;
+    callbackData.sizeReported = false;
+    callbackData.cancelled = false;
+
+    // Set callbacks
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, downloadWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callbackData);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, downloadHeaderCallback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &callbackData);
+
+    // Low speed limit - abort if < 100 bytes/s for 120 seconds
+    // Transcoding can have very slow starts while the server processes the media,
+    // especially for video where the server needs to decode and re-encode
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 100L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 120L);
+
+    // Set custom headers (e.g. Plex identification headers required by transcode API)
+    struct curl_slist* headerList = nullptr;
+    for (const auto& h : headers) {
+        std::string header = h.first + ": " + h.second;
+        headerList = curl_slist_append(headerList, header.c_str());
+    }
+    if (headerList) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
+    }
+
+    brls::Logger::info("HttpClient: Starting download from {}", url);
+
+    // Perform download
+    CURLcode res = curl_easy_perform(curl);
+
+    if (headerList) {
+        curl_slist_free_all(headerList);
+    }
+
+    if (callbackData.cancelled) {
+        brls::Logger::info("HttpClient: Download cancelled by user");
+        return false;
+    }
+
+    if (res == CURLE_OK || res == CURLE_PARTIAL_FILE) {
+        long httpCode;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+
+        if (httpCode >= 200 && httpCode < 300) {
+            // For streaming transcodes, CURLE_PARTIAL_FILE is expected because the
+            // server uses chunked transfer encoding and may not send Content-Length.
+            // Accept as success if we actually received data.
+            if (res == CURLE_PARTIAL_FILE) {
+                double downloaded = 0;
+                curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD, &downloaded);
+                if (downloaded > 0) {
+                    brls::Logger::info("HttpClient: Download completed (partial file, {:.0f} bytes received)", downloaded);
+                    return true;
+                }
+                brls::Logger::error("HttpClient: Partial file with no data received");
+                return false;
+            }
+            brls::Logger::info("HttpClient: Download completed successfully");
+            return true;
+        } else {
+            brls::Logger::error("HttpClient: Download failed with HTTP {}", httpCode);
+            return false;
+        }
+    } else {
+        brls::Logger::error("HttpClient: Download failed: {}", curl_easy_strerror(res));
+        return false;
+    }
+}
+
+} // namespace vitaplex

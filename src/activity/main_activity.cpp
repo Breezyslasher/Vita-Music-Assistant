@@ -1,157 +1,231 @@
+/**
+ * VitaPlex - Main Activity implementation
+ */
+
 #include "activity/main_activity.hpp"
-#include "app.h"
-#include "app/ma_client.hpp"
-#include "app/application.hpp"
-#include "player/mpv_player.hpp"
 #include "view/home_tab.hpp"
 #include "view/library_tab.hpp"
-#include "view/music_tab.hpp"
+#include "view/library_section_tab.hpp"
 #include "view/search_tab.hpp"
-#include "view/queue_tab.hpp"
 #include "view/settings_tab.hpp"
-#include "view/now_playing_view.hpp"
-#include <borealis.hpp>
+#include "view/debug_tab.hpp"
+#include "view/livetv_tab.hpp"
+#include "view/downloads_tab.hpp"
+#include "view/music_tab.hpp"
+#include "app/downloads_manager.hpp"
+#include "app/application.hpp"
+#include "app/plex_client.hpp"
+#include "app/music_queue.hpp"
+#include "activity/player_activity.hpp"
+#include "utils/async.hpp"
 
-namespace vita_ma {
+#include <algorithm>
 
-MainActivity::MainActivity() {}
+namespace vitaplex {
+
+// Cached library sections for sidebar mode
+static std::vector<LibrarySection> s_cachedSections;
+
+// Helper to calculate text width (approximate based on character count)
+// Average character width at default font size is about 8-10 pixels
+static int calculateTextWidth(const std::string& text) {
+    // Base width per character (approximate for sidebar font size 22)
+    const int charWidth = 12;
+    // Add minimal padding for accent bar and margins (sidebar padding is now 20+20=40)
+    const int padding = 50;
+    return static_cast<int>(text.length()) * charWidth + padding;
+}
+
+MainActivity::MainActivity() {
+    brls::Logger::debug("MainActivity created");
+}
 
 brls::View* MainActivity::createContentView() {
-    auto* root = new brls::Box();
-    root->setAxis(brls::Axis::COLUMN);
-    root->setGrow(1.0f);
-
-    // Main content area with tab bar
-    auto* tabFrame = new brls::TabFrame();
-    tabFrame->setGrow(1.0f);
-
-    // Create tabs
-    auto* homeTab = new HomeTab();
-    auto* libraryTab = new LibraryTab();
-    auto* browseTab = new MusicTab();
-    auto* searchTab = new SearchTab();
-    auto* queueTab = new QueueTab();
-    auto* settingsTab = new SettingsTab();
-
-    tabFrame->addTab("Home", homeTab);
-    tabFrame->addTab("Library", libraryTab);
-    tabFrame->addTab("Browse", browseTab);
-    tabFrame->addTab("Search", searchTab);
-    tabFrame->addTab("Queue", queueTab);
-    tabFrame->addTab("Settings", settingsTab);
-
-    root->addView(tabFrame);
-
-    // Now playing bar at bottom
-    m_nowPlaying = new NowPlayingView();
-    m_nowPlaying->setHeight(56);
-    root->addView(m_nowPlaying);
-
-    // Connect and set up event handlers
-    connectToServer();
-    setupEventHandlers();
-
-    // Initialize MPV for local playback
-    MpvPlayer::instance().init();
-
-    return root;
+    return brls::View::createFromXMLResource("activity/main.xml");
 }
 
-void MainActivity::connectToServer() {
-    auto& app = App::instance();
-    if (!app.getServerUrl().empty()) {
-        if (!MAClient::instance().isConnected()) {
-            MAClient::instance().connect(app.getServerUrl(), app.getAuthToken());
+void MainActivity::onContentAvailable() {
+    brls::Logger::debug("MainActivity content available");
+
+    if (tabFrame) {
+        AppSettings& settings = Application::getInstance().getSettings();
+
+        // Calculate dynamic sidebar width based on content
+        int sidebarWidth = 200;  // Minimum width
+
+        // Standard tab names to consider
+        std::vector<std::string> standardTabs = {"Home", "Library", "Music", "Search", "Live TV", "Downloads", "Settings"};
+        for (const auto& tab : standardTabs) {
+            sidebarWidth = std::max(sidebarWidth, calculateTextWidth(tab));
         }
-    }
-}
 
-void MainActivity::setupEventHandlers() {
-    MAClient::instance().setEventCallback([this](MAEvent event, const Json& data) {
-        onEvent(event, data);
-    });
-}
-
-void MainActivity::onEvent(MAEvent event, const Json& data) {
-    auto& app = App::instance();
-
-    switch (event) {
-        case MAEvent::CONNECTED:
-            app.setConnected(true);
-            app.setServerInfo(MAClient::instance().getServerInfo());
-            brls::Logger::info("Main: connected to server");
-            break;
-
-        case MAEvent::DISCONNECTED:
-            app.setConnected(false);
-            brls::Logger::info("Main: disconnected from server");
-            break;
-
-        case MAEvent::QUEUE_UPDATED: {
-            // Update queue state from event data
-            QueueState state = app.getQueueState();
-            if (data.has("queue_id")) state.queue_id = data["queue_id"].str();
-            if (data.has("state")) {
-                std::string s = data["state"].str();
-                if (s == "playing") state.state = PlayerState::PLAYING;
-                else if (s == "paused") state.state = PlayerState::PAUSED;
-                else if (s == "idle") state.state = PlayerState::IDLE;
+        // If showing libraries in sidebar, check library names too (skip in offline mode)
+        if (settings.showLibrariesInSidebar && !Application::getInstance().isOfflineMode()) {
+            PlexClient& client = PlexClient::getInstance();
+            std::vector<LibrarySection> sections;
+            if (client.fetchLibrarySections(sections)) {
+                s_cachedSections = sections;  // Cache for later use
+                for (const auto& section : sections) {
+                    sidebarWidth = std::max(sidebarWidth, calculateTextWidth(section.title));
+                }
             }
-            if (data.has("shuffle_enabled")) state.shuffle_enabled = data["shuffle_enabled"].boolVal();
-            if (data.has("repeat_mode")) {
-                std::string rm = data["repeat_mode"].str();
-                if (rm == "off") state.repeat_mode = RepeatMode::OFF;
-                else if (rm == "all") state.repeat_mode = RepeatMode::ALL;
-                else if (rm == "one") state.repeat_mode = RepeatMode::ONE;
+        }
+
+        // Apply sidebar width (with reasonable bounds)
+        sidebarWidth = std::min(sidebarWidth, 350);  // Max width
+        brls::View* sidebar = tabFrame->getView("brls/tab_frame/sidebar");
+        if (sidebar) {
+            if (settings.collapseSidebar) {
+                sidebar->setWidth(160);
+                brls::Logger::debug("MainActivity: Collapsed sidebar to 160px");
+            } else {
+                sidebar->setWidth(sidebarWidth);
+                brls::Logger::debug("MainActivity: Dynamic sidebar width: {}px", sidebarWidth);
             }
-            if (data.has("current_item")) {
-                auto& ci = data["current_item"];
-                if (ci.has("name")) state.current_track_name = ci["name"].str();
-                if (ci.has("media_item")) {
-                    auto& mi = ci["media_item"];
-                    if (mi.has("artists") && mi["artists"].size() > 0) {
-                        state.current_track_artist = mi["artists"][static_cast<size_t>(0)]["name"].str();
+        }
+
+        bool isOffline = Application::getInstance().isOfflineMode();
+        bool hasLiveTV = !isOffline && PlexClient::getInstance().hasLiveTV();
+
+        // In offline mode, skip all server-dependent tabs (Home, Search, Library, etc.)
+        // Only Downloads and Settings will be shown
+        if (!isOffline) {
+            // If showing libraries in sidebar, only show actual library sections
+            // Don't show premade tabs like "Library", "Music", "TV"
+            if (settings.showLibrariesInSidebar) {
+                // Home tab
+                tabFrame->addTab("Home", []() { return new HomeTab(); });
+
+                // Load actual library sections to sidebar
+                loadLibrariesToSidebar();
+
+                // Search
+                tabFrame->addTab("Search", []() { return new SearchTab(); });
+
+                // Live TV if available
+                if (hasLiveTV) {
+                    tabFrame->addTab("Live TV", []() { return new LiveTVTab(); });
+                }
+            } else {
+                // Standard mode with premade tabs
+                // Add tabs based on sidebar order setting
+                std::string sidebarOrder = settings.sidebarOrder;
+
+                // Parse the order or use default
+                std::vector<std::string> order;
+                if (!sidebarOrder.empty()) {
+                    std::string orderStr = sidebarOrder;
+                    size_t pos = 0;
+                    while ((pos = orderStr.find(',')) != std::string::npos) {
+                        order.push_back(orderStr.substr(0, pos));
+                        orderStr.erase(0, pos + 1);
                     }
-                    if (mi.has("image")) {
-                        state.current_track_image = mi["image"]["url"].str();
+                    if (!orderStr.empty()) {
+                        order.push_back(orderStr);
+                    }
+                } else {
+                    // Default order
+                    order = {"home", "library", "music", "search", "livetv"};
+                }
+
+                // Add tabs in specified order
+                for (const std::string& item : order) {
+                    if (item == "home") {
+                        tabFrame->addTab("Home", []() { return new HomeTab(); });
+                    } else if (item == "library") {
+                        tabFrame->addTab("Library", []() { return new LibraryTab(); });
+                    } else if (item == "music") {
+                        tabFrame->addTab("Music", []() { return new MusicTab(); });
+                    } else if (item == "search") {
+                        tabFrame->addTab("Search", []() { return new SearchTab(); });
+                    } else if (item == "livetv" && hasLiveTV) {
+                        tabFrame->addTab("Live TV", []() { return new LiveTVTab(); });
                     }
                 }
-                if (ci.has("duration")) state.duration = static_cast<float>(ci["duration"].numVal());
             }
-
-            app.setQueueState(state);
-            if (m_nowPlaying) m_nowPlaying->updateState(state);
-            break;
         }
 
-        case MAEvent::QUEUE_TIME_UPDATED: {
-            QueueState state = app.getQueueState();
-            if (data.has("elapsed_time")) {
-                state.elapsed_time = static_cast<float>(data["elapsed_time"].numVal());
-            }
-            app.setQueueState(state);
-            if (m_nowPlaying) m_nowPlaying->updateState(state);
-            break;
-        }
+        // Downloads tab (always available)
+        tabFrame->addTab("Downloads", []() { return new DownloadsTab(); });
 
-        case MAEvent::PLAYER_UPDATED: {
-            QueueState state = app.getQueueState();
-            if (data.has("volume_level")) {
-                state.volume = data["volume_level"].intVal();
-            }
-            if (data.has("volume_muted")) {
-                state.muted = data["volume_muted"].boolVal();
-            }
-            if (data.has("player_id")) {
-                app.setPlayerId(data["player_id"].str());
-            }
-            app.setQueueState(state);
-            break;
+        // Debug and Settings always at the bottom
+        tabFrame->addSeparator();
+        if (settings.showDebugTab) {
+            tabFrame->addTab("Debug", []() { return new DebugTab(); });
         }
+        tabFrame->addTab("Settings", []() { return new SettingsTab(); });
 
-        default:
-            break;
+        // Focus first tab
+        tabFrame->focusTab(0);
+
+        // Register BUTTON_B on the root content view (parent of tabFrame) so it
+        // intercepts back/circle regardless of which child has focus. When a
+        // dialog closes, borealis may restore focus to the root Box instead of
+        // a child inside tabFrame, which would bypass a handler registered only
+        // on tabFrame and let AppletFrame show the "exit this app" dialog.
+        brls::View* rootBox = tabFrame->getParent();
+        if (rootBox) {
+            rootBox->registerAction("", brls::ControllerButton::BUTTON_B, [](brls::View* view) {
+                MusicQueue& queue = MusicQueue::getInstance();
+                if (!queue.isEmpty() && queue.getCurrentIndex() >= 0) {
+                    auto* playerActivity = PlayerActivity::createResumeQueue();
+                    brls::Application::pushActivity(playerActivity);
+                }
+                // Always return true to prevent the exit confirmation dialog
+                return true;
+            });
+        }
     }
 }
 
-} // namespace vita_ma
+void MainActivity::loadLibrariesToSidebar() {
+    brls::Logger::debug("MainActivity: Loading libraries to sidebar...");
+
+    // Add separator before libraries
+    tabFrame->addSeparator();
+
+    // Fetch libraries synchronously to maintain correct sidebar order
+    PlexClient& client = PlexClient::getInstance();
+    std::vector<LibrarySection> sections;
+
+    if (client.fetchLibrarySections(sections)) {
+        brls::Logger::info("MainActivity: Got {} library sections", sections.size());
+
+        // Get hidden libraries setting
+        std::string hiddenLibraries = Application::getInstance().getSettings().hiddenLibraries;
+
+        // Helper to check if hidden
+        auto isHidden = [&hiddenLibraries](const std::string& key) -> bool {
+            if (hiddenLibraries.empty()) return false;
+            std::string hidden = hiddenLibraries;
+            size_t pos = 0;
+            while ((pos = hidden.find(',')) != std::string::npos) {
+                if (hidden.substr(0, pos) == key) return true;
+                hidden.erase(0, pos + 1);
+            }
+            return (hidden == key);
+        };
+
+        // Add library tabs
+        for (const auto& section : sections) {
+            if (isHidden(section.key)) {
+                brls::Logger::debug("MainActivity: Hiding library: {}", section.title);
+                continue;
+            }
+
+            std::string key = section.key;
+            std::string title = section.title;
+            std::string type = section.type;
+
+            tabFrame->addTab(title, [key, title, type]() {
+                return new LibrarySectionTab(key, title, type);
+            });
+
+            brls::Logger::debug("MainActivity: Added sidebar tab for library: {}", title);
+        }
+    } else {
+        brls::Logger::error("MainActivity: Failed to fetch library sections");
+    }
+}
+
+} // namespace vitaplex

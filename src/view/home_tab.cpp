@@ -1,135 +1,321 @@
-#include "view/home_tab.hpp"
-#include "app/ma_client.hpp"
-#include "view/media_item_cell.hpp"
-#include <borealis.hpp>
+/**
+ * VitaPlex - Home Tab implementation
+ */
 
-namespace vita_ma {
+#include "view/home_tab.hpp"
+#include "view/media_item_cell.hpp"
+#include "view/media_detail_view.hpp"
+#include "app/application.hpp"
+#include "utils/image_loader.hpp"
+#include "utils/async.hpp"
+
+namespace vitaplex {
 
 HomeTab::HomeTab() {
     this->setAxis(brls::Axis::COLUMN);
+    this->setJustifyContent(brls::JustifyContent::FLEX_START);
+    this->setAlignItems(brls::AlignItems::STRETCH);
     this->setGrow(1.0f);
 
-    m_scrollFrame = new brls::ScrollingFrame();
-    m_scrollFrame->setGrow(1.0f);
+    // Create vertical scrolling container for the entire tab
+    m_scrollView = new brls::ScrollingFrame();
+    m_scrollView->setGrow(1.0f);
+    m_scrollView->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
 
-    m_content = new brls::Box();
-    m_content->setAxis(brls::Axis::COLUMN);
-    m_content->setPadding(16);
+    m_scrollContent = new brls::Box();
+    m_scrollContent->setAxis(brls::Axis::COLUMN);
+    m_scrollContent->setJustifyContent(brls::JustifyContent::FLEX_START);
+    m_scrollContent->setAlignItems(brls::AlignItems::STRETCH);
+    m_scrollContent->setPadding(20);
 
     // Title
-    auto* title = new brls::Label();
-    title->setText("Home");
-    title->setFontSize(24);
-    title->setMarginBottom(16);
-    m_content->addView(title);
+    m_titleLabel = new brls::Label();
+    m_titleLabel->setText("Home");
+    m_titleLabel->setFontSize(28);
+    m_titleLabel->setMarginBottom(20);
+    m_scrollContent->addView(m_titleLabel);
 
-    // Recently Played section
-    auto* recentLabel = new brls::Label();
-    recentLabel->setText("Recently Played");
-    recentLabel->setFontSize(18);
-    recentLabel->setMarginBottom(8);
-    m_content->addView(recentLabel);
+    // Continue Watching section
+    auto* continueLabel = new brls::Label();
+    continueLabel->setText("Continue Watching");
+    continueLabel->setFontSize(22);
+    continueLabel->setMarginBottom(10);
+    m_scrollContent->addView(continueLabel);
 
-    m_recentRow = new HorizontalScrollRow();
-    m_recentRow->setHeight(200);
-    m_content->addView(m_recentRow);
+    m_continueWatchingRow = createMediaRow();
+    m_scrollContent->addView(m_continueWatchingRow);
 
-    // Recommendations section
-    auto* recLabel = new brls::Label();
-    recLabel->setText("Recommendations");
-    recLabel->setFontSize(18);
-    recLabel->setMarginTop(16);
-    recLabel->setMarginBottom(8);
-    m_content->addView(recLabel);
+    // Recently Added Movies section
+    auto* moviesLabel = new brls::Label();
+    moviesLabel->setText("Recently Added Movies");
+    moviesLabel->setFontSize(22);
+    moviesLabel->setMarginBottom(10);
+    moviesLabel->setMarginTop(15);
+    m_scrollContent->addView(moviesLabel);
 
-    m_recommendRow = new HorizontalScrollRow();
-    m_recommendRow->setHeight(200);
-    m_content->addView(m_recommendRow);
+    m_moviesRow = createMediaRow();
+    m_scrollContent->addView(m_moviesRow);
 
-    m_scrollFrame->setContentView(m_content);
-    this->addView(m_scrollFrame);
+    // Recently Added TV Shows section
+    auto* showsLabel = new brls::Label();
+    showsLabel->setText("Recently Added TV Shows");
+    showsLabel->setFontSize(22);
+    showsLabel->setMarginBottom(10);
+    showsLabel->setMarginTop(15);
+    m_scrollContent->addView(showsLabel);
+
+    m_showsRow = createMediaRow();
+    m_scrollContent->addView(m_showsRow);
+
+    // Recently Added Music section
+    auto* musicLabel = new brls::Label();
+    musicLabel->setText("Recently Added Music");
+    musicLabel->setFontSize(22);
+    musicLabel->setMarginBottom(10);
+    musicLabel->setMarginTop(15);
+    m_scrollContent->addView(musicLabel);
+
+    m_musicRow = createMediaRow();
+    m_scrollContent->addView(m_musicRow);
+
+    m_scrollView->setContentView(m_scrollContent);
+    this->addView(m_scrollView);
+
+    // Load content immediately
+    brls::Logger::debug("HomeTab: Loading content...");
+    loadContent();
 }
 
-void HomeTab::onShow() {
-    if (!m_loaded) {
-        m_loaded = true;
-        loadRecentlyPlayed();
-        loadRecommendations();
+HorizontalScrollRow* HomeTab::createMediaRow() {
+    auto* row = new HorizontalScrollRow();
+    row->setHeight(210);
+    row->setMarginBottom(10);
+    return row;
+}
+
+void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MediaItem>& items, bool directPlay) {
+    if (!row) return;
+
+    row->clearViews();
+
+    for (const auto& item : items) {
+        auto* cell = new MediaItemCell();
+        cell->setItem(item);
+        cell->setMarginRight(10);
+
+        MediaItem capturedItem = item;
+        cell->registerClickAction([this, capturedItem, directPlay](brls::View* view) {
+            if (directPlay) {
+                // Play directly for continue watching items (movies, episodes, tracks)
+                Application::getInstance().pushPlayerActivity(capturedItem.ratingKey);
+            } else {
+                onItemSelected(capturedItem);
+            }
+            return true;
+        });
+        cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
+
+        // Register START button context menus for movies, shows, and seasons
+        if (capturedItem.mediaType == MediaType::MOVIE) {
+            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+                [capturedItem](brls::View* view) {
+                    MediaDetailView::showMovieContextMenuStatic(capturedItem);
+                    return true;
+                });
+        } else if (capturedItem.mediaType == MediaType::SHOW) {
+            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+                [capturedItem](brls::View* view) {
+                    MediaDetailView::showShowContextMenuStatic(capturedItem);
+                    return true;
+                });
+        } else if (capturedItem.mediaType == MediaType::SEASON) {
+            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+                [capturedItem](brls::View* view) {
+                    MediaDetailView::showSeasonContextMenuStatic(capturedItem);
+                    return true;
+                });
+        } else if (capturedItem.mediaType == MediaType::MUSIC_ARTIST) {
+            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+                [capturedItem](brls::View* view) {
+                    MediaDetailView::showArtistContextMenuStatic(capturedItem);
+                    return true;
+                });
+        } else if (capturedItem.mediaType == MediaType::MUSIC_ALBUM) {
+            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+                [capturedItem](brls::View* view) {
+                    MediaDetailView::showAlbumContextMenuStatic(capturedItem);
+                    return true;
+                });
+        }
+
+        row->addView(cell);
+    }
+
+    // Add placeholder if empty
+    if (items.empty()) {
+        auto* placeholder = new brls::Label();
+        placeholder->setText("No items");
+        placeholder->setFontSize(16);
+        placeholder->setMarginLeft(10);
+        row->addView(placeholder);
     }
 }
 
-void HomeTab::loadRecentlyPlayed() {
-    MAClient::instance().getRecentlyPlayed([this](bool success, const Json& result) {
-        if (!success || result.type() != Json::ARRAY) return;
-
-        for (size_t i = 0; i < result.size() && i < 20; i++) {
-            auto& item = result[i];
-            auto* cell = new MediaItemCell();
-
-            MediaItem mediaItem;
-            mediaItem.name = item["name"].str();
-            if (item.has("artists")) {
-                auto& artists = item["artists"];
-                if (artists.size() > 0) {
-                    mediaItem.subtitle = artists[static_cast<size_t>(0)]["name"].str();
-                }
-            }
-            if (item.has("image")) {
-                mediaItem.image_url = item["image"]["url"].str();
-            } else if (item.has("metadata") && item["metadata"].has("images")) {
-                auto& images = item["metadata"]["images"];
-                if (images.size() > 0) {
-                    mediaItem.image_url = images[static_cast<size_t>(0)]["url"].str();
-                }
-            }
-            mediaItem.uri = item.has("uri") ? item["uri"].str() : "";
-            cell->setData(mediaItem);
-
-            cell->registerClickAction([mediaItem](...) {
-                if (!mediaItem.uri.empty()) {
-                    auto& app = App::instance();
-                    MAClient::instance().playMedia(
-                        app.getQueueId(), mediaItem.uri, "play");
-                }
-                return true;
-            });
-
-            m_recentRow->addCell(cell);
-        }
-    }, 20);
+HomeTab::~HomeTab() {
+    if (m_alive) { *m_alive = false; }
 }
 
-void HomeTab::loadRecommendations() {
-    MAClient::instance().getRecommendations([this](bool success, const Json& result) {
-        if (!success || result.type() != Json::ARRAY) return;
+void HomeTab::willDisappear(bool resetState) {
+    brls::Box::willDisappear(resetState);
+    // Invalidate alive flag so pending async callbacks bail out
+    if (m_alive) *m_alive = false;
+    ImageLoader::cancelAll();
+    // Free image cache when leaving home tab to reclaim memory
+    ImageLoader::clearCache();
 
-        for (size_t i = 0; i < result.size() && i < 20; i++) {
-            auto& item = result[i];
-            auto* cell = new MediaItemCell();
+    // Free stored item data to reduce baseline memory
+    m_continueWatching.clear();
+    m_continueWatching.shrink_to_fit();
+    m_recentMovies.clear();
+    m_recentMovies.shrink_to_fit();
+    m_recentShows.clear();
+    m_recentShows.shrink_to_fit();
+    m_recentMusic.clear();
+    m_recentMusic.shrink_to_fit();
 
-            MediaItem mediaItem;
-            mediaItem.name = item["name"].str();
-            if (item.has("artists") && item["artists"].size() > 0) {
-                mediaItem.subtitle = item["artists"][static_cast<size_t>(0)]["name"].str();
-            }
-            if (item.has("image")) {
-                mediaItem.image_url = item["image"]["url"].str();
-            }
-            mediaItem.uri = item.has("uri") ? item["uri"].str() : "";
-            cell->setData(mediaItem);
+    // Mark as not loaded so data is re-fetched when returning
+    m_loaded = false;
+}
 
-            cell->registerClickAction([mediaItem](...) {
-                if (!mediaItem.uri.empty()) {
-                    auto& app = App::instance();
-                    MAClient::instance().playMedia(
-                        app.getQueueId(), mediaItem.uri, "play");
-                }
-                return true;
+void HomeTab::onFocusGained() {
+    brls::Box::onFocusGained();
+    // Re-create alive flag so new async callbacks work (old ones still bail out)
+    m_alive = std::make_shared<bool>(true);
+
+    if (!m_loaded) {
+        loadContent();
+    }
+}
+
+void HomeTab::loadContent() {
+    brls::Logger::debug("HomeTab::loadContent - Starting async load");
+
+    // Load continue watching asynchronously
+    asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
+        brls::Logger::debug("HomeTab: Fetching continue watching (async)...");
+        PlexClient& client = PlexClient::getInstance();
+        std::vector<MediaItem> items;
+
+        if (client.fetchContinueWatching(items)) {
+            brls::Logger::info("HomeTab: Got {} continue watching items", items.size());
+
+            // Trim heavy fields to reduce memory
+            for (auto& item : items) item.trimForGrid();
+
+            brls::sync([this, items, aliveWeak]() {
+                auto alive = aliveWeak.lock();
+                if (!alive || !*alive) return;
+                m_continueWatching = items;
+                populateRow(m_continueWatchingRow, m_continueWatching, true);
             });
-
-            m_recommendRow->addCell(cell);
+        } else {
+            brls::Logger::error("HomeTab: Failed to fetch continue watching");
         }
     });
+
+    // Load recently added by fetching from library sections
+    asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
+        brls::Logger::debug("HomeTab: Fetching library sections for recently added...");
+        PlexClient& client = PlexClient::getInstance();
+
+        // First get all library sections
+        std::vector<LibrarySection> sections;
+        if (!client.fetchLibrarySections(sections)) {
+            brls::Logger::error("HomeTab: Failed to fetch library sections");
+            return;
+        }
+
+        // Get hidden libraries setting
+        std::string hiddenLibraries = Application::getInstance().getSettings().hiddenLibraries;
+
+        std::vector<MediaItem> movies;
+        std::vector<MediaItem> shows;
+        std::vector<MediaItem> music;
+
+        // Helper to check if library is hidden
+        auto isHidden = [&hiddenLibraries](const std::string& key) -> bool {
+            if (hiddenLibraries.empty()) return false;
+            std::string hidden = hiddenLibraries;
+            size_t pos = 0;
+            while ((pos = hidden.find(',')) != std::string::npos) {
+                if (hidden.substr(0, pos) == key) return true;
+                hidden.erase(0, pos + 1);
+            }
+            return (hidden == key);
+        };
+
+        // Fetch recently added from each section by type
+        for (const auto& section : sections) {
+            // Skip hidden libraries
+            if (isHidden(section.key)) {
+                brls::Logger::debug("HomeTab: Skipping hidden library: {}", section.title);
+                continue;
+            }
+
+            std::vector<MediaItem> sectionItems;
+
+            // Fetch recently added using the correct API endpoint
+            if (client.fetchSectionRecentlyAdded(section.key, sectionItems)) {
+                // Sort items by type
+                for (auto& item : sectionItems) {
+                    if (section.type == "movie") {
+                        if (movies.size() < 8) movies.push_back(item);
+                    } else if (section.type == "show") {
+                        if (shows.size() < 8) shows.push_back(item);
+                    } else if (section.type == "artist") {
+                        if (music.size() < 8) music.push_back(item);
+                    }
+                }
+            }
+        }
+
+        brls::Logger::info("HomeTab: Got {} movies, {} shows, {} music items",
+                           movies.size(), shows.size(), music.size());
+
+        // Trim heavy fields to reduce memory for grid display
+        for (auto& item : movies) item.trimForGrid();
+        for (auto& item : shows) item.trimForGrid();
+        for (auto& item : music) item.trimForGrid();
+
+        // Update UI on main thread
+        brls::sync([this, movies, shows, music, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !*alive) return;
+
+            m_recentMovies = movies;
+            m_recentShows = shows;
+            m_recentMusic = music;
+
+            populateRow(m_moviesRow, m_recentMovies);
+            populateRow(m_showsRow, m_recentShows);
+            populateRow(m_musicRow, m_recentMusic);
+        });
+    });
+
+    m_loaded = true;
+    brls::Logger::debug("HomeTab: Async content loading started");
 }
 
-} // namespace vita_ma
+void HomeTab::onItemSelected(const MediaItem& item) {
+    // For tracks, play directly instead of showing detail view
+    if (item.mediaType == MediaType::MUSIC_TRACK) {
+        Application::getInstance().pushPlayerActivity(item.ratingKey);
+        return;
+    }
+
+    // Show media detail view for other types
+    auto* detailView = new MediaDetailView(item);
+    brls::Application::pushActivity(new brls::Activity(detailView));
+}
+
+} // namespace vitaplex

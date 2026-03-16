@@ -1,122 +1,277 @@
-#include "app.h"
+/**
+ * VitaPlex - Plex Client for PlayStation Vita
+ * Main entry point with Borealis UI framework
+ *
+ * Based on switchfin architecture (https://github.com/dragonflylee/switchfin)
+ * UI powered by Borealis (https://github.com/dragonflylee/borealis)
+ */
+
+#include <borealis.hpp>
+#include "app/application.hpp"
+#include "app/plex_client.hpp"
 #include "view/media_item_cell.hpp"
 #include "view/recycling_grid.hpp"
-#include "view/now_playing_view.hpp"
-#include <borealis.hpp>
+#include "view/media_detail_view.hpp"
+#include "view/video_view.hpp"
+#include "app/downloads_manager.hpp"
+#include "utils/http_client.hpp"
 
 #ifdef __vita__
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/modulemgr.h>
+#include <psp2/kernel/sysmem.h>
 #include <psp2/power.h>
+#include <psp2/apputil.h>
 #include <psp2/sysmodule.h>
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
-#include <psp2/ssl.h>
-#include <psp2/http.h>
-#include <psp2/ime.h>
-#include <psp2/pgf.h>
-#include <psp2/apputil.h>
+#include <psp2/net/http.h>
+#include <psp2/libssl.h>
+#include <psp2/common_dialog.h>
+#include <psp2/io/stat.h>
+#include <cstring>
 
 // Memory configuration
-unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024; // 2MB main stack
-int _newlib_heap_size_user = 172 * 1024 * 1024;            // 172MB heap
+// Reduced from 192 MB to 172 MB - leaves more room for GPU VRAM and system.
+// With optimized view recycling and image caching, the app uses significantly
+// less heap, so this headroom is no longer needed.
+int _newlib_heap_size_user = 172 * 1024 * 1024;  // 172 MB heap
+unsigned int sceUserMainThreadStackSize = 2 * 1024 * 1024;  // 2 MB stack
 
-static char net_memory[2 * 1024 * 1024];     // 2MB NET buffer
-static char ssl_memory[512 * 1024];            // 512KB SSL buffer
-static char http_memory[1024 * 1024];          // 1MB HTTP buffer
+// Reduced network buffer from 4 MB to 2 MB - sufficient for API calls + thumbnails
+#define NET_MEMORY_SIZE (2 * 1024 * 1024)
+#define SSL_MEMORY_SIZE (512 * 1024)
+#define HTTP_MEMORY_SIZE (1 * 1024 * 1024)
 
-static void vita_init_modules() {
-    // Network
-    sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
-    SceNetInitParam netParam;
-    netParam.memory = net_memory;
-    netParam.size = sizeof(net_memory);
-    netParam.flags = 0;
-    sceNetInit(&netParam);
-    sceNetCtlInit();
+static char __attribute__((aligned(64))) netMemory[NET_MEMORY_SIZE];
 
-    // SSL & HTTP
-    sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
-    sceSslInit(sizeof(ssl_memory));
-    sceHttpInit(sizeof(http_memory));
+/**
+ * Load shader compiler module
+ */
+static bool loadShaderCompiler() {
+    SceUID mod;
 
-    // Input
-    sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
-    sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
+    mod = sceKernelLoadStartModule("ur0:data/libshacccg.suprx", 0, NULL, 0, NULL, NULL);
+    if (mod >= 0) return true;
+
+    mod = sceKernelLoadStartModule("vs0:sys/external/libshacccg.suprx", 0, NULL, 0, NULL, NULL);
+    if (mod >= 0) return true;
+
+    brls::Logger::warning("Could not load libshacccg.suprx - using fallback shaders");
+    return true;
+}
+
+/**
+ * Initialize Vita system modules
+ */
+static bool initVitaSystem() {
+    brls::Logger::info("Initializing PS Vita system modules...");
 
     // App utilities
     SceAppUtilInitParam initParam;
     SceAppUtilBootParam bootParam;
-    memset(&initParam, 0, sizeof(SceAppUtilInitParam));
-    memset(&bootParam, 0, sizeof(SceAppUtilBootParam));
+    memset(&initParam, 0, sizeof(initParam));
+    memset(&bootParam, 0, sizeof(bootParam));
     sceAppUtilInit(&initParam, &bootParam);
 
-    // Set CPU/GPU clocks for smooth UI
+    // Start with reduced clock speeds for browsing (saves battery).
+    // PlayerActivity raises clocks to max when playback starts,
+    // and lowers them again when playback ends.
     scePowerSetArmClockFrequency(333);
     scePowerSetBusClockFrequency(166);
     scePowerSetGpuClockFrequency(166);
-    scePowerSetGpuXbarClockFrequency(166);
+    scePowerSetGpuXbarClockFrequency(111);
+
+    // Load shader compiler
+    loadShaderCompiler();
+
+    // Load system modules
+    sceSysmoduleLoadModule(SCE_SYSMODULE_NET);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_SSL);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTP);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_HTTPS);
+    // SceAvPlayer intentionally NOT loaded - we use MPV/libmpv for playback.
+    // Loading SceAvPlayer pulls in SceMp4 as a dependency, and "Mp4Demux Critical"
+    // appears in crash dumps during HLS playback, suggesting a conflict with
+    // MPV's FFmpeg-based demuxer using the same SceAvcodec/SceVideodec resources.
+    sceSysmoduleLoadModule(SCE_SYSMODULE_IME);
+    sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
+
+    brls::Logger::info("System modules loaded");
+    return true;
 }
 
-static void vita_cleanup_modules() {
+/**
+ * Initialize networking
+ */
+static bool initVitaNetwork() {
+    brls::Logger::info("Initializing networking...");
+
+    SceNetInitParam netInitParam;
+    netInitParam.memory = netMemory;
+    netInitParam.size = NET_MEMORY_SIZE;
+    netInitParam.flags = 0;
+
+    int ret = sceNetInit(&netInitParam);
+    if (ret < 0 && ret != (int)0x80410201) {
+        brls::Logger::error("sceNetInit failed: {:#x}", ret);
+        return false;
+    }
+
+    ret = sceNetCtlInit();
+    if (ret < 0 && ret != (int)0x80412102) {
+        brls::Logger::error("sceNetCtlInit failed: {:#x}", ret);
+        return false;
+    }
+
+    ret = sceSslInit(SSL_MEMORY_SIZE);
+    if (ret < 0 && ret != (int)0x80435001) {
+        brls::Logger::error("sceSslInit failed: {:#x}", ret);
+        return false;
+    }
+
+    ret = sceHttpInit(HTTP_MEMORY_SIZE);
+    if (ret < 0 && ret != (int)0x80431002) {
+        brls::Logger::error("sceHttpInit failed: {:#x}", ret);
+        return false;
+    }
+
+    // Initialize curl
+    vitaplex::HttpClient::globalInit();
+
+    brls::Logger::info("Networking initialized");
+    return true;
+}
+
+/**
+ * Cleanup networking
+ */
+static void cleanupVitaNetwork() {
+    vitaplex::HttpClient::globalCleanup();
     sceHttpTerm();
     sceSslTerm();
     sceNetCtlTerm();
     sceNetTerm();
-
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_PGF);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_IME);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_HTTPS);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_SSL);
-    sceSysmoduleUnloadModule(SCE_SYSMODULE_NET);
 }
-#endif
+#endif // __vita__
 
+/**
+ * Register custom views
+ */
+static void registerCustomViews() {
+    brls::Application::registerXMLView("MediaItemCell", vitaplex::MediaItemCell::create);
+    brls::Application::registerXMLView("RecyclingGrid", vitaplex::RecyclingGrid::create);
+    brls::Application::registerXMLView("vitaplex:VideoView", vitaplex::VideoView::create);
+}
+
+/**
+ * Main entry point
+ */
 int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
+
 #ifdef __vita__
-    vita_init_modules();
+    // Initialize Vita-specific systems
+    if (!initVitaSystem()) {
+        sceKernelExitProcess(1);
+        return 1;
+    }
+
+    if (!initVitaNetwork()) {
+        sceKernelExitProcess(1);
+        return 1;
+    }
+
+    // Create log directory and file on Vita
+    sceIoMkdir("ux0:data/VitaPlex", 0777);
+    static FILE* logFile = std::fopen("ux0:data/VitaPlex/vitaplex.log", "w");
+    if (logFile) {
+        // Use line buffering so logs are written immediately
+        setvbuf(logFile, NULL, _IOLBF, 0);
+        // Note: brls::Logger::setLogOutput doesn't work on Vita (uses sceClibPrintf)
+        // We'll subscribe to log events after Borealis init
+    }
 #endif
 
     // Initialize Borealis
-    brls::Logger::setLogLevel(brls::LogLevel::LOG_INFO);
+    brls::Logger::setLogLevel(brls::LogLevel::LOG_DEBUG);
 
     if (!brls::Application::init()) {
         brls::Logger::error("Failed to initialize Borealis");
 #ifdef __vita__
-        vita_cleanup_modules();
-        sceKernelExitProcess(0);
+        if (logFile) fclose(logFile);
+        cleanupVitaNetwork();
+        sceKernelExitProcess(1);
 #endif
         return 1;
     }
 
-    brls::Application::setGlobalQuit(false);
+#ifdef __vita__
+    // Subscribe to log events to write to file (since setLogOutput doesn't work on Vita)
+    if (logFile) {
+        brls::Logger::getLogEvent()->subscribe([](brls::Logger::TimePoint time, brls::LogLevel level, std::string log) {
+            if (!logFile) return;
+
+            const char* levelStr = "UNKNOWN";
+            switch (level) {
+                case brls::LogLevel::LOG_ERROR: levelStr = "ERROR"; break;
+                case brls::LogLevel::LOG_WARNING: levelStr = "WARNING"; break;
+                case brls::LogLevel::LOG_INFO: levelStr = "INFO"; break;
+                case brls::LogLevel::LOG_DEBUG: levelStr = "DEBUG"; break;
+                case brls::LogLevel::LOG_VERBOSE: levelStr = "VERBOSE"; break;
+            }
+
+            std::time_t tt = std::chrono::system_clock::to_time_t(time);
+            std::tm time_tm = *std::localtime(&tt);
+            uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                time.time_since_epoch()).count() % 1000;
+
+            fprintf(logFile, "%02d:%02d:%02d.%03d [%s] %s\n",
+                    time_tm.tm_hour, time_tm.tm_min, time_tm.tm_sec,
+                    (int)ms, levelStr, log.c_str());
+        });
+        brls::Logger::info("Log file initialized: ux0:data/VitaPlex/vitaplex.log");
+    }
+#endif
+
+    // Override sidebar padding for better text visibility on Vita's small screen
+    brls::Style style = brls::getStyle();
+    style.addMetric("brls/sidebar/padding_left", 20.0f);
+    style.addMetric("brls/sidebar/padding_right", 20.0f);
+
+    // Create window
+    brls::Application::createWindow("VitaPlex");
+
+    // Set theme colors (Plex-like)
+    brls::Application::getPlatform()->getThemeVariant();
 
     // Register custom views
-    brls::Application::registerXMLView("MediaItemCell", vita_ma::MediaItemCell::create);
-    brls::Application::registerXMLView("RecyclingGrid", vita_ma::RecyclingGrid::create);
-    brls::Application::registerXMLView("NowPlayingView", vita_ma::NowPlayingView::create);
+    registerCustomViews();
 
-    // Initialize app
-    auto& app = vita_ma::App::instance();
-    app.init();
+    // Initialize downloads manager
+    vitaplex::DownloadsManager::getInstance().init();
 
-    // Log startup
-    brls::Logger::info("Vita Music Assistant started");
-    brls::Logger::info("Data path: {}", app.getDataPath());
+    // Initialize application
+    vitaplex::Application& app = vitaplex::Application::getInstance();
 
-    // Start the app - will push login or main activity
-    // (handled by Application::init based on saved settings)
-
-    // Main loop
-    while (brls::Application::mainLoop()) {
-        // Borealis handles rendering and input
+    if (!app.init()) {
+        brls::Logger::error("Failed to initialize VitaPlex");
+#ifdef __vita__
+        cleanupVitaNetwork();
+        sceKernelExitProcess(1);
+#endif
+        return 1;
     }
 
-    // Cleanup
+    // Run application (blocking)
+    app.run();
+
+    // Shutdown
     app.shutdown();
 
 #ifdef __vita__
-    vita_cleanup_modules();
+    cleanupVitaNetwork();
     sceKernelExitProcess(0);
 #endif
 
