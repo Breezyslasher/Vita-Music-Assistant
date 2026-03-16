@@ -371,79 +371,11 @@ void PlayerActivity::onContentAvailable() {
         if (titleLabel) titleLabel->setVisibility(brls::Visibility::GONE);
         if (artistLabel) artistLabel->setVisibility(brls::Visibility::GONE);
     } else {
-        // Video mode: seek icons matching the configured interval
-        int seekSec = Application::getInstance().getSettings().seekInterval;
-        std::string rewindRes = "icons/rewind-" + std::to_string(seekSec) + ".png";
-        std::string fwdRes = "icons/fast-forward-" + std::to_string(seekSec) + ".png";
-        if (rewindIcon) rewindIcon->setImageFromRes(rewindRes);
-        if (forwardIcon) forwardIcon->setImageFromRes(fwdRes);
-
-        // Audio track button - shows track selection overlay
-        if (audioBtn) {
-            audioBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (audioIcon) {
-                audioIcon->setImageFromRes("icons/translate.png");
-            }
-            audioBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::AUDIO);
-                return true;
-            });
-            audioBtn->addGestureRecognizer(new brls::TapGestureRecognizer(audioBtn));
-        }
-
-        // Subtitle track button - shows track selection overlay
-        if (subBtn) {
-            subBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (subtitleIcon) {
-                subtitleIcon->setImageFromRes("icons/subtitles.png");
-            }
-            subBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::SUBTITLE);
-                return true;
-            });
-            subBtn->addGestureRecognizer(new brls::TapGestureRecognizer(subBtn));
-        }
-
-        // Video track button - shows track selection overlay
-        if (videoBtn) {
-            videoBtn->setVisibility(brls::Visibility::VISIBLE);
-            if (videoIcon) {
-                videoIcon->setImageFromRes("icons/video-image.png");
-            }
-            videoBtn->registerClickAction([this](brls::View* view) {
-                showTrackOverlay(TrackSelectMode::VIDEO);
-                return true;
-            });
-            videoBtn->addGestureRecognizer(new brls::TapGestureRecognizer(videoBtn));
-        }
+        // Non-queue single track mode - show basic controls
+        if (centerControls) centerControls->setVisibility(brls::Visibility::VISIBLE);
     }
 
-    // Block upward D-pad navigation from center transport controls so focus
-    // doesn't escape to off-screen elements (absolutely-positioned overlays)
-    if (!m_isQueueMode) {
-        if (playBtn) playBtn->setCustomNavigationRoute(brls::FocusDirection::UP, playBtn);
-        if (rewindBtn) rewindBtn->setCustomNavigationRoute(brls::FocusDirection::UP, rewindBtn);
-        if (forwardBtn) forwardBtn->setCustomNavigationRoute(brls::FocusDirection::UP, forwardBtn);
-    }
-
-    // Block downward D-pad navigation from the bottom button row so focus
-    // doesn't escape to off-screen elements (absolutely-positioned overlays)
-    // Only set on focusable buttons — in music mode audioBtn/subBtn/videoBtn are non-focusable
     if (queueBtn) queueBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, queueBtn);
-    if (!m_isQueueMode) {
-        if (audioBtn) audioBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, audioBtn);
-        if (subBtn) subBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, subBtn);
-        if (videoBtn) videoBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, videoBtn);
-    }
-
-    // Wire up skip button for intro/credits
-    if (skipBtn) {
-        skipBtn->registerClickAction([this](brls::View* view) {
-            skipToMarkerEnd();
-            return true;
-        });
-        skipBtn->addGestureRecognizer(new brls::TapGestureRecognizer(skipBtn));
-    }
 
     // Start update timer
     m_updateTimer.setCallback([this]() {
@@ -453,7 +385,7 @@ void PlayerActivity::onContentAvailable() {
 
     // Start with controls hidden if auto-hide is enabled
     int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
-    if (autoHide > 0 && !m_isPhoto) {
+    if (autoHide > 0 && !m_isQueueMode) {
         hideControls();
     }
 }
