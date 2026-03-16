@@ -797,11 +797,6 @@ void PlayerActivity::updateProgress() {
             MpvPlayer& player = MpvPlayer::getInstance();
 
             if (player.loadUrl(url, title)) {
-                if (videoView && !isAudio) {
-                    videoView->setVisibility(brls::Visibility::VISIBLE);
-                    videoView->setVideoVisible(true);
-                    brls::Logger::debug("Video view enabled (deferred)");
-                }
                 m_isPlaying = true;
                 updatePlayPauseLabel();
                 brls::Logger::info("PlayerActivity: Deferred load started successfully");
