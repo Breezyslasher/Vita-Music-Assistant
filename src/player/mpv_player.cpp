@@ -574,13 +574,6 @@ void MpvPlayer::cycleAudio() {
     mpv_command_async(m_mpv, 0, cmd);
 }
 
-void MpvPlayer::setVideoTrack(int track) {
-    if (!m_mpv || m_stopping) return;
-
-    int64_t vid = track;
-    mpv_set_property_async(m_mpv, 0, "vid", MPV_FORMAT_INT64, &vid);
-}
-
 void MpvPlayer::disableSubtitles() {
     if (!m_mpv || m_stopping) return;
 
@@ -972,31 +965,7 @@ void MpvPlayer::handlePropertyChange(mpv_event_property* prop, uint64_t id) {
 void MpvPlayer::updatePlaybackInfo() {
     if (!m_mpv || m_state == MpvPlayerState::IDLE || m_state == MpvPlayerState::LOADING) return;
 
-    // Get video codec info if not yet fetched
-    if (m_playbackInfo.videoCodec.empty() && m_state == MpvPlayerState::PLAYING) {
-        char* val = mpv_get_property_string(m_mpv, "video-codec");
-        if (val) {
-            m_playbackInfo.videoCodec = val;
-            mpv_free(val);
-        }
-
-        int64_t w = 0, h = 0;
-        mpv_get_property(m_mpv, "width", MPV_FORMAT_INT64, &w);
-        mpv_get_property(m_mpv, "height", MPV_FORMAT_INT64, &h);
-        m_playbackInfo.videoWidth = (int)w;
-        m_playbackInfo.videoHeight = (int)h;
-
-        double fps = 0.0;
-        mpv_get_property(m_mpv, "estimated-vf-fps", MPV_FORMAT_DOUBLE, &fps);
-        m_playbackInfo.fps = fps;
-
-        if (m_playbackInfo.videoWidth > 0) {
-            brls::Logger::info("MpvPlayer: Video {}x{} @ {:.2f}fps codec={}",
-                              m_playbackInfo.videoWidth, m_playbackInfo.videoHeight,
-                              m_playbackInfo.fps, m_playbackInfo.videoCodec);
-        }
-    }
-
+    // Get audio codec info if not yet fetched
     if (m_playbackInfo.audioCodec.empty() && m_state == MpvPlayerState::PLAYING) {
         char* val = mpv_get_property_string(m_mpv, "audio-codec");
         if (val) {

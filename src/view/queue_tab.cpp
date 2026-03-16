@@ -39,19 +39,19 @@ void QueueTab::refresh() {
 }
 
 void QueueTab::loadQueueItems() {
-    auto& app = App::instance();
-    std::string queueId = app.getQueueId();
+    std::string playerId = App::instance().getPlayerId();
 
-    if (queueId.empty()) {
+    if (playerId.empty()) {
         auto* emptyLabel = new brls::Label();
-        emptyLabel->setText("No active queue");
+        emptyLabel->setText("No active player");
         emptyLabel->setFontSize(14);
         emptyLabel->setTextColor(nvgRGBA(180, 180, 180, 255));
         m_content->addView(emptyLabel);
         return;
     }
 
-    MAClient::instance().getQueueItems(queueId, [this](bool success, const Json& result) {
+    // Use player ID as queue ID (Music Assistant uses the same ID)
+    MAClient::instance().getQueueItems(playerId, [this](bool success, const Json& result) {
         // Clear existing items (keep title)
         while (m_content->getChildren().size() > 1) {
             m_content->removeView(m_content->getChildren().back());
@@ -65,11 +65,8 @@ void QueueTab::loadQueueItems() {
             return;
         }
 
-        auto state = App::instance().getQueueState();
-
         for (size_t i = 0; i < result.size(); i++) {
             auto& item = result[i];
-            std::string itemId = item.has("queue_item_id") ? item["queue_item_id"].str() : "";
             std::string name = item.has("name") ? item["name"].str() : "Unknown";
             std::string artist;
             if (item.has("media_item") && item["media_item"].has("artists") &&
@@ -85,7 +82,6 @@ void QueueTab::loadQueueItems() {
             row->setAlignItems(brls::AlignItems::CENTER);
             row->setHeight(50);
             row->setPadding(4, 8, 4, 8);
-            row->setGap(8);
             row->setFocusable(true);
 
             // Track number
@@ -95,13 +91,6 @@ void QueueTab::loadQueueItems() {
             numLabel->setText(numBuf);
             numLabel->setFontSize(14);
             numLabel->setWidth(30);
-
-            // Highlight current track
-            bool isCurrent = (itemId == state.current_item_id) ||
-                            (static_cast<int>(i) == state.current_index);
-            if (isCurrent) {
-                numLabel->setTextColor(nvgRGBA(100, 200, 255, 255));
-            }
             row->addView(numLabel);
 
             // Track info
@@ -113,7 +102,6 @@ void QueueTab::loadQueueItems() {
             nameLabel->setText(name);
             nameLabel->setFontSize(14);
             nameLabel->setSingleLine(true);
-            if (isCurrent) nameLabel->setTextColor(nvgRGBA(100, 200, 255, 255));
             infoBox->addView(nameLabel);
 
             if (!artist.empty()) {
@@ -139,15 +127,12 @@ void QueueTab::loadQueueItems() {
 
             // Click to play this track
             int index = static_cast<int>(i);
-            std::string qId = App::instance().getQueueId();
+            std::string qId = App::instance().getPlayerId();
             row->registerClickAction([qId, index](...) {
-                MAClient::instance().sendCommand("player_queues/play_index",
-                    [index]() {
-                        Json args;
-                        args["queue_id"] = Json(App::instance().getQueueId());
-                        args["index"] = Json(index);
-                        return args;
-                    }(), nullptr);
+                Json args;
+                args["queue_id"] = Json(qId);
+                args["index"] = Json(index);
+                MAClient::instance().sendCommand("player_queues/play_index", args, nullptr);
                 return true;
             });
 
