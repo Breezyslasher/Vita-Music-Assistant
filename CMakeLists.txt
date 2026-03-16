@@ -158,7 +158,6 @@ target_link_libraries(${PROJECT_NAME}
     SceVshBridge_stub
     SceAppMgr_stub
     SceVideodec_stub
-    SceAvcdec_stub
     SceCodecEngine_stub
 
     # Standard libraries last (m is provided by libstdc++)
