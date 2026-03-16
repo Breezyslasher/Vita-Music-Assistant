@@ -93,14 +93,6 @@ void LoginActivity::onContentAvailable() {
         });
     }
 
-    // Offline mode button
-    if (offlineButton) {
-        offlineButton->setText("Offline Mode");
-        offlineButton->registerClickAction([this](brls::View* view) {
-            onOfflinePressed();
-            return true;
-        });
-    }
 }
 
 void LoginActivity::showServerSelectionDialog(const std::vector<ServerInfo>& servers) {
@@ -211,10 +203,6 @@ void LoginActivity::connectToSelectedServer(const ServerInfo& server) {
             });
         });
     });
-}
-
-void LoginActivity::onOfflinePressed() {
-    if (statusLabel) statusLabel->setText("Offline mode is not available");
 }
 
 void LoginActivity::onLoginPressed() {
