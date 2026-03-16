@@ -1,10 +1,11 @@
 #pragma once
 
 #include "app.h"
-#include "app/ma_types.hpp"
 #include <borealis.hpp>
 
 namespace vita_ma {
+
+struct QueueState;
 
 class NowPlayingView : public brls::Box {
 public:

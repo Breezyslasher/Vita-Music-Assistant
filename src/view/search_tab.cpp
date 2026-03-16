@@ -6,7 +6,6 @@
 #include "view/media_detail_view.hpp"
 #include "view/media_item_cell.hpp"
 #include "app/application.hpp"
-#include "app/downloads_manager.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 

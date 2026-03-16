@@ -5,7 +5,6 @@
 #include "activity/login_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_types.hpp"
-#include "app/downloads_manager.hpp"
 #include "view/progress_dialog.hpp"
 #include "utils/async.hpp"
 
@@ -215,30 +214,7 @@ void LoginActivity::connectToSelectedServer(const ServerInfo& server) {
 }
 
 void LoginActivity::onOfflinePressed() {
-    // Initialize downloads manager to load saved downloads
-    DownloadsManager::getInstance().init();
-
-    auto downloads = DownloadsManager::getInstance().getDownloads();
-    bool hasDownloads = false;
-    for (const auto& d : downloads) {
-        if (d.state == DownloadState::COMPLETED) {
-            hasDownloads = true;
-            break;
-        }
-    }
-
-    if (!hasDownloads) {
-        if (statusLabel) statusLabel->setText("No downloaded content available for offline use");
-        return;
-    }
-
-    if (statusLabel) statusLabel->setText("Entering offline mode...");
-
-    // Set offline flag so main activity only shows relevant tabs
-    Application::getInstance().setOfflineMode(true);
-
-    // Push main activity in offline mode - downloads tab will show available content
-    Application::getInstance().pushMainActivity();
+    if (statusLabel) statusLabel->setText("Offline mode is not available");
 }
 
 void LoginActivity::onLoginPressed() {

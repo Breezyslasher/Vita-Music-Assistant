@@ -5,7 +5,6 @@
 #include "activity/player_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_types.hpp"
-#include "app/downloads_manager.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
 #include "utils/image_loader.hpp"
@@ -630,12 +629,7 @@ void PlayerActivity::willDisappear(bool resetState) {
         if (position > 0 || m_transcodeBaseOffsetMs > 0) {
             int timeMs = m_transcodeBaseOffsetMs + (int)(position * 1000);
 
-            if (m_isLocalFile) {
-                // Save progress for downloaded media
-                DownloadsManager::getInstance().updateProgress(m_mediaKey, timeMs);
-                DownloadsManager::getInstance().saveState();
-                brls::Logger::info("PlayerActivity: Saved local progress {}ms for {}", timeMs, m_mediaKey);
-            } else if (!m_mediaKey.empty()) {
+            if (!m_mediaKey.empty()) {
                 if (!m_isQueueMode) {
                     MAClient::instance().updatePlayProgress(m_mediaKey, timeMs);
                 }
@@ -711,15 +705,9 @@ void PlayerActivity::loadFromQueue() {
         }
         updateQueueDisplay();
 
-        // Load album art - prefer local file for downloaded tracks
+        // Load album art from server
         if (albumArt && !track->ratingKey.empty()) {
-            DownloadItem resumeDlItem;
-            if (DownloadsManager::getInstance().getDownloadCopy(track->ratingKey, resumeDlItem) &&
-                resumeDlItem.state == DownloadState::COMPLETED && !resumeDlItem.thumbPath.empty()) {
-                if (ImageLoader::loadFromFile(resumeDlItem.thumbPath, albumArt)) {
-                    albumArt->setVisibility(brls::Visibility::VISIBLE);
-                }
-            } else if (!track->thumb.empty()) {
+            if (!track->thumb.empty()) {
                 MAClient& client = MAClient::instance();
                 std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
                 ImageLoader::setPaused(false);
@@ -771,25 +759,9 @@ void PlayerActivity::loadFromQueue() {
     ImageLoader::setPaused(true);
     ImageLoader::cancelAll();
 
-    // Check if this track is downloaded locally - play from local file if available
-    DownloadsManager& downloads = DownloadsManager::getInstance();
-    DownloadItem dlItem;
-    bool useLocalFile = false;
-    if (downloads.getDownloadCopy(track->ratingKey, dlItem) && dlItem.state == DownloadState::COMPLETED) {
-        url = dlItem.localPath;
-        useLocalFile = true;
-        m_isLocalFile = true;  // Suppress timeline reports when offline
-        brls::Logger::info("PlayerActivity: Using downloaded file for track: {}", url);
-
-        // Load cover art from local file if available (preferred over server URL)
-        if (albumArt && !dlItem.thumbPath.empty()) {
-            if (ImageLoader::loadFromFile(dlItem.thumbPath, albumArt)) {
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
-        }
-    } else {
-        // Stream from server
-        m_isLocalFile = false;  // Reset in case previous track was local
+    // Stream from server
+    {
+        m_isLocalFile = false;
         MAClient& client = MAClient::instance();
         if (!client.getTranscodeUrl(track->ratingKey, url, 0)) {
             brls::Logger::error("Failed to get transcode URL for track: {}", track->ratingKey);
@@ -927,101 +899,7 @@ void PlayerActivity::loadMedia() {
         return;
     }
 
-    // Handle local file playback (downloaded media)
-    if (m_isLocalFile) {
-        DownloadsManager& downloads = DownloadsManager::getInstance();
-        DownloadItem dlItem;
-
-        if (!downloads.getDownloadCopy(m_mediaKey, dlItem) || dlItem.state != DownloadState::COMPLETED) {
-            brls::Logger::error("PlayerActivity: Downloaded media not found or incomplete");
-            m_loadingMedia = false;
-            return;
-        }
-
-        brls::Logger::info("PlayerActivity: Playing local file: {}", dlItem.localPath);
-
-        // Detect if this is a music track
-        bool isAudioTrack = (dlItem.mediaType == "track");
-
-        if (isAudioTrack) {
-            // Set up music UI labels
-            if (musicTitleLabel) musicTitleLabel->setText(dlItem.title);
-            if (musicArtistLabel) musicArtistLabel->setText(dlItem.parentTitle);
-            if (titleLabel) titleLabel->setText(dlItem.title);
-            if (artistLabel) {
-                artistLabel->setText(dlItem.parentTitle);
-                artistLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            // Load cover art from downloaded file if available
-            if (albumArt && !dlItem.thumbPath.empty()) {
-                // Load local cover art image directly
-                ImageLoader::loadFromFile(dlItem.thumbPath, albumArt);
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            // Show music UI, hide video view
-            if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
-            if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
-            if (videoView) videoView->setVisibility(brls::Visibility::GONE);
-            if (photoImage) photoImage->setVisibility(brls::Visibility::GONE);
-        } else {
-            if (titleLabel) {
-                std::string title = dlItem.title;
-                if (!dlItem.parentTitle.empty()) {
-                    title = dlItem.parentTitle + " - " + dlItem.title;
-                }
-                titleLabel->setText(title);
-            }
-        }
-
-        // Pause image loading and free cache to reclaim memory for MPV
-        ImageLoader::setPaused(true);
-        ImageLoader::cancelAll();
-        ImageLoader::clearCache();
-
-        MpvPlayer& player = MpvPlayer::getInstance();
-
-        // Set audio-only mode for music tracks (skip render context)
-        player.setAudioOnly(isAudioTrack);
-
-        // Resume from saved viewOffset if resumePlayback is enabled
-        // If near the end (>= 95% watched), start from beginning instead
-        if (Application::getInstance().getSettings().resumePlayback && dlItem.viewOffset > 0) {
-            bool nearEnd = (dlItem.duration > 0 && dlItem.viewOffset >= dlItem.duration * 0.95);
-            if (!nearEnd) {
-                m_pendingSeek = dlItem.viewOffset / 1000.0;
-            }
-        }
-
-        if (!player.isInitialized()) {
-            // Defer MPV init + load to after activity transition completes
-            m_pendingPlayUrl = dlItem.localPath;
-            m_pendingPlayTitle = dlItem.title;
-            m_pendingIsAudio = isAudioTrack;
-            m_loadingMedia = false;
-            return;
-        }
-
-        // Player already initialized - load immediately
-        if (!player.loadUrl(dlItem.localPath, dlItem.title)) {
-            brls::Logger::error("Failed to load local file: {}", dlItem.localPath);
-            m_loadingMedia = false;
-            return;
-        }
-
-        // Show video view only for non-audio content
-        if (!isAudioTrack && videoView) {
-            videoView->setVisibility(brls::Visibility::VISIBLE);
-            videoView->setVideoVisible(true);
-        }
-
-        m_isPlaying = true;
-        m_loadingMedia = false;
-        return;
-    }
-
-    // Remote playback from Plex server
+    // Remote playback from server
     MAClient& client = MAClient::instance();
     MediaItem item;
 
@@ -1358,12 +1236,6 @@ void PlayerActivity::updateProgress() {
             MusicQueue::getInstance().onTrackEnded();
         } else {
             MAClient::instance().markAsWatched(m_mediaKey);
-
-            // Delete downloaded file after watching if setting is enabled
-            if (m_isLocalFile && Application::getInstance().getSettings().deleteAfterWatch) {
-                DownloadsManager::getInstance().deleteDownload(m_mediaKey);
-                brls::Logger::info("PlayerActivity: Auto-deleted download after watch: {}", m_mediaKey);
-            }
 
             // Auto-play next episode if enabled and this is an episode
             if (Application::getInstance().getSettings().autoPlayNext
@@ -2491,9 +2363,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
     thumb->setScalingType(brls::ImageScalingType::FIT);
     thumb->setMarginRight(14);
 
-    // Defer thumbnail loading - URL and local path resolved lazily when row
-    // becomes visible, avoiding expensive DownloadsManager + PlexClient calls
-    // for every row during queue population
+    // Defer thumbnail loading - URL resolved lazily when row becomes visible
     m_deferredThumbs.push_back({thumb, track.thumb, track.ratingKey, false});
     row->addView(thumb);
 
@@ -3156,18 +3026,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
 
         dt.loaded = true;
 
-        // Try local file first (works offline)
-        if (!dt.ratingKey.empty()) {
-            DownloadItem dlItem;
-            if (DownloadsManager::getInstance().getDownloadCopy(dt.ratingKey, dlItem) &&
-                dlItem.state == DownloadState::COMPLETED && !dlItem.thumbPath.empty()) {
-                if (ImageLoader::loadFromFile(dlItem.thumbPath, dt.image)) {
-                    continue;
-                }
-            }
-        }
-
-        // Fall back to server URL
+        // Load from server
         if (!dt.thumbPath.empty()) {
             std::string thumbUrl = client.getThumbnailUrl(dt.thumbPath, 100, 100);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* image) {

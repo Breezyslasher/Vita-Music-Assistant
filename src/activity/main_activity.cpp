@@ -56,8 +56,8 @@ void MainActivity::onContentAvailable() {
             sidebarWidth = std::max(sidebarWidth, calculateTextWidth(tab));
         }
 
-        // If showing libraries in sidebar, check library names too (skip in offline mode)
-        if (settings.showLibrariesInSidebar && !Application::getInstance().isOfflineMode()) {
+        // If showing libraries in sidebar, check library names too
+        if (settings.showLibrariesInSidebar) {
             MAClient& client = MAClient::instance();
             std::vector<LibrarySection> sections;
             if (client.fetchLibrarySections(sections)) {
@@ -81,11 +81,7 @@ void MainActivity::onContentAvailable() {
             }
         }
 
-        bool isOffline = Application::getInstance().isOfflineMode();
-
-        // In offline mode, skip all server-dependent tabs (Home, Search, Library, etc.)
-        // Only Downloads and Settings will be shown
-        if (!isOffline) {
+        {
             // If showing libraries in sidebar, only show actual library sections
             // Don't show premade tabs like "Library", "Music", "TV"
             if (settings.showLibrariesInSidebar) {

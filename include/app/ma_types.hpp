@@ -1,73 +1,18 @@
 /**
  * Vita Music Assistant - Music Assistant API Client
- * Handles all communication with Music Assistant servers via WebSocket and HTTP
- *
- * Data types and structures for Music Assistant integration.
+ * Additional data types for queue management and player info.
+ * Base types (MediaType, MusicItem, Hub) are defined in app.h.
  */
 
 #pragma once
 
+#include "app.h"
 #include <string>
 #include <vector>
 #include <functional>
 #include <memory>
 
 namespace vita_ma {
-
-// Media types (music only)
-enum class MediaType {
-    UNKNOWN,
-    ARTIST,
-    ALBUM,
-    TRACK,
-    PLAYLIST,
-    RADIO
-};
-
-// Music item info (maps to Music Assistant media items)
-struct MusicItem {
-    std::string itemId;        // MA item ID
-    std::string uri;           // library://track/123
-    std::string name;
-    std::string sortName;
-    std::string summary;
-    std::string imageUrl;
-    MediaType mediaType = MediaType::UNKNOWN;
-
-    // Track info
-    std::string artistName;
-    std::string albumName;
-    std::string artistId;
-    std::string albumId;
-    int trackNumber = 0;
-    int discNumber = 0;
-    int duration = 0;          // seconds
-
-    // Album info
-    int year = 0;
-    std::string version;
-    int trackCount = 0;
-
-    // Artist info
-    std::string biography;
-
-    // Playlist info
-    int itemCount = 0;
-    bool isEditable = false;
-
-    // Favorite
-    bool favorite = false;
-
-    // Provider
-    std::string provider;
-};
-
-// Hub (for home screen)
-struct Hub {
-    std::string title;
-    std::string type;
-    std::vector<MusicItem> items;
-};
 
 // Queue item
 struct QueueItem {

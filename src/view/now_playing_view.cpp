@@ -1,5 +1,6 @@
 #include "view/now_playing_view.hpp"
 #include "app/ma_client.hpp"
+#include "app/ma_types.hpp"
 #include "utils/image_loader.hpp"
 #include <borealis.hpp>
 #include <cstdio>

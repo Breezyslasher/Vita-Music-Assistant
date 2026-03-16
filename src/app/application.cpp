@@ -4,7 +4,6 @@
 
 #include "app/application.hpp"
 #include "app/ma_types.hpp"
-#include "app/downloads_manager.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -62,9 +61,6 @@ void Application::run() {
         // Use connectToServer to properly initialize (including Live TV check)
         if (MAClient::instance().connectToServer(m_serverUrl)) {
             brls::Logger::info("Restored session and connected to server");
-            // Bidirectional sync: push local offline progress, pull server progress
-            DownloadsManager::getInstance().init();
-            DownloadsManager::getInstance().syncProgressBidirectional();
             pushMainActivity();
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
