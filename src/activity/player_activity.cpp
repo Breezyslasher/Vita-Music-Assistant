@@ -884,40 +884,6 @@ void PlayerActivity::updateProgress() {
         }
     }
 
-    // Report timeline to Plex server periodically and on state changes
-    // This sends duration so Plex shows the full track/video length
-    if (!m_mediaKey.empty() && !m_isLocalFile && !m_isDirectFile) {
-        std::string currentState = player.isPlaying() ? "playing" :
-                                   player.isPaused()  ? "paused"  : "stopped";
-
-        bool stateChanged = (currentState != m_lastTimelineState);
-        m_timelineCounter++;
-
-        if (stateChanged || m_timelineCounter >= 10) {
-            m_timelineCounter = 0;
-            m_lastTimelineState = currentState;
-
-            int timeMs = m_transcodeBaseOffsetMs + (int)(position * 1000);
-            int durationMs = (int)(duration * 1000);
-
-            std::string ratingKey = m_mediaKey;
-            int pqItemID = 0;
-            // In queue mode, use the current track's ratingKey and playQueueItemID
-            if (m_isQueueMode) {
-                MusicQueue& queue = MusicQueue::getInstance();
-                const QueueItem* track = queue.getCurrentTrack();
-                if (track) {
-                    ratingKey = track->ratingKey;
-                    pqItemID = track->playQueueItemID;
-                }
-            }
-
-            std::string key = "/library/metadata/" + ratingKey;
-            MAClient::instance().reportTimeline(
-                ratingKey, key, currentState, timeMs, durationMs, pqItemID);
-        }
-    }
-
     // Detect playback end: check hasEnded() regardless of m_isPlaying
     // to avoid missing the event if m_isPlaying was synced to false
     // in a previous frame before the ENDED state was set.
