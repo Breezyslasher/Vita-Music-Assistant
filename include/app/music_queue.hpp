@@ -22,7 +22,8 @@ enum class RepeatMode {
 
 // Queue item with essential track info
 struct QueueItem {
-    std::string ratingKey;
+    std::string ratingKey;    // MA item_id
+    std::string uri;          // MA URI (e.g. "library://track/123")
     std::string title;
     std::string artist;       // grandparentTitle for tracks
     std::string album;        // parentTitle for tracks

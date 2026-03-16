@@ -5,6 +5,7 @@
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
+#include "app/sendspin_client.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -60,6 +61,7 @@ void Application::run() {
         // Connect to Music Assistant server
         if (MAClient::instance().connect(m_serverUrl, m_authToken)) {
             brls::Logger::info("Connected to server");
+            connectSendspin();
             pushMainActivity();
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
@@ -78,9 +80,48 @@ void Application::run() {
 }
 
 void Application::shutdown() {
+    SendspinClient::instance().disconnect();
     saveSettings();
     m_initialized = false;
     brls::Logger::info("Vita Music Assistant shutting down");
+}
+
+void Application::connectSendspin() {
+    if (m_serverUrl.empty()) return;
+
+    // Extract host from server URL (e.g., "http://192.168.1.28:8095" -> "192.168.1.28")
+    std::string host;
+    std::string url = m_serverUrl;
+
+    // Strip protocol
+    size_t protoEnd = url.find("://");
+    if (protoEnd != std::string::npos) {
+        url = url.substr(protoEnd + 3);
+    }
+    // Strip path
+    size_t pathStart = url.find('/');
+    if (pathStart != std::string::npos) {
+        url = url.substr(0, pathStart);
+    }
+    // Strip port
+    size_t portStart = url.find(':');
+    if (portStart != std::string::npos) {
+        host = url.substr(0, portStart);
+    } else {
+        host = url;
+    }
+
+    if (host.empty()) {
+        brls::Logger::error("Sendspin: cannot extract host from server URL");
+        return;
+    }
+
+    // Generate a stable client ID based on something unique to this Vita
+    std::string clientId = "vita_ma_player";
+    std::string clientName = "PS Vita";
+
+    brls::Logger::info("Sendspin: connecting to {} port 8927", host);
+    SendspinClient::instance().connect(host, 8927, clientId, clientName);
 }
 
 void Application::pushLoginActivity() {

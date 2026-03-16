@@ -51,6 +51,9 @@ public:
     AppSettings& getSettings() { return m_settings; }
     const AppSettings& getSettings() const { return m_settings; }
 
+    // Connect to Sendspin after MA API connection is established
+    void connectSendspin();
+
     // Apply theme
     void applyTheme();
 

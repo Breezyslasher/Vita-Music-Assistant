@@ -248,6 +248,9 @@ void LoginActivity::loginWithMA(const std::string& serverUrl,
                 progressDialog->setStatus("Connected!");
                 progressDialog->setProgress(1.0f);
 
+                // Connect Sendspin for audio streaming
+                Application::getInstance().connectSendspin();
+
                 brls::delay(500, [this, progressDialog]() {
                     progressDialog->dismiss();
                     Application::getInstance().pushMainActivity();
@@ -350,6 +353,9 @@ void LoginActivity::loginWithHA(const std::string& serverUrl,
             if (MAClient::instance().isConnected()) {
                 progressDialog->setStatus("Connected!");
                 progressDialog->setProgress(1.0f);
+
+                // Connect Sendspin for audio streaming
+                Application::getInstance().connectSendspin();
 
                 brls::delay(500, [this, progressDialog]() {
                     progressDialog->dismiss();

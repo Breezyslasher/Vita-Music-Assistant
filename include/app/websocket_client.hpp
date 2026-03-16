@@ -29,6 +29,7 @@ enum class WsState {
 
 // Callback types
 using WsMessageCallback = std::function<void(const std::string& message)>;
+using WsBinaryCallback = std::function<void(const uint8_t* data, size_t size)>;
 using WsErrorCallback = std::function<void(const std::string& error)>;
 using WsCloseCallback = std::function<void(int code, const std::string& reason)>;
 
@@ -39,7 +40,8 @@ public:
 
     // Connect to a WebSocket server
     // url format: ws://host:port/path or wss://host:port/path
-    bool connect(const std::string& url);
+    // subprotocol: optional WebSocket subprotocol (e.g. "json")
+    bool connect(const std::string& url, const std::string& subprotocol = "");
     void disconnect();
 
     // Send a text message
@@ -51,12 +53,13 @@ public:
 
     // Callbacks
     void setOnMessage(WsMessageCallback cb) { m_onMessage = std::move(cb); }
+    void setOnBinary(WsBinaryCallback cb) { m_onBinary = std::move(cb); }
     void setOnError(WsErrorCallback cb) { m_onError = std::move(cb); }
     void setOnClose(WsCloseCallback cb) { m_onClose = std::move(cb); }
 
 private:
     void receiveLoop();
-    bool performHandshake(const std::string& host, const std::string& path, int port);
+    bool performHandshake(const std::string& host, const std::string& path, int port, const std::string& subprotocol);
     bool sendFrame(WsOpcode opcode, const uint8_t* data, size_t len);
     bool readFrame(std::string& payload, WsOpcode& opcode);
     std::string generateKey();
@@ -69,6 +72,7 @@ private:
     void* m_entropy = nullptr;   // mbedtls_entropy_context*
     void* m_netCtx = nullptr;    // mbedtls_net_context*
     bool m_useSsl = false;
+    std::string m_subprotocol;
 
     // Thread
     std::thread m_receiveThread;
@@ -77,6 +81,7 @@ private:
 
     // Callbacks
     WsMessageCallback m_onMessage;
+    WsBinaryCallback m_onBinary;
     WsErrorCallback m_onError;
     WsCloseCallback m_onClose;
 
