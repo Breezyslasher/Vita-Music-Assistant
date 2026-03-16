@@ -768,11 +768,8 @@ void MAClient::playerPower(const std::string& playerId, bool powered,
     sendCommand("players/cmd/power", args, std::move(cb));
 }
 
-void MAClient::getStreamUrl(const std::string& queueId, MAResponseCallback cb) {
-    Json args;
-    args["queue_id"] = Json(queueId);
-    sendCommand("player_queues/get_stream_url", args, std::move(cb));
-}
+// getStreamUrl removed - the command player_queues/get_stream_url does not
+// exist in the MA API. Audio streaming is now handled via the Sendspin protocol.
 
 void MAClient::getPlayers(MAResponseCallback cb) {
     sendCommand("players/all", Json(), std::move(cb));

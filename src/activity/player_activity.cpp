@@ -570,34 +570,43 @@ void PlayerActivity::loadFromQueue() {
         albumArt->setVisibility(brls::Visibility::VISIBLE);
     }
 
-    // Get stream URL from Music Assistant (async)
-    std::string ratingKey = track->ratingKey;
+    // Use player_queues/play_media to play the track via Sendspin.
+    // The Sendspin client handles receiving audio from MA server and
+    // feeding it to MPV via an audio pipe.
+    std::string playerId = App::instance().getPlayerId();
+    std::string trackUri = track->uri;
     std::string trackTitle = track->title;
     auto alive = m_alive;
 
-    client.getStreamUrl(ratingKey, [this, trackTitle, alive](bool success, const Json& result) {
+    if (playerId.empty()) {
+        brls::Logger::error("No player registered - Sendspin not connected");
+        m_loadingMedia = false;
+        return;
+    }
+
+    if (trackUri.empty()) {
+        // Fallback: construct URI from item_id
+        trackUri = "library://track/" + track->ratingKey;
+    }
+
+    brls::Logger::info("Playing '{}' via player_queues/play_media (player={})",
+                       trackTitle, playerId);
+
+    client.playMedia(playerId, trackUri, "play",
+        [this, trackTitle, alive](bool success, const Json& result) {
         if (!alive->load()) return;
 
-        std::string url;
-        if (success && result.type() == Json::STRING) {
-            url = result.str();
-        } else if (success && result.has("url")) {
-            url = result["url"].str();
-        }
-
-        if (url.empty()) {
-            brls::Logger::error("Failed to get stream URL for track: {}", trackTitle);
+        if (!success) {
+            brls::Logger::error("Failed to play track '{}': {}",
+                trackTitle, result.has("details") ? result["details"].str() : "unknown error");
             brls::sync([this]() { m_loadingMedia = false; });
             return;
         }
 
-        brls::sync([this, url, trackTitle, alive]() {
-            if (!alive->load() || m_destroying) {
-                m_loadingMedia = false;
-                return;
-            }
-            loadFromQueueWithUrl(url, trackTitle);
-        });
+        brls::Logger::info("Track '{}' queued for playback via Sendspin", trackTitle);
+        // Audio will arrive via Sendspin binary frames and be played by MPV
+        // through the audio pipe. No need to call loadFromQueueWithUrl.
+        brls::sync([this]() { m_loadingMedia = false; });
     });
 }
 

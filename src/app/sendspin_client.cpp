@@ -4,6 +4,7 @@
 #include "app.h"
 #include <borealis.hpp>
 #include <cstring>
+#include <sstream>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
@@ -17,146 +18,252 @@
 
 namespace vita_ma {
 
-// ============================================================================
-// SendspinClient
-// ============================================================================
-
 SendspinClient& SendspinClient::instance() {
     static SendspinClient instance;
     return instance;
 }
 
-bool SendspinClient::startStream(const std::string& sendspinUrl) {
-    stopStream();
+bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
+                              const std::string& clientId, const std::string& clientName) {
+    disconnect();
+
+    m_clientId = clientId;
+    m_clientName = clientName;
 
     setState(SendspinState::CONNECTING);
-    brls::Logger::info("Sendspin: connecting to {}", sendspinUrl);
-
-    // Initialize audio pipe for MPV
-    if (!initAudioPipe()) {
-        brls::Logger::error("Sendspin: failed to create audio pipe");
-        setState(SendspinState::ERROR);
-        return false;
-    }
+    brls::Logger::info("Sendspin: connecting to {}:{}", serverIp, sendspinPort);
 
     // Set up WebSocket callbacks
     m_ws.setOnMessage([this](const std::string& msg) {
-        onMessage(msg);
+        onTextMessage(msg);
+    });
+    m_ws.setOnBinary([this](const uint8_t* data, size_t size) {
+        onBinaryData(data, size);
     });
     m_ws.setOnClose([this](int code, const std::string& reason) {
         onClose(code, reason);
     });
 
-    // Connect to the Sendspin endpoint
-    if (!m_ws.connect(sendspinUrl)) {
-        brls::Logger::error("Sendspin: connection failed");
-        cleanupAudioPipe();
+    // Connect to the MA server's Sendspin WebSocket port
+    std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort);
+    if (!m_ws.connect(url)) {
+        brls::Logger::error("Sendspin: connection failed to {}", url);
         setState(SendspinState::ERROR);
         return false;
     }
 
-    setState(SendspinState::BUFFERING);
-
-    // Tell MPV to play from our pipe
-    auto& mpv = MpvPlayer::getInstance();
-    if (!mpv.isInitialized()) {
-        mpv.init();
-    }
-    mpv.loadUrl(getLocalStreamUrl());
+    // Send the client/hello handshake
+    setState(SendspinState::HANDSHAKING);
+    sendClientHello();
 
     return true;
 }
 
-void SendspinClient::stopStream() {
+void SendspinClient::disconnect() {
     if (m_state.load() == SendspinState::DISCONNECTED) return;
 
-    brls::Logger::info("Sendspin: stopping stream");
+    brls::Logger::info("Sendspin: disconnecting");
     m_ws.disconnect();
-    MpvPlayer::getInstance().stop();
     cleanupAudioPipe();
     setState(SendspinState::DISCONNECTED);
 }
 
-void SendspinClient::pauseStream() {
-    if (m_state.load() == SendspinState::STREAMING) {
-        MpvPlayer::getInstance().pause();
-        setState(SendspinState::PAUSED);
+void SendspinClient::stopStream() {
+    cleanupAudioPipe();
+    if (m_state.load() == SendspinState::STREAMING ||
+        m_state.load() == SendspinState::BUFFERING) {
+        setState(SendspinState::CONNECTED);
     }
 }
 
-void SendspinClient::resumeStream() {
-    if (m_state.load() == SendspinState::PAUSED) {
-        MpvPlayer::getInstance().play();
-        setState(SendspinState::STREAMING);
-    }
+void SendspinClient::sendClientHello() {
+    // Build client/hello message per Sendspin protocol spec
+    // We declare ourselves as a player that supports FLAC and PCM
+    Json msg;
+    msg["type"] = Json("client/hello");
+
+    Json payload;
+    payload["client_id"] = Json(m_clientId);
+    payload["name"] = Json(m_clientName);
+    payload["version"] = Json(1);
+
+    // Supported roles - we are a player
+    Json roles(Json::ARRAY);
+    roles.push_back(Json("player@v1"));
+    payload["supported_roles"] = roles;
+
+    // Player support - declare supported audio formats
+    Json playerSupport;
+
+    Json formats(Json::ARRAY);
+
+    // FLAC - lossless, preferred for local network
+    Json flacFmt;
+    flacFmt["codec"] = Json("flac");
+    flacFmt["channels"] = Json(2);
+    flacFmt["sample_rate"] = Json(44100);
+    flacFmt["bit_depth"] = Json(16);
+    formats.push_back(flacFmt);
+
+    // PCM fallback
+    Json pcmFmt;
+    pcmFmt["codec"] = Json("pcm");
+    pcmFmt["channels"] = Json(2);
+    pcmFmt["sample_rate"] = Json(44100);
+    pcmFmt["bit_depth"] = Json(16);
+    formats.push_back(pcmFmt);
+
+    playerSupport["supported_formats"] = formats;
+    playerSupport["buffer_capacity"] = Json(4 * 1024 * 1024); // 4MB buffer
+    Json cmds(Json::ARRAY);
+    cmds.push_back(Json("volume"));
+    cmds.push_back(Json("mute"));
+    playerSupport["supported_commands"] = cmds;
+
+    payload["player_support"] = playerSupport;
+    msg["payload"] = payload;
+
+    brls::Logger::info("Sendspin: sending client/hello as '{}'", m_clientName);
+    m_ws.send(msg.dump());
 }
 
-std::string SendspinClient::getLocalStreamUrl() const {
-    if (!m_pipePath.empty()) {
-        return m_pipePath;
+void SendspinClient::onTextMessage(const std::string& message) {
+    if (message.empty() || message[0] != '{') return;
+
+    Json msg = Json::parse(message);
+    if (!msg.has("type")) return;
+
+    std::string type = msg["type"].str();
+
+    if (type == "server/hello") {
+        // Handshake complete - we are now registered as a player
+        Json payload = msg.has("payload") ? msg["payload"] : msg;
+        std::string serverName = payload.has("name") ? payload["name"].str() : "unknown";
+        brls::Logger::info("Sendspin: registered with server '{}'", serverName);
+
+        // Send initial player state
+        Json stateMsg;
+        stateMsg["type"] = Json("client/state");
+        Json statePayload;
+        Json playerState;
+        playerState["state"] = Json("synchronized");
+        playerState["volume"] = Json(100);
+        playerState["muted"] = Json(false);
+        statePayload["player"] = playerState;
+        stateMsg["payload"] = statePayload;
+        m_ws.send(stateMsg.dump());
+
+        setState(SendspinState::CONNECTED);
+
+        // Store the player ID for use with play_media
+        brls::sync([this]() {
+            App::instance().setPlayerId(m_clientId);
+        });
     }
-    // Fallback: use stdin pipe protocol
-    return "fd://0";
-}
+    else if (type == "stream/start") {
+        // Server is starting to stream audio to us
+        Json payload = msg.has("payload") ? msg["payload"] : msg;
+        Json player = payload.has("player") ? payload["player"] : payload;
 
-void SendspinClient::onMessage(const std::string& message) {
-    // Sendspin protocol messages are JSON for control, binary for audio
-    // Check if this is a control message
-    if (message.empty()) return;
+        if (player.has("codec")) m_format.codec = player["codec"].str();
+        if (player.has("sample_rate")) m_format.sample_rate = player["sample_rate"].intVal();
+        if (player.has("channels")) m_format.channels = player["channels"].intVal();
+        if (player.has("bit_depth")) m_format.bit_depth = player["bit_depth"].intVal();
 
-    if (message[0] == '{') {
-        // JSON control message
-        auto json = Json::parse(message);
+        brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit",
+            m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth);
 
-        if (json.has("type")) {
-            std::string type = json["type"].str();
+        // Initialize audio pipe for MPV
+        if (!initAudioPipe()) {
+            brls::Logger::error("Sendspin: failed to create audio pipe");
+            setState(SendspinState::ERROR);
+            return;
+        }
 
-            if (type == "audio_format") {
-                // Server tells us the audio format
-                if (json.has("codec")) m_format.codec = json["codec"].str();
-                if (json.has("sample_rate")) m_format.sample_rate = json["sample_rate"].intVal();
-                if (json.has("channels")) m_format.channels = json["channels"].intVal();
-                if (json.has("bits_per_sample")) m_format.bits_per_sample = json["bits_per_sample"].intVal();
-                if (json.has("bitrate")) m_format.bitrate = json["bitrate"].intVal();
+        setState(SendspinState::BUFFERING);
 
-                brls::Logger::info("Sendspin: audio format: {} {}Hz {}ch {}bit",
-                    m_format.codec, m_format.sample_rate, m_format.channels, m_format.bits_per_sample);
+        // Start MPV playback from the pipe
+        brls::sync([this]() {
+            auto& mpv = MpvPlayer::getInstance();
+            if (!mpv.isInitialized()) {
+                mpv.init();
             }
-            else if (type == "stream_start") {
-                setState(SendspinState::STREAMING);
-                brls::Logger::info("Sendspin: stream started");
-            }
-            else if (type == "stream_end") {
-                brls::Logger::info("Sendspin: stream ended");
-                // Don't disconnect - server may send next track
-            }
-            else if (type == "metadata") {
-                // Track metadata update
-                if (m_metadataCallback) {
-                    std::string key = json.has("key") ? json["key"].str() : "";
-                    std::string value = json.has("value") ? json["value"].str() : "";
-                    brls::sync([this, key, value]() {
-                        m_metadataCallback(key, value);
-                    });
-                }
-            }
-            else if (type == "error") {
-                std::string error = json.has("message") ? json["message"].str() : "Unknown error";
-                brls::Logger::error("Sendspin: error: {}", error);
-                setState(SendspinState::ERROR);
+            mpv.setAudioOnly(true);
+            mpv.loadUrl(getLocalStreamUrl());
+        });
+    }
+    else if (type == "stream/end") {
+        brls::Logger::info("Sendspin: stream/end");
+        // Stream ended - server may send another stream/start for next track
+        cleanupAudioPipe();
+        if (m_state.load() == SendspinState::STREAMING ||
+            m_state.load() == SendspinState::BUFFERING) {
+            setState(SendspinState::CONNECTED);
+        }
+    }
+    else if (type == "stream/clear") {
+        brls::Logger::info("Sendspin: stream/clear - clearing buffers");
+        cleanupAudioPipe();
+    }
+    else if (type == "server/time") {
+        // Time sync response - send back our time
+        Json timeMsg;
+        timeMsg["type"] = Json("client/time");
+        Json timePayload;
+        // Use microsecond timestamp
+        auto now = std::chrono::steady_clock::now();
+        auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+            now.time_since_epoch()).count();
+        timePayload["client_transmitted"] = Json(static_cast<int>(us & 0x7FFFFFFF));
+        timeMsg["payload"] = timePayload;
+        m_ws.send(timeMsg.dump());
+    }
+    else if (type == "server/command") {
+        // Server command (e.g., volume change)
+        Json payload = msg.has("payload") ? msg["payload"] : msg;
+        if (payload.has("player")) {
+            Json playerCmd = payload["player"];
+            if (playerCmd.has("volume")) {
+                int vol = playerCmd["volume"].intVal();
+                brls::Logger::info("Sendspin: volume command: {}", vol);
             }
         }
-    } else {
-        // Binary audio data (received as text frame - shouldn't happen normally)
-        // Real binary data comes through a different path
-        feedAudioData(reinterpret_cast<const uint8_t*>(message.data()), message.size());
     }
+    else if (type == "group/update") {
+        // Group update - ignore for now, Vita is a single player
+    }
+    else {
+        brls::Logger::debug("Sendspin: unhandled message type: {}", type);
+    }
+}
+
+void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
+    if (size < SENDSPIN_HEADER_SIZE) return;
+
+    // Parse binary header: 1 byte type + 8 bytes timestamp (big-endian)
+    uint8_t msgType = data[0];
+
+    if (msgType == static_cast<uint8_t>(SendspinBinaryType::AUDIO_CHUNK)) {
+        // Audio data - skip the 9-byte header
+        const uint8_t* audioData = data + SENDSPIN_HEADER_SIZE;
+        size_t audioSize = size - SENDSPIN_HEADER_SIZE;
+
+        if (audioSize > 0) {
+            feedAudioData(audioData, audioSize);
+
+            // Transition from buffering to streaming on first audio data
+            if (m_state.load() == SendspinState::BUFFERING) {
+                setState(SendspinState::STREAMING);
+            }
+        }
+    }
+    // Ignore artwork and visualization data for now
 }
 
 void SendspinClient::onClose(int code, const std::string& reason) {
     brls::Logger::info("Sendspin: connection closed ({}: {})", code, reason);
-    setState(SendspinState::DISCONNECTED);
     cleanupAudioPipe();
+    setState(SendspinState::DISCONNECTED);
 }
 
 void SendspinClient::setState(SendspinState state) {
@@ -168,28 +275,35 @@ void SendspinClient::setState(SendspinState state) {
     }
 }
 
+std::string SendspinClient::getLocalStreamUrl() const {
+    if (!m_pipePath.empty()) {
+        return m_pipePath;
+    }
+    return "fd://0";
+}
+
 bool SendspinClient::initAudioPipe() {
+    std::lock_guard<std::mutex> lock(m_pipeMutex);
+    if (m_pipeFd >= 0) return true; // Already open
+
 #ifdef __vita__
     m_pipePath = "ux0:data/VitaMA/audio_pipe";
-    // On Vita, we use a regular file as a circular buffer
     m_pipeFd = sceIoOpen(m_pipePath.c_str(),
         SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     return m_pipeFd >= 0;
 #else
     m_pipePath = "/tmp/vita_ma_audio_pipe";
-    // Remove existing pipe
     unlink(m_pipePath.c_str());
-    // Create FIFO
     if (mkfifo(m_pipePath.c_str(), 0666) != 0) {
         return false;
     }
-    // Open non-blocking for writing
     m_pipeFd = open(m_pipePath.c_str(), O_WRONLY | O_NONBLOCK);
     return m_pipeFd >= 0;
 #endif
 }
 
 void SendspinClient::cleanupAudioPipe() {
+    std::lock_guard<std::mutex> lock(m_pipeMutex);
     if (m_pipeFd >= 0) {
 #ifdef __vita__
         sceIoClose(m_pipeFd);
@@ -199,112 +313,17 @@ void SendspinClient::cleanupAudioPipe() {
 #endif
         m_pipeFd = -1;
     }
-
-    std::lock_guard<std::mutex> lock(m_bufferMutex);
-    m_audioBuffer.clear();
 }
 
 void SendspinClient::feedAudioData(const uint8_t* data, size_t size) {
+    std::lock_guard<std::mutex> lock(m_pipeMutex);
     if (m_pipeFd < 0 || size == 0) return;
 
-    // Write to pipe for MPV consumption
 #ifdef __vita__
     sceIoWrite(m_pipeFd, data, size);
 #else
     write(m_pipeFd, data, size);
 #endif
-
-    // Also buffer for seeking/recovery
-    {
-        std::lock_guard<std::mutex> lock(m_bufferMutex);
-        if (m_audioBuffer.size() + size > MAX_BUFFER_SIZE) {
-            // Evict oldest data
-            size_t evict = m_audioBuffer.size() + size - MAX_BUFFER_SIZE;
-            m_audioBuffer.erase(m_audioBuffer.begin(), m_audioBuffer.begin() + evict);
-        }
-        m_audioBuffer.insert(m_audioBuffer.end(), data, data + size);
-    }
-
-    // Notify audio callback if set
-    if (m_audioCallback) {
-        m_audioCallback(data, size);
-    }
-}
-
-// ============================================================================
-// RemotePlaybackController
-// ============================================================================
-
-RemotePlaybackController& RemotePlaybackController::instance() {
-    static RemotePlaybackController instance;
-    return instance;
-}
-
-void RemotePlaybackController::registerAsPlayer(const std::string& playerId,
-                                                  const std::string& playerName) {
-    brls::Logger::info("RemotePlayback: registering as player '{}' ({})", playerName, playerId);
-
-    // The MA server will see this Vita as a player that can receive streams
-    // This is done through the MA client connection
-    // The server sends play commands to this player, which triggers Sendspin streaming
-
-    auto& app = App::instance();
-    app.setPlayerId(playerId);
-}
-
-void RemotePlaybackController::playQueueLocally(const std::string& queueId) {
-    brls::Logger::info("RemotePlayback: starting local playback for queue {}", queueId);
-    m_currentQueueId = queueId;
-    m_localPlayback.store(true);
-
-    // Request stream URL from MA server
-    MAClient::instance().getStreamUrl(queueId, [this](bool success, const Json& result) {
-        if (!success) {
-            brls::Logger::error("RemotePlayback: failed to get stream URL");
-            m_localPlayback.store(false);
-            return;
-        }
-
-        std::string streamUrl;
-        if (result.type() == Json::STRING) {
-            streamUrl = result.str();
-        } else if (result.has("url")) {
-            streamUrl = result["url"].str();
-        }
-
-        if (streamUrl.empty()) {
-            brls::Logger::error("RemotePlayback: empty stream URL");
-            m_localPlayback.store(false);
-            return;
-        }
-
-        // If it's a direct HTTP stream URL, play directly with MPV
-        if (streamUrl.find("http://") == 0 || streamUrl.find("https://") == 0) {
-            brls::Logger::info("RemotePlayback: playing direct stream: {}", streamUrl);
-            auto& mpv = MpvPlayer::getInstance();
-            if (!mpv.isInitialized()) mpv.init();
-            mpv.loadUrl(streamUrl);
-        }
-        // If it's a WebSocket Sendspin URL, use the Sendspin client
-        else if (streamUrl.find("ws://") == 0 || streamUrl.find("wss://") == 0) {
-            brls::Logger::info("RemotePlayback: starting Sendspin stream: {}", streamUrl);
-            SendspinClient::instance().startStream(streamUrl);
-        }
-        else {
-            brls::Logger::error("RemotePlayback: unknown stream URL format: {}", streamUrl);
-            m_localPlayback.store(false);
-        }
-    });
-}
-
-void RemotePlaybackController::stopLocalPlayback() {
-    if (!m_localPlayback.load()) return;
-
-    brls::Logger::info("RemotePlayback: stopping local playback");
-    SendspinClient::instance().stopStream();
-    MpvPlayer::getInstance().stop();
-    m_localPlayback.store(false);
-    m_currentQueueId.clear();
 }
 
 } // namespace vita_ma

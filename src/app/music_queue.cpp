@@ -39,6 +39,7 @@ void MusicQueue::clear() {
 QueueItem MusicQueue::mediaItemToQueueItem(const MusicItem& item, int index) {
     QueueItem qi;
     qi.ratingKey = item.itemId;
+    qi.uri = item.uri;
     qi.title = item.name;
     qi.artist = item.artistName;
     qi.album = item.albumName;

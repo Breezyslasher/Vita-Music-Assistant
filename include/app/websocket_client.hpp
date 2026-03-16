@@ -29,6 +29,7 @@ enum class WsState {
 
 // Callback types
 using WsMessageCallback = std::function<void(const std::string& message)>;
+using WsBinaryCallback = std::function<void(const uint8_t* data, size_t size)>;
 using WsErrorCallback = std::function<void(const std::string& error)>;
 using WsCloseCallback = std::function<void(int code, const std::string& reason)>;
 
@@ -51,6 +52,7 @@ public:
 
     // Callbacks
     void setOnMessage(WsMessageCallback cb) { m_onMessage = std::move(cb); }
+    void setOnBinary(WsBinaryCallback cb) { m_onBinary = std::move(cb); }
     void setOnError(WsErrorCallback cb) { m_onError = std::move(cb); }
     void setOnClose(WsCloseCallback cb) { m_onClose = std::move(cb); }
 
@@ -77,6 +79,7 @@ private:
 
     // Callbacks
     WsMessageCallback m_onMessage;
+    WsBinaryCallback m_onBinary;
     WsErrorCallback m_onError;
     WsCloseCallback m_onClose;
 

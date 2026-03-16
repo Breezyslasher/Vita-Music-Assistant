@@ -181,7 +181,7 @@ public:
                      MAResponseCallback cb = nullptr);
 
     // Get stream URL for local playback
-    void getStreamUrl(const std::string& queueId, MAResponseCallback cb);
+    // getStreamUrl removed - use player_queues/play_media + Sendspin instead
 
     // Get all players
     void getPlayers(MAResponseCallback cb);

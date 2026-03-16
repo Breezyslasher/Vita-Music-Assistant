@@ -439,6 +439,15 @@ void WebSocketClient::receiveLoop() {
                 }
                 break;
 
+            case WsOpcode::BINARY:
+                if (m_onBinary) {
+                    // Binary data must be dispatched immediately to avoid audio
+                    // latency - do NOT use brls::sync for binary audio frames.
+                    std::vector<uint8_t> binData(payload.begin(), payload.end());
+                    m_onBinary(binData.data(), binData.size());
+                }
+                break;
+
             case WsOpcode::PING:
                 sendFrame(WsOpcode::PONG,
                          reinterpret_cast<const uint8_t*>(payload.c_str()),
