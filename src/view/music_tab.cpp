@@ -341,8 +341,18 @@ void MusicTab::onPlaylistSelected(const MusicItem& playlist) {
                 mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
                 mi.name       = obj.has("name")          ? obj["name"].str()        : "";
                 mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
-                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
-                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                // Extract image URL: try image object, then metadata.images array
+                if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+                    mi.imageUrl = obj["image"]["path"].str();
+                } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+                    mi.imageUrl = obj["image"].str();
+                } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
+                    const Json& meta = obj["metadata"];
+                    if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                        const Json& img = meta["images"][static_cast<size_t>(0)];
+                        if (img.has("path")) mi.imageUrl = img["path"].str();
+                    }
+                }
                 mi.mediaType  = MediaType::TRACK;
                 mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
                 mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
@@ -397,8 +407,18 @@ void MusicTab::playPlaylistWithQueue(const std::string& playlistId, int startInd
                 mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
                 mi.name       = obj.has("name")          ? obj["name"].str()        : "";
                 mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
-                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
-                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                // Extract image URL: try image object, then metadata.images array
+                if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+                    mi.imageUrl = obj["image"]["path"].str();
+                } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+                    mi.imageUrl = obj["image"].str();
+                } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
+                    const Json& meta = obj["metadata"];
+                    if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                        const Json& img = meta["images"][static_cast<size_t>(0)];
+                        if (img.has("path")) mi.imageUrl = img["path"].str();
+                    }
+                }
                 mi.mediaType  = MediaType::TRACK;
                 mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
                 mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
@@ -556,8 +576,14 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
                     mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
                     mi.name       = obj.has("name")          ? obj["name"].str()        : "";
                     mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
-                    mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
-                                    obj.has("image_url")     ? obj["image_url"].str()   : "";
+                    // MA returns image as an object with path field
+                    if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+                        mi.imageUrl = obj["image"]["path"].str();
+                    } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+                        mi.imageUrl = obj["image"].str();
+                    } else if (obj.has("image_url")) {
+                        mi.imageUrl = obj["image_url"].str();
+                    }
                     mi.mediaType  = MediaType::TRACK;
                     mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
                     mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";

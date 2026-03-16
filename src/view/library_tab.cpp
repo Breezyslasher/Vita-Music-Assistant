@@ -49,9 +49,20 @@ static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expe
         item.name       = obj.has("name")        ? obj["name"].str()       : "";
         item.sortName   = obj.has("sort_name")   ? obj["sort_name"].str()  : "";
         item.uri        = obj.has("uri")         ? obj["uri"].str()        : "";
-        item.imageUrl   = obj.has("image")       ? obj["image"].str()      :
-                          obj.has("image_url")   ? obj["image_url"].str()  : "";
         item.mediaType  = expectedType;
+
+        // Extract image URL: try image object, then metadata.images array
+        if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+            item.imageUrl = obj["image"]["path"].str();
+        } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+            item.imageUrl = obj["image"].str();
+        } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
+            const Json& meta = obj["metadata"];
+            if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                const Json& img = meta["images"][static_cast<size_t>(0)];
+                if (img.has("path")) item.imageUrl = img["path"].str();
+            }
+        }
 
         // Track-specific fields
         if (obj.has("artist_name"))  item.artistName  = obj["artist_name"].str();

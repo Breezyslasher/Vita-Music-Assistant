@@ -743,9 +743,20 @@ void PlayerActivity::loadMedia() {
             item.itemId    = result.has("item_id")    ? result["item_id"].str()    : trackId;
             item.name      = result.has("name")       ? result["name"].str()       : "Unknown";
             item.uri       = result.has("uri")        ? result["uri"].str()        : "";
-            item.imageUrl  = result.has("image")      ? result["image"].str()      :
-                             result.has("image_url")  ? result["image_url"].str()  : "";
             item.provider  = result.has("provider")   ? result["provider"].str()   : "library";
+
+            // Extract image URL: try image object, then metadata.images array
+            if (result.has("image") && result["image"].type() == Json::OBJECT && result["image"].has("path")) {
+                item.imageUrl = result["image"]["path"].str();
+            } else if (result.has("image") && result["image"].type() == Json::STRING) {
+                item.imageUrl = result["image"].str();
+            } else if (result.has("metadata") && result["metadata"].type() == Json::OBJECT) {
+                const Json& meta = result["metadata"];
+                if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                    const Json& img = meta["images"][static_cast<size_t>(0)];
+                    if (img.has("path")) item.imageUrl = img["path"].str();
+                }
+            }
             item.mediaType = MediaType::TRACK;
 
             if (result.has("artist_name"))  item.artistName = result["artist_name"].str();

@@ -329,6 +329,7 @@ void MAClient::onMessage(const std::string& message) {
                 if (success) {
                     m_authenticated.store(true);
                     brls::Logger::info("MA: authenticated successfully");
+                    flushPreAuthQueue();
                     if (m_eventCallback) {
                         m_eventCallback(MAEvent::CONNECTED, Json());
                     }
@@ -426,6 +427,15 @@ MAEvent MAClient::parseEventType(const std::string& eventStr) {
 
 void MAClient::sendCommand(const std::string& command, const Json& kwargs,
                             MAResponseCallback cb) {
+    // Queue commands that arrive before authentication completes
+    // (except the "auth" command itself)
+    if (!m_authenticated.load() && command != "auth") {
+        brls::Logger::debug("MA: queuing command '{}' until auth completes", command);
+        std::lock_guard<std::mutex> lock(m_preAuthMutex);
+        m_preAuthQueue.push_back({command, kwargs, std::move(cb)});
+        return;
+    }
+
     std::string msgId = generateMessageId();
 
     Json msg;
@@ -450,6 +460,20 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
     }
 }
 
+void MAClient::flushPreAuthQueue() {
+    std::vector<QueuedCommand> queued;
+    {
+        std::lock_guard<std::mutex> lock(m_preAuthMutex);
+        queued.swap(m_preAuthQueue);
+    }
+    if (!queued.empty()) {
+        brls::Logger::info("MA: flushing {} queued commands after auth", queued.size());
+    }
+    for (auto& cmd : queued) {
+        sendCommand(cmd.command, cmd.kwargs, std::move(cmd.cb));
+    }
+}
+
 // ============================================================================
 // Library Commands
 // ============================================================================
@@ -460,7 +484,7 @@ void MAClient::getLibraryArtists(MAResponseCallback cb, const std::string& searc
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/artists/library_items", args, std::move(cb));
 }
 
@@ -494,7 +518,7 @@ void MAClient::getLibraryAlbums(MAResponseCallback cb, const std::string& search
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/albums/library_items", args, std::move(cb));
 }
 
@@ -520,7 +544,7 @@ void MAClient::getLibraryTracks(MAResponseCallback cb, const std::string& search
     if (!search.empty()) args["search"] = Json(search);
     args["limit"] = Json(limit);
     args["offset"] = Json(offset);
-    args["favorite"] = Json(true);
+    // Show all library items, not just favorites
     sendCommand("music/tracks/library_items", args, std::move(cb));
 }
 
@@ -753,6 +777,22 @@ void MAClient::getPlayers(MAResponseCallback cb) {
     sendCommand("players/all", Json(), std::move(cb));
 }
 
+// Simple URL-encode for imageproxy path parameter
+static std::string urlEncode(const std::string& str) {
+    std::string encoded;
+    for (unsigned char c : str) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += static_cast<char>(c);
+        } else {
+            char hex[4];
+            std::snprintf(hex, sizeof(hex), "%%%02X", c);
+            encoded += hex;
+        }
+    }
+    return encoded;
+}
+
 std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height) {
     if (imageUrl.empty()) return "";
 
@@ -761,21 +801,24 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
         return imageUrl;
     }
 
-    // Build URL from server base + image path
-    std::string url = m_serverUrl;
-    // Ensure no double slashes
-    if (!url.empty() && url.back() == '/') url.pop_back();
-    if (!imageUrl.empty() && imageUrl.front() != '/') url += '/';
-    url += imageUrl;
+    // Build server base URL
+    std::string base = m_serverUrl;
+    if (!base.empty() && base.back() == '/') base.pop_back();
 
-    // Add size parameters if specified
-    if (width > 0 || height > 0) {
-        url += (url.find('?') != std::string::npos) ? "&" : "?";
-        if (width > 0) url += "width=" + std::to_string(width);
-        if (height > 0) {
-            url += (width > 0 ? "&" : "");
-            url += "height=" + std::to_string(height);
+    // If it starts with /, treat as a server-relative path
+    if (!imageUrl.empty() && imageUrl.front() == '/') {
+        std::string url = base + imageUrl;
+        if (width > 0 || height > 0) {
+            url += (url.find('?') != std::string::npos) ? "&" : "?";
+            if (width > 0) url += "size=" + std::to_string(width);
         }
+        return url;
+    }
+
+    // Otherwise, use the imageproxy endpoint with the path
+    std::string url = base + "/imageproxy?path=" + urlEncode(imageUrl);
+    if (width > 0) {
+        url += "&size=" + std::to_string(width);
     }
 
     return url;

@@ -99,7 +99,7 @@ public:
 
     // Artists
     void getLibraryArtists(MAResponseCallback cb, const std::string& search = "",
-                           int limit = 50, int offset = 0);
+                           int limit = 500, int offset = 0);
     void getArtist(const std::string& itemId, MAResponseCallback cb,
                    const std::string& provider = "library");
     void getArtistAlbums(const std::string& itemId, MAResponseCallback cb,
@@ -109,7 +109,7 @@ public:
 
     // Albums
     void getLibraryAlbums(MAResponseCallback cb, const std::string& search = "",
-                          int limit = 50, int offset = 0);
+                          int limit = 500, int offset = 0);
     void getAlbum(const std::string& itemId, MAResponseCallback cb,
                   const std::string& provider = "library");
     void getAlbumTracks(const std::string& itemId, MAResponseCallback cb,
@@ -117,13 +117,13 @@ public:
 
     // Tracks
     void getLibraryTracks(MAResponseCallback cb, const std::string& search = "",
-                          int limit = 50, int offset = 0);
+                          int limit = 500, int offset = 0);
     void getTrack(const std::string& itemId, MAResponseCallback cb,
                   const std::string& provider = "library");
 
     // Playlists
     void getLibraryPlaylists(MAResponseCallback cb, const std::string& search = "",
-                             int limit = 50, int offset = 0);
+                             int limit = 500, int offset = 0);
     void getPlaylist(const std::string& itemId, MAResponseCallback cb,
                      const std::string& provider = "library");
     void getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
@@ -132,7 +132,7 @@ public:
 
     // Radio
     void getLibraryRadios(MAResponseCallback cb, const std::string& search = "",
-                          int limit = 50, int offset = 0);
+                          int limit = 500, int offset = 0);
 
     // Search
     void search(const std::string& query, MAResponseCallback cb, int limit = 25);
@@ -165,7 +165,7 @@ public:
                      MAResponseCallback cb = nullptr);
     void queueClear(const std::string& queueId, MAResponseCallback cb = nullptr);
     void getQueueItems(const std::string& queueId, MAResponseCallback cb,
-                       int limit = 50, int offset = 0);
+                       int limit = 500, int offset = 0);
     void queueMoveItem(const std::string& queueId, const std::string& itemId,
                        int posShift, MAResponseCallback cb = nullptr);
 
@@ -221,9 +221,19 @@ private:
     std::atomic<bool> m_authenticated{false};
     bool m_authRequired = false;
 
-    // Pending commands
+    // Pending commands (awaiting responses)
     std::map<std::string, MAResponseCallback> m_pendingCallbacks;
     std::mutex m_callbackMutex;
+
+    // Commands queued before auth completes
+    struct QueuedCommand {
+        std::string command;
+        Json kwargs;
+        MAResponseCallback cb;
+    };
+    std::vector<QueuedCommand> m_preAuthQueue;
+    std::mutex m_preAuthMutex;
+    void flushPreAuthQueue();
 
     // Event callback
     MAEventCallback m_eventCallback;
