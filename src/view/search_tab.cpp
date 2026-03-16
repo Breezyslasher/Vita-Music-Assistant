@@ -39,6 +39,7 @@ static MusicItem musicItemFromJson(const Json& j) {
         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
             const Json& img = meta["images"][static_cast<size_t>(0)];
             if (img.has("path")) item.imageUrl = img["path"].str();
+            if (img.has("provider")) item.imageProvider = img["provider"].str();
         }
     }
 

@@ -340,6 +340,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
                         if (img.has("path")) mi.imageUrl = img["path"].str();
+                        if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }
                 mi.mediaType  = MediaType::TRACK;
@@ -765,6 +766,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
                         if (img.has("path")) mi.imageUrl = img["path"].str();
+                        if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }
                 mi.mediaType  = MediaType::TRACK;
