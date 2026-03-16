@@ -59,6 +59,13 @@ private:
     LibraryTabViewMode m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     bool m_loaded = false;
 
+    // Pagination state
+    static constexpr int PAGE_SIZE = 50;
+    int m_offset = 0;
+    bool m_hasMore = false;
+    bool m_loadingPage = false;
+    void loadNextPage();
+
     // Alive flag for crash prevention on quick tab switching
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };

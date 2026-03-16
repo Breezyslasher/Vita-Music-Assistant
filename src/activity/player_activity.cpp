@@ -331,6 +331,16 @@ void PlayerActivity::onContentAvailable() {
 
     if (queueBtn) queueBtn->setCustomNavigationRoute(brls::FocusDirection::DOWN, queueBtn);
 
+    // Player switcher button - allows selecting which player to control
+    if (playerSwitchBtn) {
+        playerSwitchBtn->setVisibility(brls::Visibility::VISIBLE);
+        playerSwitchBtn->registerClickAction([this](brls::View* view) {
+            showPlayerSwitcher();
+            return true;
+        });
+        playerSwitchBtn->addGestureRecognizer(new brls::TapGestureRecognizer(playerSwitchBtn));
+    }
+
     // Start update timer
     m_updateTimer.setCallback([this]() {
         updateProgress();
@@ -2388,6 +2398,88 @@ void PlayerActivity::hideControls() {
         controlsBox->setAlpha(0.0f);
         controlsBox->setVisibility(brls::Visibility::GONE);
     }
+}
+
+void PlayerActivity::showPlayerSwitcher() {
+    auto& client = MAClient::instance();
+    if (!client.isConnected()) {
+        brls::Application::notify("Not connected to server");
+        return;
+    }
+
+    client.getPlayers([this](bool success, const Json& result) {
+        if (!success || result.type() != Json::ARRAY) {
+            brls::sync([](){ brls::Application::notify("Failed to load players"); });
+            return;
+        }
+
+        std::vector<PlayerInfo> players;
+        for (size_t i = 0; i < result.size(); i++) {
+            const Json& p = result[i];
+            PlayerInfo info;
+            if (p.has("player_id")) info.playerId = p["player_id"].str();
+            if (p.has("name")) info.name = p["name"].str();
+            if (p.has("type")) info.type = p["type"].str();
+            if (p.has("powered")) info.powered = p["powered"].boolVal();
+            if (p.has("available")) info.available = p["available"].boolVal();
+            if (!info.playerId.empty()) players.push_back(info);
+        }
+
+        brls::sync([this, players]() {
+            m_availablePlayers = players;
+
+            auto* dialog = new brls::Dialog("Switch Player");
+            auto* box = new brls::Box();
+            box->setAxis(brls::Axis::COLUMN);
+            box->setPadding(16);
+
+            const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
+
+            // "This Vita (Local)" option
+            {
+                auto* btn = new brls::Button();
+                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
+                std::string label = "This Vita (Local)";
+                if (currentId.empty()) label += "  *";
+                btn->setText(label);
+                btn->setMarginBottom(4);
+                btn->registerClickAction([this, dialog](brls::View*) {
+                    auto& settings = Application::getInstance().getSettings();
+                    settings.selectedPlayerId.clear();
+                    Application::getInstance().saveSettings();
+                    dialog->close();
+                    brls::Application::notify("Switched to local Vita player");
+                    return true;
+                });
+                box->addView(btn);
+            }
+
+            // Remote players
+            for (size_t i = 0; i < m_availablePlayers.size(); i++) {
+                auto* btn = new brls::Button();
+                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
+                std::string label = m_availablePlayers[i].name;
+                if (!m_availablePlayers[i].available) label += " (offline)";
+                if (m_availablePlayers[i].playerId == currentId) label += "  *";
+                btn->setText(label);
+                btn->setMarginBottom(4);
+                std::string pid = m_availablePlayers[i].playerId;
+                btn->registerClickAction([this, dialog, pid](brls::View*) {
+                    auto& settings = Application::getInstance().getSettings();
+                    settings.selectedPlayerId = pid;
+                    Application::getInstance().saveSettings();
+                    dialog->close();
+                    brls::Application::notify("Player switched");
+                    return true;
+                });
+                box->addView(btn);
+            }
+
+            dialog->addView(box);
+            dialog->addButton("Cancel", []() {});
+            dialog->open();
+        });
+    });
 }
 
 } // namespace vita_ma

@@ -119,7 +119,7 @@ void Application::connectSendspin() {
     // Use configured player name, falling back to default
     std::string clientId = "vita_ma_player";
     std::string clientName = m_settings.sendspinPlayerName;
-    if (clientName.empty()) clientName = "Vita Music Assistant";
+    if (clientName.empty()) clientName = "PS Vita";
 
     brls::Logger::info("Sendspin: connecting to {} port 8927", host);
     SendspinClient::instance().connect(host, 8927, clientId, clientName);
@@ -301,7 +301,7 @@ bool Application::loadSettings() {
     // Load player settings
     m_settings.localPlayback = extractBool("localPlayback", true);
     m_settings.sendspinPlayerName = extractString("sendspinPlayerName");
-    if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "Vita Music Assistant";
+    if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
     m_settings.selectedPlayerId = extractString("selectedPlayerId");
 
     brls::Logger::info("Settings loaded successfully");

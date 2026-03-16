@@ -207,6 +207,12 @@ private:
     BRLS_BIND(brls::ScrollingFrame, queueScroll, "player/queue_scroll");
 
 
+    // Player switcher
+    BRLS_BIND(brls::Box, playerSwitchBtn, "player/player_switch_btn");
+    BRLS_BIND(brls::Image, playerSwitchIcon, "player/player_switch_icon");
+    void showPlayerSwitcher();
+    std::vector<PlayerInfo> m_availablePlayers;  // Cached player list
+
     // Music-specific UI elements
     BRLS_BIND(brls::Box, musicInfo, "player/music_info");
     BRLS_BIND(brls::Label, musicTitleLabel, "player/music_title");
