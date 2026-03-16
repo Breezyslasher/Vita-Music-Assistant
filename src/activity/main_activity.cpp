@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Main Activity implementation
+ * Vita Music Assistant - Main Activity implementation
  */
 
 #include "activity/main_activity.hpp"
@@ -9,19 +9,16 @@
 #include "view/search_tab.hpp"
 #include "view/settings_tab.hpp"
 #include "view/debug_tab.hpp"
-#include "view/livetv_tab.hpp"
-#include "view/downloads_tab.hpp"
 #include "view/music_tab.hpp"
-#include "app/downloads_manager.hpp"
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/async.hpp"
 
 #include <algorithm>
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Cached library sections for sidebar mode
 static std::vector<LibrarySection> s_cachedSections;
@@ -54,14 +51,14 @@ void MainActivity::onContentAvailable() {
         int sidebarWidth = 200;  // Minimum width
 
         // Standard tab names to consider
-        std::vector<std::string> standardTabs = {"Home", "Library", "Music", "Search", "Live TV", "Downloads", "Settings"};
+        std::vector<std::string> standardTabs = {"Home", "Library", "Music", "Search", "Settings"};
         for (const auto& tab : standardTabs) {
             sidebarWidth = std::max(sidebarWidth, calculateTextWidth(tab));
         }
 
         // If showing libraries in sidebar, check library names too (skip in offline mode)
         if (settings.showLibrariesInSidebar && !Application::getInstance().isOfflineMode()) {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<LibrarySection> sections;
             if (client.fetchLibrarySections(sections)) {
                 s_cachedSections = sections;  // Cache for later use
@@ -85,7 +82,6 @@ void MainActivity::onContentAvailable() {
         }
 
         bool isOffline = Application::getInstance().isOfflineMode();
-        bool hasLiveTV = !isOffline && PlexClient::getInstance().hasLiveTV();
 
         // In offline mode, skip all server-dependent tabs (Home, Search, Library, etc.)
         // Only Downloads and Settings will be shown
@@ -101,11 +97,6 @@ void MainActivity::onContentAvailable() {
 
                 // Search
                 tabFrame->addTab("Search", []() { return new SearchTab(); });
-
-                // Live TV if available
-                if (hasLiveTV) {
-                    tabFrame->addTab("Live TV", []() { return new LiveTVTab(); });
-                }
             } else {
                 // Standard mode with premade tabs
                 // Add tabs based on sidebar order setting
@@ -125,7 +116,7 @@ void MainActivity::onContentAvailable() {
                     }
                 } else {
                     // Default order
-                    order = {"home", "library", "music", "search", "livetv"};
+                    order = {"home", "library", "music", "search"};
                 }
 
                 // Add tabs in specified order
@@ -138,15 +129,10 @@ void MainActivity::onContentAvailable() {
                         tabFrame->addTab("Music", []() { return new MusicTab(); });
                     } else if (item == "search") {
                         tabFrame->addTab("Search", []() { return new SearchTab(); });
-                    } else if (item == "livetv" && hasLiveTV) {
-                        tabFrame->addTab("Live TV", []() { return new LiveTVTab(); });
                     }
                 }
             }
         }
-
-        // Downloads tab (always available)
-        tabFrame->addTab("Downloads", []() { return new DownloadsTab(); });
 
         // Debug and Settings always at the bottom
         tabFrame->addSeparator();
@@ -185,7 +171,7 @@ void MainActivity::loadLibrariesToSidebar() {
     tabFrame->addSeparator();
 
     // Fetch libraries synchronously to maintain correct sidebar order
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
     std::vector<LibrarySection> sections;
 
     if (client.fetchLibrarySections(sections)) {
@@ -228,4 +214,4 @@ void MainActivity::loadLibrariesToSidebar() {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

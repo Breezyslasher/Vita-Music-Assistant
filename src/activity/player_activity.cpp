@@ -1,10 +1,10 @@
 /**
- * VitaPlex - Player Activity implementation
+ * Vita Music Assistant - Player Activity implementation
  */
 
 #include "activity/player_activity.hpp"
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/downloads_manager.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
@@ -20,7 +20,7 @@
 #include <psp2/power.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Base temp file path for streaming audio (MPV's HTTP handling crashes on Vita)
 // Extension will be added dynamically based on the actual file type
@@ -63,9 +63,9 @@ PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MediaItem>& tr
     // Try to create a server-side play queue when online
     // Uses the parent ratingKey (album/season) or the first track's ratingKey
     bool serverOk = false;
-    if (!tracks.empty() && !PlexClient::getInstance().getServerUrl().empty()) {
-        PlexClient& client = PlexClient::getInstance();
-        PlexClient::PlayQueueContainer pq;
+    if (!tracks.empty() && !MAClient::instance().getServerUrl().empty()) {
+        MAClient& client = MAClient::instance();
+        MAClient::PlayQueueContainer pq;
 
         // Determine queue type
         std::string queueType = "audio";
@@ -164,7 +164,7 @@ void PlayerActivity::onContentAvailable() {
             if (track && !track->ratingKey.empty()) {
                 std::string key = "/library/metadata/" + track->ratingKey;
                 int pqItemID = track->playQueueItemID;
-                PlexClient::getInstance().reportTimeline(
+                MAClient::instance().reportTimeline(
                     track->ratingKey, key, "stopped", 0, track->duration * 1000, pqItemID);
             }
 
@@ -637,7 +637,7 @@ void PlayerActivity::willDisappear(bool resetState) {
                 brls::Logger::info("PlayerActivity: Saved local progress {}ms for {}", timeMs, m_mediaKey);
             } else if (!m_mediaKey.empty()) {
                 if (!m_isQueueMode) {
-                    PlexClient::getInstance().updatePlayProgress(m_mediaKey, timeMs);
+                    MAClient::instance().updatePlayProgress(m_mediaKey, timeMs);
                 }
                 // Report stopped timeline so Plex knows playback ended with full duration
                 std::string ratingKey = m_mediaKey;
@@ -646,7 +646,7 @@ void PlayerActivity::willDisappear(bool resetState) {
                     if (track) ratingKey = track->ratingKey;
                 }
                 std::string key = "/library/metadata/" + ratingKey;
-                PlexClient::getInstance().reportTimeline(
+                MAClient::instance().reportTimeline(
                     ratingKey, key, "stopped", timeMs, (int)(duration * 1000));
             }
         }
@@ -687,7 +687,7 @@ void PlayerActivity::loadFromQueue() {
 
     // Reset streams cache for the new track
     m_streamsLoaded = false;
-    m_plexStreams.clear();
+    m_audioStreams.clear();
     m_partId = 0;
 
     // If resuming and MPV is already playing/paused, just update the UI
@@ -720,7 +720,7 @@ void PlayerActivity::loadFromQueue() {
                     albumArt->setVisibility(brls::Visibility::VISIBLE);
                 }
             } else if (!track->thumb.empty()) {
-                PlexClient& client = PlexClient::getInstance();
+                MAClient& client = MAClient::instance();
                 std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
@@ -790,7 +790,7 @@ void PlayerActivity::loadFromQueue() {
     } else {
         // Stream from server
         m_isLocalFile = false;  // Reset in case previous track was local
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         if (!client.getTranscodeUrl(track->ratingKey, url, 0)) {
             brls::Logger::error("Failed to get transcode URL for track: {}", track->ratingKey);
             m_loadingMedia = false;
@@ -801,7 +801,7 @@ void PlayerActivity::loadFromQueue() {
         // accepts the request, then re-pause to block other page loads.
         // The async worker no longer checks pause, so the load will complete.
         if (albumArt && !track->thumb.empty()) {
-            PlexClient& artClient = PlexClient::getInstance();
+            MAClient& artClient = MAClient::instance();
             std::string thumbUrl = artClient.getThumbnailUrl(track->thumb, 300, 300);
             ImageLoader::setPaused(false);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
@@ -1022,7 +1022,7 @@ void PlayerActivity::loadMedia() {
     }
 
     // Remote playback from Plex server
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
     MediaItem item;
 
     if (client.fetchMediaDetails(m_mediaKey, item)) {
@@ -1151,7 +1151,7 @@ void PlayerActivity::loadMedia() {
                 }
 
                 m_isPlaying = true;
-                brls::Logger::debug("PlayerActivity: loadMedia completed successfully for Plex stream");
+                brls::Logger::debug("PlayerActivity: loadMedia completed successfully for MA stream");
             }
         } else {
             brls::Logger::error("Failed to get transcode URL for: {}", m_mediaKey);
@@ -1339,7 +1339,7 @@ void PlayerActivity::updateProgress() {
             }
 
             std::string key = "/library/metadata/" + ratingKey;
-            PlexClient::getInstance().reportTimeline(
+            MAClient::instance().reportTimeline(
                 ratingKey, key, currentState, timeMs, durationMs, pqItemID);
         }
     }
@@ -1357,7 +1357,7 @@ void PlayerActivity::updateProgress() {
             // Notify queue that track ended - it will call onTrackEnded
             MusicQueue::getInstance().onTrackEnded();
         } else {
-            PlexClient::getInstance().markAsWatched(m_mediaKey);
+            MAClient::instance().markAsWatched(m_mediaKey);
 
             // Delete downloaded file after watching if setting is enabled
             if (m_isLocalFile && Application::getInstance().getSettings().deleteAfterWatch) {
@@ -1398,7 +1398,7 @@ void PlayerActivity::playNextEpisode() {
     int currentIndex = m_episodeIndex;
 
     brls::async([this, seasonKey, showKey, currentIndex]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> siblings;
         if (!client.fetchChildren(seasonKey, siblings)) {
             brls::Logger::error("PlayerActivity: Failed to fetch season children for auto-play-next");
@@ -1515,13 +1515,13 @@ void PlayerActivity::cycleSubtitleTrack() {
     showTrackOverlay(TrackSelectMode::SUBTITLE);
 }
 
-void PlayerActivity::fetchPlexStreams() {
+void PlayerActivity::fetchAudioStreams() {
     if (m_streamsLoaded || m_mediaKey.empty()) return;
 
-    PlexClient& client = PlexClient::getInstance();
-    if (client.fetchStreams(m_mediaKey, m_plexStreams, m_partId)) {
+    MAClient& client = MAClient::instance();
+    if (client.fetchStreams(m_mediaKey, m_audioStreams, m_partId)) {
         m_streamsLoaded = true;
-        brls::Logger::info("fetchPlexStreams: Loaded {} streams, partId={}", m_plexStreams.size(), m_partId);
+        brls::Logger::info("fetchAudioStreams: Loaded {} streams, partId={}", m_audioStreams.size(), m_partId);
     }
 }
 
@@ -1610,26 +1610,26 @@ void PlayerActivity::populateTrackList(TrackSelectMode mode) {
     }
 
     // Fetch Plex streams (if not already cached) - these have all tracks
-    fetchPlexStreams();
+    fetchAudioStreams();
 
-    int plexStreamType = (mode == TrackSelectMode::VIDEO) ? 1 :
+    int audioStreamType = (mode == TrackSelectMode::VIDEO) ? 1 :
                          (mode == TrackSelectMode::AUDIO) ? 2 : 3;
 
     // Collect Plex streams of the requested type
     // For subtitles, also include streamType 4
-    std::vector<const PlexStream*> plexTracksOfType;
-    for (const auto& ps : m_plexStreams) {
-        if (ps.streamType == plexStreamType ||
+    std::vector<const AudioStream*> audioTracksOfType;
+    for (const auto& ps : m_audioStreams) {
+        if (ps.streamType == audioStreamType ||
             (mode == TrackSelectMode::SUBTITLE && ps.streamType == 4)) {
-            plexTracksOfType.push_back(&ps);
+            audioTracksOfType.push_back(&ps);
         }
     }
 
     // For audio and subtitle modes, use Plex streams as the primary source
     // because HLS transcoding only muxes the selected track into the stream,
     // so MPV only sees 1 audio track. Plex metadata has all available tracks.
-    bool usePlexStreams = (mode == TrackSelectMode::AUDIO || mode == TrackSelectMode::SUBTITLE)
-                         && !plexTracksOfType.empty();
+    bool useAudioStreams = (mode == TrackSelectMode::AUDIO || mode == TrackSelectMode::SUBTITLE)
+                         && !audioTracksOfType.empty();
 
     // For subtitles, add "Off" option first
     if (mode == TrackSelectMode::SUBTITLE) {
@@ -1658,10 +1658,10 @@ void PlayerActivity::populateTrackList(TrackSelectMode mode) {
         trackList->addView(item);
     }
 
-    if (usePlexStreams) {
+    if (useAudioStreams) {
         // Build track items from Plex streams (shows ALL available tracks)
-        for (size_t i = 0; i < plexTracksOfType.size(); i++) {
-            const auto& ps = *plexTracksOfType[i];
+        for (size_t i = 0; i < audioTracksOfType.size(); i++) {
+            const auto& ps = *audioTracksOfType[i];
 
             std::string displayStr = ps.displayTitle;
             if (displayStr.empty()) {
@@ -1696,9 +1696,9 @@ void PlayerActivity::populateTrackList(TrackSelectMode mode) {
             label->setTextColor(ps.selected ? nvgRGB(150, 200, 255) : nvgRGB(220, 220, 220));
             item->addView(label);
 
-            int plexStreamId = ps.id;
-            item->registerClickAction([this, mode, plexStreamId](brls::View* view) {
-                selectTrack(mode, plexStreamId);
+            int maStreamId = ps.id;
+            item->registerClickAction([this, mode, maStreamId](brls::View* view) {
+                selectTrack(mode, maStreamId);
                 return true;
             });
             item->addGestureRecognizer(new brls::TapGestureRecognizer(item));
@@ -1838,8 +1838,8 @@ void PlayerActivity::populateSubtitleSearchResults() {
     trackList->addView(loadingLabel);
 
     // Search for subtitles from Plex (queries OpenSubtitles, etc.)
-    PlexClient& client = PlexClient::getInstance();
-    std::vector<PlexClient::SubtitleResult> results;
+    MAClient& client = MAClient::instance();
+    std::vector<MAClient::SubtitleResult> results;
 
     if (!client.searchSubtitles(m_mediaKey, "en", results) || results.empty()) {
         trackList->clearViews();
@@ -1965,7 +1965,7 @@ void PlayerActivity::populateSubtitleSearchResults() {
         std::string subKey = sub.key;
         std::string subTitle = sub.displayTitle;
         item->registerClickAction([this, subKey, subTitle](brls::View* view) {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             brls::Logger::debug("Subtitle click: key={}", subKey);
             if (client.selectSearchedSubtitle(m_mediaKey, m_partId, subKey)) {
                 MpvPlayer::getInstance().showOSD("Subtitle: " + subTitle, 2.0);
@@ -1994,22 +1994,22 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
     MpvPlayer& player = MpvPlayer::getInstance();
 
     // Check if we have Plex streams - if so, trackId is a Plex stream ID
-    bool hasPlexStreams = !m_plexStreams.empty();
+    bool hasAudioStreams = !m_audioStreams.empty();
 
     switch (mode) {
         case TrackSelectMode::AUDIO:
-            if (hasPlexStreams && m_partId > 0) {
+            if (hasAudioStreams && m_partId > 0) {
                 // trackId is a Plex stream ID - tell Plex server to switch audio
                 std::string displayTitle = "Audio track " + std::to_string(trackId);
-                for (const auto& ps : m_plexStreams) {
+                for (const auto& ps : m_audioStreams) {
                     if (ps.id == trackId) {
                         displayTitle = ps.displayTitle;
                         break;
                     }
                 }
-                PlexClient::getInstance().setStreamSelection(m_partId, trackId, -1);
+                MAClient::instance().setStreamSelection(m_partId, trackId, -1);
                 // Mark the newly selected stream in our cached data
-                for (auto& ps : m_plexStreams) {
+                for (auto& ps : m_audioStreams) {
                     if (ps.streamType == 2) {
                         ps.selected = (ps.id == trackId);
                     }
@@ -2021,7 +2021,7 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
                 {
                     double currentPos = player.getPosition();
                     int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
+                    MAClient& client = MAClient::instance();
                     // Stop existing transcode session so Plex doesn't keep
                     // serving old audio segments
                     client.stopTranscode();
@@ -2044,17 +2044,17 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
             if (trackId < 0) {
                 // Disable subtitles
                 if (m_partId > 0) {
-                    PlexClient::getInstance().setStreamSelection(m_partId, -1, 0);
+                    MAClient::instance().setStreamSelection(m_partId, -1, 0);
                 }
                 // Clear selection in cache
-                for (auto& ps : m_plexStreams) {
+                for (auto& ps : m_audioStreams) {
                     if (ps.streamType == 3 || ps.streamType == 4) ps.selected = false;
                 }
                 // Reload transcode so Plex stops sending subtitles
                 {
                     double currentPos = player.getPosition();
                     int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
+                    MAClient& client = MAClient::instance();
                     client.stopTranscode();
                     std::string newUrl;
                     if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
@@ -2064,17 +2064,17 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
                         player.loadUrl(newUrl, "");
                     }
                 }
-            } else if (hasPlexStreams && m_partId > 0) {
+            } else if (hasAudioStreams && m_partId > 0) {
                 // trackId is a Plex stream ID - tell Plex server to switch subtitle
                 std::string displayTitle = "Subtitle " + std::to_string(trackId);
-                for (const auto& ps : m_plexStreams) {
+                for (const auto& ps : m_audioStreams) {
                     if (ps.id == trackId) {
                         displayTitle = ps.displayTitle;
                         break;
                     }
                 }
-                PlexClient::getInstance().setStreamSelection(m_partId, -1, trackId);
-                for (auto& ps : m_plexStreams) {
+                MAClient::instance().setStreamSelection(m_partId, -1, trackId);
+                for (auto& ps : m_audioStreams) {
                     if (ps.streamType == 3 || ps.streamType == 4) {
                         ps.selected = (ps.id == trackId);
                     }
@@ -2083,7 +2083,7 @@ void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
                 {
                     double currentPos = player.getPosition();
                     int offsetMs = m_transcodeBaseOffsetMs + static_cast<int>(currentPos * 1000);
-                    PlexClient& client = PlexClient::getInstance();
+                    MAClient& client = MAClient::instance();
                     client.stopTranscode();
                     std::string newUrl;
                     if (client.getTranscodeUrl(m_mediaKey, newUrl, offsetMs)) {
@@ -2168,8 +2168,8 @@ void PlayerActivity::toggleShuffle() {
 
     // If synced to server, use server-side shuffle/unshuffle
     if (queue.isServerSynced()) {
-        PlexClient& client = PlexClient::getInstance();
-        PlexClient::PlayQueueContainer pq;
+        MAClient& client = MAClient::instance();
+        MAClient::PlayQueueContainer pq;
         bool ok = newShuffle
             ? client.shufflePlayQueue(queue.getPlayQueueID(), pq)
             : client.unshufflePlayQueue(queue.getPlayQueueID(), pq);
@@ -2461,7 +2461,7 @@ void PlayerActivity::hideQueueOverlay() {
 }
 
 void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueItem& track, bool isCurrent) {
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     // Row container: [cover art] [title + artist] [duration]
     brls::Box* row = new brls::Box();
@@ -2572,7 +2572,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                             if (queue.isServerSynced() && tIdx < (int)queue.getQueue().size()) {
                                 int pqItemID = queue.getQueue()[tIdx].playQueueItemID;
                                 if (pqItemID > 0) {
-                                    PlexClient::getInstance().removeFromPlayQueue(
+                                    MAClient::instance().removeFromPlayQueue(
                                         queue.getPlayQueueID(), pqItemID);
                                 }
                             }
@@ -2817,7 +2817,7 @@ void PlayerActivity::createQueueRow(int displayIdx, int trackIdx, const QueueIte
                             afterPQItemID = queue.getQueue()[toTrackIdx - 1].playQueueItemID;
                         }
                         if (pqItemID > 0) {
-                            PlexClient::getInstance().movePlayQueueItem(
+                            MAClient::instance().movePlayQueueItem(
                                 queue.getPlayQueueID(), pqItemID, afterPQItemID);
                         }
                     }
@@ -3148,7 +3148,7 @@ void PlayerActivity::loadQueueThumbsAroundIndex(int displayIndex) {
     // will complete even after we re-pause here.
     ImageLoader::setPaused(false);
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     for (int i = start; i < end; i++) {
         auto& dt = m_deferredThumbs[i];
@@ -3238,7 +3238,7 @@ void PlayerActivity::swapQueueRows(int displayIdxA, int displayIdxB, bool skipTh
         // Reload thumbnails to reflect the swap (skip during chained swaps
         // to avoid race conditions - caller will reload after all swaps)
         if (!skipThumbReload) {
-            PlexClient& swapClient = PlexClient::getInstance();
+            MAClient& swapClient = MAClient::instance();
             if (dtA.loaded && !dtA.thumbPath.empty()) {
                 std::string urlA = swapClient.getThumbnailUrl(dtA.thumbPath, 100, 100);
                 ImageLoader::loadAsync(urlA, [](brls::Image*) {}, thumbA, m_alive);
@@ -3625,7 +3625,7 @@ void PlayerActivity::updateSkipButton(double positionMs) {
                 && !m_parentRatingKey.empty()
                 && !m_isLocalFile) {
                 brls::Logger::info("PlayerActivity: Credits auto-skipped, starting next episode");
-                PlexClient::getInstance().markAsWatched(m_mediaKey);
+                MAClient::instance().markAsWatched(m_mediaKey);
                 m_endHandled = true;
                 playNextEpisode();
             } else {
@@ -3739,4 +3739,4 @@ void PlayerActivity::hideControls() {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

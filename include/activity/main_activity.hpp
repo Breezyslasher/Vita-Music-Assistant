@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Main Activity
+ * Vita Music Assistant - Main Activity
  * Main navigation with tabs for Home, Library, Search, Settings
  */
 
@@ -7,7 +7,7 @@
 
 #include <borealis.hpp>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class MainActivity : public brls::Activity {
 public:
@@ -23,4 +23,4 @@ private:
     BRLS_BIND(brls::TabFrame, tabFrame, "main/tab_frame");
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

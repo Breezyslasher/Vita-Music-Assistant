@@ -1,17 +1,17 @@
 /**
- * VitaPlex - Login Activity implementation
+ * Vita Music Assistant - Login Activity implementation
  */
 
 #include "activity/login_activity.hpp"
 #include "app/application.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/downloads_manager.hpp"
 #include "view/progress_dialog.hpp"
 #include "utils/async.hpp"
 
 #include <memory>
 
-namespace vitaplex {
+namespace vita_ma {
 
 LoginActivity::LoginActivity() {
     brls::Logger::debug("LoginActivity created");
@@ -26,11 +26,11 @@ void LoginActivity::onContentAvailable() {
 
     // Set initial values
     if (titleLabel) {
-        titleLabel->setText("VitaPlex");
+        titleLabel->setText("Vita Music Assistant");
     }
 
     if (statusLabel) {
-        statusLabel->setText("Enter your Plex server URL and credentials");
+        statusLabel->setText("Enter your Music Assistant server URL and credentials");
     }
 
     if (pinCodeLabel) {
@@ -87,7 +87,7 @@ void LoginActivity::onContentAvailable() {
 
     // PIN login button
     if (pinButton) {
-        pinButton->setText("Login with PIN (plex.tv/link)");
+        pinButton->setText("Remote Access (WebRTC)");
         pinButton->registerClickAction([this](brls::View* view) {
             onPinLoginPressed();
             return true;
@@ -104,7 +104,7 @@ void LoginActivity::onContentAvailable() {
     }
 }
 
-void LoginActivity::showServerSelectionDialog(const std::vector<PlexServer>& servers) {
+void LoginActivity::showServerSelectionDialog(const std::vector<ServerInfo>& servers) {
     // Create dialog with server list
     auto* dialog = new brls::Dialog("Select Server");
 
@@ -118,7 +118,7 @@ void LoginActivity::showServerSelectionDialog(const std::vector<PlexServer>& ser
         btn->setMarginBottom(10);
 
         // Capture server by value
-        PlexServer server = servers[i];
+        ServerInfo server = servers[i];
         btn->registerClickAction([this, server, dialog](brls::View* view) {
             dialog->dismiss();
             connectToSelectedServer(server);
@@ -138,8 +138,8 @@ void LoginActivity::showServerSelectionDialog(const std::vector<PlexServer>& ser
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-void LoginActivity::connectToSelectedServer(const PlexServer& server) {
-    PlexClient& client = PlexClient::getInstance();
+void LoginActivity::connectToSelectedServer(const ServerInfo& server) {
+    MAClient& client = MAClient::instance();
 
     // Show progress dialog
     auto* progressDialog = new ProgressDialog("Connecting");
@@ -156,7 +156,7 @@ void LoginActivity::connectToSelectedServer(const PlexServer& server) {
 
     // Run connection attempts asynchronously
     asyncRun([this, server, progressDialog, totalConnections, cancelled]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
 
         for (size_t i = 0; i < totalConnections && !*cancelled; i++) {
             const auto& conn = server.connections[i];
@@ -250,7 +250,7 @@ void LoginActivity::onLoginPressed() {
     if (statusLabel) statusLabel->setText("Logging in...");
 
     // Perform login
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     if (client.login(m_username, m_password)) {
         Application::getInstance().setUsername(m_username);
@@ -270,7 +270,7 @@ void LoginActivity::onLoginPressed() {
         } else {
             // Auto-detect servers
             if (statusLabel) statusLabel->setText("Finding your servers...");
-            std::vector<PlexServer> servers;
+            std::vector<ServerInfo> servers;
             if (client.fetchServers(servers) && !servers.empty()) {
                 if (servers.size() == 1) {
                     // Only one server, connect directly
@@ -292,7 +292,7 @@ void LoginActivity::onLoginPressed() {
 void LoginActivity::onPinLoginPressed() {
     m_pinMode = true;
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     if (client.requestPin(m_pinAuth)) {
         if (pinCodeLabel) {
@@ -300,7 +300,7 @@ void LoginActivity::onPinLoginPressed() {
             pinCodeLabel->setText(std::string("PIN: ") + m_pinAuth.code);
         }
         if (statusLabel) {
-            statusLabel->setText("Go to plex.tv/link and enter the PIN above");
+            statusLabel->setText("Connecting via WebRTC...");
         }
 
         // Start checking PIN status using RepeatingTimer
@@ -322,7 +322,7 @@ void LoginActivity::checkPinStatus() {
 
     m_pinCheckTimer++;
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     if (client.checkPin(m_pinAuth)) {
         m_pinMode = false;
@@ -344,7 +344,7 @@ void LoginActivity::checkPinStatus() {
             }
         } else {
             // Auto-detect servers
-            std::vector<PlexServer> servers;
+            std::vector<ServerInfo> servers;
             if (client.fetchServers(servers) && !servers.empty()) {
                 if (servers.size() == 1) {
                     // Only one server, connect directly
@@ -367,4 +367,4 @@ void LoginActivity::checkPinStatus() {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

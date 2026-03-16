@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Media Detail View
+ * Vita Music Assistant - Media Detail View
  * Shows detailed information about a media item
  */
 
@@ -8,9 +8,9 @@
 #include <borealis.hpp>
 #include <memory>
 #include <atomic>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class MediaDetailView : public brls::Box {
 public:
@@ -103,4 +103,4 @@ public:
     std::shared_ptr<std::atomic<bool>> m_alive;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Home Tab
+ * Vita Music Assistant - Home Tab
  * Shows continue watching, recently added movies, shows, and music
  */
 
@@ -8,11 +8,11 @@
 #include <borealis.hpp>
 #include <memory>
 #include <atomic>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/horizontal_scroll_row.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class HomeTab : public brls::Box {
 public:
@@ -58,4 +58,4 @@ private:
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

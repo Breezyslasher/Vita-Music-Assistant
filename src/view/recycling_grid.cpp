@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Recycling Grid implementation
+ * Vita Music Assistant - Recycling Grid implementation
  * Infinite scroll: automatically fetches next page when user navigates
  * to the last row. Server-side pagination keeps memory low.
  */
@@ -8,7 +8,7 @@
 #include "view/media_item_cell.hpp"
 #include "view/media_detail_view.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 RecyclingGrid::RecyclingGrid() {
     this->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
@@ -210,4 +210,4 @@ brls::View* RecyclingGrid::create() {
     return new RecyclingGrid();
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

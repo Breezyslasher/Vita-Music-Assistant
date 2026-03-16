@@ -1,5 +1,5 @@
 /**
- * VitaPlex - HTTP Client implementation using libcurl
+ * Vita Music Assistant - HTTP Client implementation using libcurl
  */
 
 #include "utils/http_client.hpp"
@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <cctype>
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Curl write callback data
 struct WriteCallbackData {
@@ -39,7 +39,7 @@ HttpClient& HttpClient::shared() {
 
 HttpClient::HttpClient() {
     m_curl = curl_easy_init();
-    m_userAgent = PLEX_CLIENT_NAME "/" PLEX_CLIENT_VERSION " (" PLEX_PLATFORM ")";
+    m_userAgent = MA_CLIENT_NAME "/" MA_CLIENT_VERSION " (" MA_PLATFORM ")";
 }
 
 HttpClient::~HttpClient() {
@@ -519,4 +519,4 @@ bool HttpClient::downloadFile(const std::string& url, WriteCallback writeCallbac
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Music Tab
+ * Vita Music Assistant - Music Tab
  * Displays music libraries with playlists and collections
  */
 
@@ -7,10 +7,10 @@
 
 #include <borealis.hpp>
 #include <memory>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class MusicTab : public brls::Box {
 public:
@@ -80,4 +80,4 @@ private:
     std::shared_ptr<bool> m_alive;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

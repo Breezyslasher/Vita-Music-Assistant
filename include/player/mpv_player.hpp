@@ -1,6 +1,6 @@
 /**
- * VitaPlex - MPV Video Player
- * Hardware-accelerated video playback using libmpv with GXM rendering on Vita
+ * Vita Music Assistant - MPV Audio Player
+ * Audio playback using libmpv with optional GXM rendering on Vita
  */
 
 #pragma once
@@ -22,7 +22,7 @@ typedef struct mpv_event_property mpv_event_property;
 typedef struct mpv_render_context mpv_render_context;
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Player states
 enum class MpvPlayerState {
@@ -42,10 +42,6 @@ struct MpvPlaybackInfo {
     int volume = 100;
     bool muted = false;
     std::string mediaTitle;
-    std::string videoCodec;
-    int videoWidth = 0;
-    int videoHeight = 0;
-    double fps = 0.0;
     std::string audioCodec;
     int audioChannels = 0;
     int sampleRate = 0;
@@ -58,7 +54,7 @@ struct MpvPlaybackInfo {
 };
 
 /**
- * MPV-based video player with GXM rendering support on Vita
+ * MPV-based audio player with GXM rendering support on Vita
  */
 class MpvPlayer {
 public:
@@ -109,7 +105,6 @@ public:
     // Tracks
     void setSubtitleTrack(int track);
     void setAudioTrack(int track);
-    void setVideoTrack(int track);
     void cycleSubtitle();
     void cycleAudio();
     void toggleSubtitles();
@@ -156,19 +151,6 @@ public:
     // Check if render context is available (video mode vs audio-only)
     bool hasRenderContext() const { return m_mpvRenderCtx != nullptr; }
 
-    // Get NanoVG image handle for drawing video (returns 0 if not available)
-    int getVideoImage() const {
-#ifdef __vita__
-        return m_nvgImage;
-#else
-        return 0;
-#endif
-    }
-
-    // Get video dimensions
-    int getVideoWidth() const { return 960; }
-    int getVideoHeight() const { return 544; }
-
 private:
     MpvPlayer() = default;
     ~MpvPlayer();
@@ -214,4 +196,4 @@ private:
 #endif
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

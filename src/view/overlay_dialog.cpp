@@ -1,10 +1,10 @@
 /**
- * VitaPlex - Semi-Transparent Overlay Dialog implementation
+ * Vita Music Assistant - Semi-Transparent Overlay Dialog implementation
  */
 
 #include "view/overlay_dialog.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 OverlayDialog::OverlayDialog(const std::string& title, const std::string& message, uint8_t backdropAlpha)
     : m_backdropAlpha(backdropAlpha) {
@@ -100,4 +100,4 @@ void OverlayDialog::dismiss() {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

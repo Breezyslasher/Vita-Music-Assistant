@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Search Tab implementation
+ * Vita Music Assistant - Search Tab implementation
  */
 
 #include "view/search_tab.hpp"
@@ -10,7 +10,7 @@
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 SearchTab::SearchTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -241,7 +241,7 @@ void SearchTab::performSearch(const std::string& query) {
     // Run search async with alive guard and generation counter
     int gen = ++m_loadGeneration;
     asyncRun([this, query, gen, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> results;
 
         bool success = client.search(query, results);
@@ -350,4 +350,4 @@ void SearchTab::onItemSelected(const MediaItem& item) {
     brls::Application::pushActivity(new brls::Activity(detailView));
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -1,10 +1,10 @@
 /**
- * VitaPlex - Horizontal Scroll Row implementation
+ * Vita Music Assistant - Horizontal Scroll Row implementation
  */
 
 #include "view/horizontal_scroll_row.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 HorizontalScrollRow::HorizontalScrollRow() {
     this->setAxis(brls::Axis::ROW);
@@ -107,4 +107,4 @@ brls::View* HorizontalScrollRow::getNextFocus(brls::FocusDirection direction, br
     return nextFocus;
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

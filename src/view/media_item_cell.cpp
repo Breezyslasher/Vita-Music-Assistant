@@ -1,13 +1,13 @@
 /**
- * VitaPlex - Media Item Cell implementation
+ * Vita Music Assistant - Media Item Cell implementation
  */
 
 #include "view/media_item_cell.hpp"
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/application.hpp"
 #include "utils/image_loader.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 MediaItemCell::MediaItemCell()
     : m_alive(std::make_shared<std::atomic<bool>>(true)) {
@@ -196,7 +196,7 @@ void MediaItemCell::setItem(const MediaItem& item) {
 void MediaItemCell::loadThumbnail() {
     if (!m_thumbnailImage) return;
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     // Use square dimensions for music/playlists, landscape for episodes, portrait for movies/TV
     bool isMusic = (m_item.mediaType == MediaType::MUSIC_ARTIST ||
@@ -448,4 +448,4 @@ void MediaItemCell::updateFocusInfo(bool focused) {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

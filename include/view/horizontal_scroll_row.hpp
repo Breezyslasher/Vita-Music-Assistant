@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Horizontal Scroll Row
+ * Vita Music Assistant - Horizontal Scroll Row
  * A horizontal scrollable row for touch and d-pad navigation.
  * Unlike HScrollingFrame, this properly delegates focus navigation
  * to parent views (e.g. sidebar) when at row boundaries.
@@ -9,7 +9,7 @@
 
 #include <borealis.hpp>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class HorizontalScrollRow : public brls::Box {
 public:
@@ -33,4 +33,4 @@ private:
     float m_panStartOffset = 0.0f;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

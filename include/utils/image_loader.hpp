@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Asynchronous Image Loader
+ * Vita Music Assistant - Asynchronous Image Loader
  * Memory-optimized with LRU cache eviction and reduced cache size.
  */
 
@@ -14,7 +14,7 @@
 #include <atomic>
 #include <memory>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class ImageLoader {
 public:
@@ -63,4 +63,4 @@ private:
     static constexpr size_t MAX_CACHE_SIZE = 20;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

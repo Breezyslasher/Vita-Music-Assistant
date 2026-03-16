@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Library Section Tab
+ * Vita Music Assistant - Library Section Tab
  * Shows content for a single library section (for sidebar mode)
  * Collections, categories (genres) appear as browsable content within the tab
  */
@@ -9,10 +9,10 @@
 #include <borealis.hpp>
 #include <memory>
 #include <vector>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 // View mode for the library section
 enum class LibraryViewMode {
@@ -109,4 +109,4 @@ private:
     std::shared_ptr<bool> m_alive;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

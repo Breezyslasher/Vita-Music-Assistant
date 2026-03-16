@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Media Detail View implementation
+ * Vita Music Assistant - Media Detail View implementation
  */
 
 #include "view/media_detail_view.hpp"
@@ -17,7 +17,7 @@
 #include <psp2/kernel/threadmgr.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 MediaDetailView::MediaDetailView(const MediaItem& item)
     : m_item(item), m_alive(std::make_shared<std::atomic<bool>>(true)) {
@@ -398,7 +398,7 @@ void MediaDetailView::loadDetails() {
 
     // Load full details asynchronously to avoid blocking the UI thread
     asyncRun([this, ratingKey, thumbPath, mediaType]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
 
         // Fetch full details on background thread
         MediaItem fullItem;
@@ -459,7 +459,7 @@ void MediaDetailView::loadDetails() {
                 int width = 400;
                 int height = isMusic ? 400 : 600;
 
-                PlexClient& client = PlexClient::getInstance();
+                MAClient& client = MAClient::instance();
                 std::string url = client.getThumbnailUrl(thumb, width, height);
                 ImageLoader::loadAsync(url, [](brls::Image* image) {
                     image->setVisibility(brls::Visibility::VISIBLE);
@@ -492,7 +492,7 @@ void MediaDetailView::loadDetails() {
 void MediaDetailView::loadChildren() {
     if (!m_childrenBox) return;
 
-    PlexClient& client = PlexClient::getInstance();
+    MAClient& client = MAClient::instance();
 
     if (client.fetchChildren(m_item.ratingKey, m_children)) {
         // Skip single season: if show has exactly one season and setting is enabled,
@@ -572,7 +572,7 @@ void MediaDetailView::loadExtras() {
     std::string ratingKey = m_item.ratingKey;
 
     asyncRun([this, ratingKey]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
 
         std::vector<MediaItem> extras;
         bool ok = client.fetchExtras(ratingKey, extras);
@@ -619,7 +619,7 @@ void MediaDetailView::loadMusicCategories() {
     if (!m_musicCategoriesBox) return;
 
     asyncRun([this]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
 
         // Fetch music videos (extras) for this artist
         std::vector<MediaItem> musicVideos;
@@ -897,7 +897,7 @@ void MediaDetailView::onPlay(bool resume) {
         if (!m_children.empty()) {
             // For shows, the first child is a season - need to get its first episode
             if (m_item.mediaType == MediaType::SHOW) {
-                PlexClient& client = PlexClient::getInstance();
+                MAClient& client = MAClient::instance();
                 std::vector<MediaItem> episodes;
                 if (client.fetchChildren(m_children[0].ratingKey, episodes) && !episodes.empty()) {
                     Application::getInstance().pushPlayerActivity(episodes[0].ratingKey);
@@ -908,7 +908,7 @@ void MediaDetailView::onPlay(bool resume) {
             }
         } else {
             // Fetch children and play first one
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> children;
             if (client.fetchChildren(m_item.ratingKey, children) && !children.empty()) {
                 if (m_item.mediaType == MediaType::SHOW) {
@@ -961,7 +961,7 @@ void MediaDetailView::onDownload() {
         brls::Application::notify("Loading media info...");
 
         // Try to load details now
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         MediaItem fullItem;
         if (client.fetchMediaDetails(m_item.ratingKey, fullItem) && !fullItem.partPath.empty()) {
             m_item = fullItem;
@@ -1097,7 +1097,7 @@ void MediaDetailView::downloadAll() {
     std::string itemThumb = m_item.thumb;
 
     asyncRun([this, progressDialog, ratingKey, mediaType, parentTitle, itemThumb]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
         int queued = 0;
         int skipped = 0;
@@ -1243,7 +1243,7 @@ void MediaDetailView::downloadUnwatched(int maxCount) {
     std::string itemThumb = m_item.thumb;
 
     asyncRun([this, progressDialog, ratingKey, mediaType, parentTitle, itemThumb, maxCount]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> unwatchedItems;
         int queued = 0;
         int skipped = 0;
@@ -1376,7 +1376,7 @@ void MediaDetailView::loadTrackList() {
     if (!m_trackListBox) return;
 
     asyncRun([this]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> tracks;
 
         if (!client.fetchChildren(m_item.ratingKey, tracks)) {
@@ -1509,7 +1509,7 @@ void MediaDetailView::loadTrackList() {
                     } else {
                         // Fetch full details for partPath
                         asyncRun([this, dlItem]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             MediaItem fullItem;
                             if (client.fetchMediaDetails(dlItem.ratingKey, fullItem) && !fullItem.partPath.empty()) {
                                 bool queued = DownloadsManager::getInstance().queueDownload(
@@ -1692,7 +1692,7 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
     addDialogButton("Add to Playlist", [this, capturedTrack, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([this, capturedTrack]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<Playlist> playlists;
             client.fetchMusicPlaylists(playlists);
 
@@ -1720,7 +1720,7 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
                     brls::Application::getImeManager()->openForText([capturedTrack](std::string name) {
                         if (name.empty()) return;
                         asyncRun([name, capturedTrack]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             std::vector<std::string> keys = {capturedTrack.ratingKey};
                             Playlist result;
                             if (client.createPlaylistWithItems(name, keys, result)) {
@@ -1739,7 +1739,7 @@ void MediaDetailView::showTrackActionDialog(const MediaItem& track, size_t track
                     addBtn(pl.title, [plDialog, capturedPl, capturedTrack](brls::View*) {
                         plDialog->dismiss();
                         asyncRun([capturedPl, capturedTrack]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             std::vector<std::string> keys = {capturedTrack.ratingKey};
                             if (client.addToPlaylist(capturedPl.ratingKey, keys)) {
                                 brls::sync([capturedPl]() {
@@ -1803,7 +1803,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
         dialog->dismiss();
         // Fetch album tracks and play
         asyncRun([this, capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
                 brls::sync([tracks]() {
@@ -1818,7 +1818,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
     addDialogButton("Play Next", [this, capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -1842,7 +1842,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
     addDialogButton("Add to Bottom of Queue", [this, capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -1864,7 +1864,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
         dialog->dismiss();
         // Fetch audio playlists and let user pick one
         asyncRun([this, capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<Playlist> playlists;
             client.fetchMusicPlaylists(playlists);
 
@@ -1902,7 +1902,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
                     brls::Application::getImeManager()->openForText([tracks](std::string name) {
                         if (name.empty()) return;
                         asyncRun([name, tracks]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             std::vector<std::string> keys;
                             for (const auto& t : tracks) {
                                 keys.push_back(t.ratingKey);
@@ -1929,7 +1929,7 @@ void MediaDetailView::showAlbumContextMenu(const MediaItem& album) {
                     addBtn(pl.title, [plDialog, capturedPl, tracks](brls::View*) {
                         plDialog->dismiss();
                         asyncRun([capturedPl, tracks]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             std::vector<std::string> keys;
                             for (const auto& t : tracks) {
                                 keys.push_back(t.ratingKey);
@@ -2016,7 +2016,7 @@ void MediaDetailView::showMovieContextMenuStatic(const MediaItem& movie) {
     addDialogButton("Restart", [capturedMovie, dialog](brls::View*) {
         dialog->dismiss();
         // Mark as unwatched first to reset progress, then play
-        PlexClient::getInstance().markAsUnwatched(capturedMovie.ratingKey);
+        MAClient::instance().markAsUnwatched(capturedMovie.ratingKey);
         Application::getInstance().pushPlayerActivity(capturedMovie.ratingKey);
         return true;
     });
@@ -2048,7 +2048,7 @@ void MediaDetailView::showMovieContextMenuStatic(const MediaItem& movie) {
         }
         // Fetch full details and queue download
         asyncRun([capturedMovie]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             MediaItem fullItem;
             if (client.fetchMediaDetails(capturedMovie.ratingKey, fullItem) && !fullItem.partPath.empty()) {
                 bool queued = DownloadsManager::getInstance().queueDownload(
@@ -2077,7 +2077,7 @@ void MediaDetailView::showMovieContextMenuStatic(const MediaItem& movie) {
         addDialogButton("Mark as Unwatched", [capturedMovie, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedMovie]() {
-                PlexClient::getInstance().markAsUnwatched(capturedMovie.ratingKey);
+                MAClient::instance().markAsUnwatched(capturedMovie.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as unwatched");
                 });
@@ -2088,7 +2088,7 @@ void MediaDetailView::showMovieContextMenuStatic(const MediaItem& movie) {
         addDialogButton("Mark as Watched", [capturedMovie, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedMovie]() {
-                PlexClient::getInstance().markAsWatched(capturedMovie.ratingKey);
+                MAClient::instance().markAsWatched(capturedMovie.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as watched");
                 });
@@ -2132,7 +2132,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
     addDialogButton("Restart (S01E01)", [capturedShow, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedShow]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> seasons;
             if (client.fetchChildren(capturedShow.ratingKey, seasons) && !seasons.empty()) {
                 std::vector<MediaItem> episodes;
@@ -2151,7 +2151,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
         addDialogButton("Resume", [capturedShow, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedShow]() {
-                PlexClient& client = PlexClient::getInstance();
+                MAClient& client = MAClient::instance();
                 std::vector<MediaItem> seasons;
                 if (!client.fetchChildren(capturedShow.ratingKey, seasons) || seasons.empty()) return;
 
@@ -2208,7 +2208,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
         dialog->dismiss();
         // Use the downloadAll pattern from existing code
         asyncRun([capturedShow]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             auto& mgr = DownloadsManager::getInstance();
             std::vector<MediaItem> seasons;
             int queued = 0;
@@ -2252,7 +2252,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
     addDialogButton("Download All Unwatched", [capturedShow, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedShow]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             auto& mgr = DownloadsManager::getInstance();
             std::vector<MediaItem> seasons;
             int queued = 0;
@@ -2300,7 +2300,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
         dialog->dismiss();
         // Show a second dialog with season options
         asyncRun([capturedShow]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> seasons;
             if (!client.fetchChildren(capturedShow.ratingKey, seasons) || seasons.empty()) {
                 brls::sync([]() {
@@ -2327,7 +2327,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
                     btn->registerClickAction([capturedSeason, showTitle, showThumb, showKey, seasonDialog](brls::View*) {
                         seasonDialog->dismiss();
                         asyncRun([capturedSeason, showTitle, showThumb, showKey]() {
-                            PlexClient& client = PlexClient::getInstance();
+                            MAClient& client = MAClient::instance();
                             auto& mgr = DownloadsManager::getInstance();
                             std::vector<MediaItem> episodes;
                             int queued = 0;
@@ -2393,7 +2393,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
         addDialogButton("Mark as Unwatched", [capturedShow, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedShow]() {
-                PlexClient::getInstance().markAsUnwatched(capturedShow.ratingKey);
+                MAClient::instance().markAsUnwatched(capturedShow.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as unwatched");
                 });
@@ -2404,7 +2404,7 @@ void MediaDetailView::showShowContextMenuStatic(const MediaItem& show) {
         addDialogButton("Mark as Watched", [capturedShow, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedShow]() {
-                PlexClient::getInstance().markAsWatched(capturedShow.ratingKey);
+                MAClient::instance().markAsWatched(capturedShow.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as watched");
                 });
@@ -2448,7 +2448,7 @@ void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
     addDialogButton("Resume", [capturedSeason, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedSeason]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> episodes;
             if (!client.fetchChildren(capturedSeason.ratingKey, episodes) || episodes.empty()) {
                 brls::sync([]() { brls::Application::notify("No episodes found"); });
@@ -2495,7 +2495,7 @@ void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
     addDialogButton("Download Whole Season", [capturedSeason, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedSeason]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             auto& mgr = DownloadsManager::getInstance();
             std::vector<MediaItem> episodes;
             int queued = 0;
@@ -2536,7 +2536,7 @@ void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
     addDialogButton("Download All Unwatched", [capturedSeason, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedSeason]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             auto& mgr = DownloadsManager::getInstance();
             std::vector<MediaItem> episodes;
             int queued = 0;
@@ -2580,7 +2580,7 @@ void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
         addDialogButton("Mark as Unwatched", [capturedSeason, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedSeason]() {
-                PlexClient::getInstance().markAsUnwatched(capturedSeason.ratingKey);
+                MAClient::instance().markAsUnwatched(capturedSeason.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as unwatched");
                 });
@@ -2591,7 +2591,7 @@ void MediaDetailView::showSeasonContextMenuStatic(const MediaItem& season) {
         addDialogButton("Mark as Watched", [capturedSeason, dialog](brls::View*) {
             dialog->dismiss();
             asyncRun([capturedSeason]() {
-                PlexClient::getInstance().markAsWatched(capturedSeason.ratingKey);
+                MAClient::instance().markAsWatched(capturedSeason.ratingKey);
                 brls::sync([]() {
                     brls::Application::notify("Marked as watched");
                 });
@@ -2635,7 +2635,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
     addDialogButton("Shuffle Artist", [capturedArtist, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedArtist]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> albums;
             std::vector<MediaItem> allTracks;
 
@@ -2674,7 +2674,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
     addDialogButton("Play All", [capturedArtist, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedArtist]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> albums;
             std::vector<MediaItem> allTracks;
 
@@ -2706,7 +2706,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MediaItem& artist) {
     addDialogButton("Download Artist", [capturedArtist, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedArtist]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             auto& mgr = DownloadsManager::getInstance();
             std::vector<MediaItem> albums;
             int queued = 0;
@@ -2784,7 +2784,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
     addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
                 brls::sync([tracks]() {
@@ -2799,7 +2799,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
     addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -2822,7 +2822,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MediaItem& album) {
     addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -3056,4 +3056,4 @@ void MediaDetailView::setupChildrenFocusTransfer() {
     }
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

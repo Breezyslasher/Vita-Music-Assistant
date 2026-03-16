@@ -1,35 +1,35 @@
 {
     "app": {
-        "name": "VitaPlex",
+        "name": "Vita Music Assistant",
         "version": "2.0.0"
     },
     "login": {
-        "title": "VitaPlex",
+        "title": "Vita Music Assistant",
         "server": "Server URL",
         "username": "Username",
         "password": "Password",
         "login": "Login",
-        "pin_login": "Login with PIN",
-        "enter_server": "Enter your Plex server URL",
-        "enter_credentials": "Enter your Plex credentials",
-        "go_to_plex": "Go to plex.tv/link and enter the PIN",
+        "remote_login": "Remote Access",
+        "enter_server": "Enter your Music Assistant server URL",
+        "enter_credentials": "Enter your Music Assistant credentials",
+        "enter_remote_id": "Enter Remote ID (MA-XXXX-XXXX)",
         "logging_in": "Logging in...",
         "success": "Login successful!",
         "failed": "Login failed",
-        "pin_expired": "PIN expired - try again"
+        "connecting": "Connecting..."
     },
     "home": {
         "title": "Home",
-        "continue_watching": "Continue Watching",
-        "recently_added": "Recently Added",
-        "on_deck": "On Deck"
+        "recently_played": "Recently Played",
+        "recommendations": "Recommendations"
     },
     "library": {
         "title": "Library",
-        "movies": "Movies",
-        "shows": "TV Shows",
-        "music": "Music",
-        "photos": "Photos",
+        "artists": "Artists",
+        "albums": "Albums",
+        "tracks": "Tracks",
+        "playlists": "Playlists",
+        "radios": "Radio",
         "empty": "No items found"
     },
     "search": {
@@ -43,6 +43,9 @@
         "account": "Account",
         "user": "User",
         "server": "Server",
+        "remote_access": "Remote Access",
+        "remote_id": "Remote ID",
+        "audio_quality": "Audio Quality",
         "about": "About",
         "version": "Version",
         "logout": "Logout",
@@ -53,17 +56,22 @@
         "play": "Play",
         "pause": "Pause",
         "stop": "Stop",
-        "rewind": "Rewind",
-        "forward": "Forward"
+        "next": "Next",
+        "previous": "Previous",
+        "shuffle": "Shuffle",
+        "repeat": "Repeat",
+        "queue": "Queue",
+        "volume": "Volume"
     },
     "detail": {
         "play": "Play",
-        "resume": "Resume",
-        "seasons": "Seasons",
-        "episodes": "Episodes",
+        "play_all": "Play All",
+        "add_to_queue": "Add to Queue",
+        "play_next": "Play Next",
+        "albums": "Albums",
         "tracks": "Tracks",
-        "mark_watched": "Mark as Watched",
-        "mark_unwatched": "Mark as Unwatched"
+        "add_favorite": "Add to Favorites",
+        "remove_favorite": "Remove from Favorites"
     },
     "common": {
         "ok": "OK",

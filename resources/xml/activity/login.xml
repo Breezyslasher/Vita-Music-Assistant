@@ -13,7 +13,7 @@
     <!-- Title -->
     <brls:Label
         id="login/title"
-        text="VitaPlex"
+        text="Vita Music Assistant"
         fontSize="36"
         marginBottom="40"/>
 

@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Library Tab
+ * Vita Music Assistant - Library Tab
  * Browse library sections and content
  */
 
@@ -7,10 +7,10 @@
 
 #include <borealis.hpp>
 #include <memory>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 // View mode for library tab browsing
 enum class LibraryTabViewMode {
@@ -77,4 +77,4 @@ private:
     std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

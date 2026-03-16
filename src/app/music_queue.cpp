@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Music Queue Manager Implementation
+ * Vita Music Assistant - Music Queue Manager Implementation
  */
 
 #include "app/music_queue.hpp"
@@ -12,9 +12,9 @@
 #include <psp2/io/fcntl.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
-static const std::string QUEUE_STATE_FILE = "ux0:data/vitaplex/queue_state.txt";
+static const std::string QUEUE_STATE_FILE = "ux0:data/VitaMA/queue_state.txt";
 
 MusicQueue::MusicQueue() {
     // Seed random number generator
@@ -518,7 +518,7 @@ int MusicQueue::getCurrentPlayQueueItemID() const {
     return 0;
 }
 
-void MusicQueue::setFromPlayQueue(const PlexClient::PlayQueueContainer& pq, bool isShuffled) {
+void MusicQueue::setFromPlayQueue(const MAClient::PlayQueueContainer& pq, bool isShuffled) {
     m_queue.clear();
     m_shuffleOrder.clear();
     m_shufflePosition = -1;
@@ -564,4 +564,4 @@ void MusicQueue::setFromPlayQueue(const PlexClient::PlayQueueContainer& pq, bool
                        m_queue.size(), m_playQueueID, m_currentIndex);
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

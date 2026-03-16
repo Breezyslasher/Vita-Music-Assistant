@@ -1,6 +1,6 @@
 /**
- * VitaPlex - Player Activity
- * Video/audio playback screen with controls and queue support
+ * Vita Music Assistant - Player Activity
+ * Audio playback screen with controls and queue support
  */
 
 #pragma once
@@ -13,16 +13,16 @@
 #include <atomic>
 #include <unordered_map>
 #include <chrono>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 
 // Forward declarations
-namespace vitaplex {
+namespace vita_ma {
     class VideoView;
     struct MediaItem;
 }
 
-namespace vitaplex {
+namespace vita_ma {
 
 class PlayerActivity : public brls::Activity {
 public:
@@ -35,7 +35,7 @@ public:
     // Play direct file path (for debug/testing)
     static PlayerActivity* createForDirectFile(const std::string& filePath);
 
-    // Play a direct stream URL (for Live TV HLS streams)
+    // Play a direct stream URL
     static PlayerActivity* createForStream(const std::string& streamUrl, const std::string& title);
 
     // Play from queue (album, playlist, etc.)
@@ -171,7 +171,7 @@ private:
 
     std::string m_mediaKey;
     std::string m_directFilePath;  // For direct file playback (debug) or stream URL
-    std::string m_streamTitle;     // Title for stream playback (Live TV)
+    std::string m_streamTitle;     // Title for stream playback
     MediaType m_mediaType = MediaType::UNKNOWN;  // Type of media being played
     std::string m_parentRatingKey;  // Season/album ratingKey for auto-play-next
     std::string m_grandparentRatingKey;  // Show ratingKey for cross-season auto-play-next
@@ -210,9 +210,9 @@ private:
     void updatePlayPauseLabel();
 
     // Track selection overlay
-    enum class TrackSelectMode { NONE, AUDIO, SUBTITLE, VIDEO };
+    enum class TrackSelectMode { NONE, AUDIO, SUBTITLE };
     TrackSelectMode m_trackSelectMode = TrackSelectMode::NONE;
-    std::vector<PlexStream> m_plexStreams;  // Cached streams from Plex
+    std::vector<AudioStream> m_audioStreams;  // Cached streams from Plex
     int m_partId = 0;                       // Plex part ID for stream selection
     bool m_streamsLoaded = false;
     int m_selectedTrackIndex = 0;  // Index of selected item in track list for focus
@@ -222,8 +222,8 @@ private:
     void populateTrackList(TrackSelectMode mode);
     void populateSubtitleSearchResults();
     void selectTrack(TrackSelectMode mode, int index);  // index into filtered list, -1 = off for subs
-    void fetchPlexStreams();
-    std::vector<PlexClient::SubtitleResult> m_subtitleSearchResults;
+    void fetchAudioStreams();
+    std::vector<MAClient::SubtitleResult> m_subtitleSearchResults;
 
     // Intro/credits skip
     std::vector<MediaItem::Marker> m_markers;
@@ -260,8 +260,6 @@ private:
     BRLS_BIND(brls::Box, forwardBtn, "player/forward_btn");
     BRLS_BIND(brls::Box, audioBtn, "player/audio_btn");
     BRLS_BIND(brls::Box, subBtn, "player/sub_btn");
-    BRLS_BIND(brls::Box, videoBtn, "player/video_btn");
-    BRLS_BIND(brls::Image, videoIcon, "player/video_icon");
     BRLS_BIND(brls::Box, trackOverlay, "player/track_overlay");
     BRLS_BIND(brls::Label, trackOverlayTitle, "player/track_overlay_title");
     BRLS_BIND(brls::Box, trackList, "player/track_list");
@@ -290,4 +288,4 @@ private:
     BRLS_BIND(brls::Image, repeatIcon, "player/repeat_icon");
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

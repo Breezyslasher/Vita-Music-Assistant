@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Async utilities
+ * Vita Music Assistant - Async utilities
  * Simple async task execution with UI thread callbacks
  */
 
@@ -12,7 +12,7 @@
 #include <pthread.h>
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 /**
  * Execute a task asynchronously and call a callback on the UI thread when done.
@@ -89,4 +89,4 @@ inline void asyncRunLargeStack(std::function<void()> task, size_t stackSize = 51
 #endif
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

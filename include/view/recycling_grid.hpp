@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Recycling Grid
+ * Vita Music Assistant - Recycling Grid
  * Memory-efficient grid view with infinite scroll pagination.
  * Automatically fetches the next page when scrolling near the bottom.
  */
@@ -7,10 +7,10 @@
 #pragma once
 
 #include <borealis.hpp>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include <functional>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class RecyclingGrid : public brls::ScrollingFrame {
 public:
@@ -53,4 +53,4 @@ private:
     bool m_loading = false;  // Prevents duplicate fetch requests
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -1,17 +1,17 @@
 /**
- * VitaPlex - Music Queue Manager
+ * Vita Music Assistant - Music Queue Manager
  * Handles playlist/queue management for music playback
  */
 
 #pragma once
 
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include <string>
 #include <vector>
 #include <functional>
 #include <random>
 
-namespace vitaplex {
+namespace vita_ma {
 
 // Playback modes
 enum class RepeatMode {
@@ -106,7 +106,7 @@ public:
     int getCurrentPlayQueueItemID() const;
 
     // Set queue from server play queue response (replaces local state)
-    void setFromPlayQueue(const PlexClient::PlayQueueContainer& pq, bool isShuffled);
+    void setFromPlayQueue(const MAClient::PlayQueueContainer& pq, bool isShuffled);
 
 private:
     MusicQueue();
@@ -136,4 +136,4 @@ private:
     int m_playQueueID = 0;  // 0 = offline/not synced
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

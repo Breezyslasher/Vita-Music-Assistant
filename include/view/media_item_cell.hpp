@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Media Item Cell
+ * Vita Music Assistant - Media Item Cell
  * A cell for displaying media items in a grid
  */
 
@@ -8,9 +8,9 @@
 #include <borealis.hpp>
 #include <memory>
 #include <atomic>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class MediaItemCell : public brls::Box {
 public:
@@ -50,4 +50,4 @@ private:
     brls::Label* m_buttonHintLabel = nullptr;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

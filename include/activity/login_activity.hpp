@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Login Activity
+ * Vita Music Assistant - Login Activity
  * Handles user authentication via credentials or PIN
  */
 
@@ -7,9 +7,9 @@
 
 #include <borealis.hpp>
 #include <borealis/core/timer.hpp>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class LoginActivity : public brls::Activity {
 public:
@@ -24,8 +24,8 @@ private:
     void onPinLoginPressed();
     void onOfflinePressed();
     void checkPinStatus();
-    void showServerSelectionDialog(const std::vector<PlexServer>& servers);
-    void connectToSelectedServer(const PlexServer& server);
+    void showServerSelectionDialog(const std::vector<ServerInfo>& servers);
+    void connectToSelectedServer(const ServerInfo& server);
 
     BRLS_BIND(brls::Label, titleLabel, "login/title");
     BRLS_BIND(brls::Box, inputContainer, "login/input_container");
@@ -47,4 +47,4 @@ private:
     brls::RepeatingTimer m_pinTimer;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

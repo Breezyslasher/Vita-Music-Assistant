@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Home Tab implementation
+ * Vita Music Assistant - Home Tab implementation
  */
 
 #include "view/home_tab.hpp"
@@ -9,7 +9,7 @@
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 HomeTab::HomeTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -203,7 +203,7 @@ void HomeTab::loadContent() {
     // Load continue watching asynchronously
     asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
         brls::Logger::debug("HomeTab: Fetching continue watching (async)...");
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         if (client.fetchContinueWatching(items)) {
@@ -226,7 +226,7 @@ void HomeTab::loadContent() {
     // Load recently added by fetching from library sections
     asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
         brls::Logger::debug("HomeTab: Fetching library sections for recently added...");
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
 
         // First get all library sections
         std::vector<LibrarySection> sections;
@@ -318,4 +318,4 @@ void HomeTab::onItemSelected(const MediaItem& item) {
     brls::Application::pushActivity(new brls::Activity(detailView));
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

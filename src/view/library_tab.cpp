@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Library Tab implementation
+ * Vita Music Assistant - Library Tab implementation
  */
 
 #include "view/library_tab.hpp"
@@ -11,7 +11,7 @@
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 LibraryTab::LibraryTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -199,7 +199,7 @@ void LibraryTab::loadSections() {
 
     asyncRun([this, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
         brls::Logger::debug("LibraryTab: Fetching library sections (async)...");
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<LibrarySection> sections;
 
         if (client.fetchLibrarySections(sections)) {
@@ -273,7 +273,7 @@ void LibraryTab::loadContent(const std::string& sectionKey) {
     std::string key = sectionKey;
     std::string sectionType = m_currentSectionType;
     asyncRun([this, key, sectionType, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         // Use type-specific metadata type for proper content loading
@@ -303,7 +303,7 @@ void LibraryTab::loadContent(const std::string& sectionKey) {
 void LibraryTab::loadCollections(const std::string& sectionKey) {
     std::string key = sectionKey;
     asyncRun([this, key, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> collections;
 
         if (client.fetchCollections(key, collections)) {
@@ -339,7 +339,7 @@ void LibraryTab::loadCollections(const std::string& sectionKey) {
 void LibraryTab::loadGenres(const std::string& sectionKey) {
     std::string key = sectionKey;
     asyncRun([this, key, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<GenreItem> genres;
 
         if (client.fetchGenreItems(key, genres) && !genres.empty()) {
@@ -498,7 +498,7 @@ void LibraryTab::onCollectionSelected(const MediaItem& collection) {
     std::string filterTitle = m_filterTitle;
 
     asyncRun([this, collectionKey, filterTitle, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         if (client.fetchChildren(collectionKey, items)) {
@@ -534,7 +534,7 @@ void LibraryTab::onGenreSelected(const GenreItem& genre) {
     std::string secType = m_currentSectionType;
 
     asyncRun([this, key, genreKey, genreTitle, filterTitle, secType, aliveWeak = std::weak_ptr<bool>(m_alive)]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         int metadataType = 0;
@@ -586,7 +586,7 @@ void LibraryTab::showAlbumContextMenu(const MediaItem& album) {
     addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks) && !tracks.empty()) {
                 brls::sync([tracks]() {
@@ -601,7 +601,7 @@ void LibraryTab::showAlbumContextMenu(const MediaItem& album) {
     addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -624,7 +624,7 @@ void LibraryTab::showAlbumContextMenu(const MediaItem& album) {
     addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
         dialog->dismiss();
         asyncRun([capturedAlbum]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<MediaItem> tracks;
             if (client.fetchChildren(capturedAlbum.ratingKey, tracks)) {
                 brls::sync([tracks]() {
@@ -655,4 +655,4 @@ void LibraryTab::showAlbumContextMenu(const MediaItem& album) {
     brls::Application::pushActivity(new brls::Activity(dialog));
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

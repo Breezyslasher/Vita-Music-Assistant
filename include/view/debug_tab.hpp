@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Debug Tab
+ * Vita Music Assistant - Debug Tab
  * UI test tab with buttons to show various dialog and notification styles
  */
 
@@ -7,7 +7,7 @@
 
 #include <borealis.hpp>
 
-namespace vitaplex {
+namespace vita_ma {
 
 class DebugTab : public brls::Box {
 public:
@@ -58,4 +58,4 @@ private:
 
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Search Tab
+ * Vita Music Assistant - Search Tab
  * Search for media content
  */
 
@@ -7,11 +7,11 @@
 
 #include <borealis.hpp>
 #include <memory>
-#include "app/plex_client.hpp"
+#include "app/ma_types.hpp"
 #include "view/recycling_grid.hpp"
 #include "view/horizontal_scroll_row.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 class SearchTab : public brls::Box {
 public:
@@ -59,4 +59,4 @@ private:
     int m_loadGeneration = 0;
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

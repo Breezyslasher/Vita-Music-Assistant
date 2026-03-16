@@ -5,18 +5,18 @@
 #include <vector>
 #include <functional>
 
-// Define Plex client info for HTTP User-Agent
-#ifndef PLEX_CLIENT_NAME
-#define PLEX_CLIENT_NAME "VitaPlex"
+// Define client info for HTTP User-Agent
+#ifndef MA_CLIENT_NAME
+#define MA_CLIENT_NAME "Vita Music Assistant"
 #endif
-#ifndef PLEX_CLIENT_VERSION
-#define PLEX_CLIENT_VERSION "1.0.0"
+#ifndef MA_CLIENT_VERSION
+#define MA_CLIENT_VERSION "2.0.0"
 #endif
-#ifndef PLEX_PLATFORM
-#define PLEX_PLATFORM "PlayStation Vita"
+#ifndef MA_PLATFORM
+#define MA_PLATFORM "PlayStation Vita"
 #endif
 
-namespace vitaplex {
+namespace vita_ma {
 
 // HTTP response
 struct HttpResponse {
@@ -93,4 +93,4 @@ private:
                                 int64_t ultotal, int64_t ulnow);
 };
 
-} // namespace vitaplex
+} // namespace vita_ma

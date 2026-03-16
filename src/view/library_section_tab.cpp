@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Library Section Tab implementation
+ * Vita Music Assistant - Library Section Tab implementation
  */
 
 #include "view/library_section_tab.hpp"
@@ -12,7 +12,7 @@
 #include "app/music_queue.hpp"
 #include "app/downloads_manager.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 LibrarySectionTab::LibrarySectionTab(const std::string& sectionKey, const std::string& title, const std::string& sectionType)
     : m_sectionKey(sectionKey), m_title(title), m_sectionType(sectionType) {
@@ -180,7 +180,7 @@ void LibrarySectionTab::loadContent() {
 
     std::string sectionType = m_sectionType;
     asyncRun([this, key, sectionType, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
         int totalCount = 0;
 
@@ -243,7 +243,7 @@ void LibrarySectionTab::loadCollections() {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, key, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> collections;
 
         if (client.fetchCollections(key, collections)) {
@@ -281,7 +281,7 @@ void LibrarySectionTab::loadGenres() {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, key, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<GenreItem> genres;
 
         if (client.fetchGenreItems(key, genres) && !genres.empty()) {
@@ -321,7 +321,7 @@ void LibrarySectionTab::loadNextPage() {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, key, sectionType, offset, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         int metadataType = 0;
@@ -512,7 +512,7 @@ void LibrarySectionTab::onCollectionSelected(const MediaItem& collection) {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, collectionKey, filterTitle, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         if (client.fetchChildren(collectionKey, items)) {
@@ -552,7 +552,7 @@ void LibrarySectionTab::onGenreSelected(const GenreItem& genre) {
 
     std::string secType = m_sectionType;
     asyncRun([this, key, genreKey, genreTitle, filterTitle, secType, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<MediaItem> items;
 
         // Plex type codes: 1=movie, 2=show, 8=artist
@@ -591,7 +591,7 @@ void LibrarySectionTab::loadPlaylists() {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<Playlist> playlists;
 
         if (client.fetchMusicPlaylists(playlists)) {
@@ -666,7 +666,7 @@ void LibrarySectionTab::onPlaylistSelected(const Playlist& playlist) {
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, playlistId, playlistTitle, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<PlaylistItem> items;
 
         if (client.fetchPlaylistItems(playlistId, items)) {
@@ -963,7 +963,7 @@ void LibrarySectionTab::showPlaylistContextMenu(const Playlist& playlist) {
         dialog->dismiss();
         std::string playlistId = capturedPlaylist.ratingKey;
         asyncRun([playlistId]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<PlaylistItem> items;
             if (client.fetchPlaylistItems(playlistId, items) && !items.empty()) {
                 std::vector<MediaItem> tracks;
@@ -995,7 +995,7 @@ void LibrarySectionTab::showPlaylistContextMenu(const Playlist& playlist) {
         std::string playlistTitle = capturedPlaylist.title;
         std::string playlistThumb = capturedPlaylist.thumb.empty() ? capturedPlaylist.composite : capturedPlaylist.thumb;
         asyncRun([playlistId, playlistTitle, playlistThumb]() {
-            PlexClient& client = PlexClient::getInstance();
+            MAClient& client = MAClient::instance();
             std::vector<PlaylistItem> items;
             int queued = 0;
             int skipped = 0;
@@ -1083,7 +1083,7 @@ void LibrarySectionTab::showPlaylistOptionsDialog(const Playlist& playlist) {
                 std::weak_ptr<bool> aliveWeak = m_alive;
 
                 asyncRun([this, playlistId, aliveWeak]() {
-                    PlexClient& client = PlexClient::getInstance();
+                    MAClient& client = MAClient::instance();
 
                     if (client.deletePlaylist(playlistId)) {
                         brls::Logger::info("LibrarySectionTab: Deleted playlist");
@@ -1111,7 +1111,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
     std::weak_ptr<bool> aliveWeak = m_alive;
 
     asyncRun([this, playlistId, startIndex, aliveWeak]() {
-        PlexClient& client = PlexClient::getInstance();
+        MAClient& client = MAClient::instance();
         std::vector<PlaylistItem> items;
 
         if (client.fetchPlaylistItems(playlistId, items) && !items.empty()) {
@@ -1136,4 +1136,4 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
     });
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

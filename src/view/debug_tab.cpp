@@ -1,5 +1,5 @@
 /**
- * VitaPlex - Debug Tab implementation
+ * Vita Music Assistant - Debug Tab implementation
  * UI test tab with 25 different dialog/notification/overlay style demos
  */
 
@@ -7,7 +7,7 @@
 #include "view/progress_dialog.hpp"
 #include "view/overlay_dialog.hpp"
 
-namespace vitaplex {
+namespace vita_ma {
 
 DebugTab::DebugTab() {
     this->setAxis(brls::Axis::COLUMN);
@@ -397,7 +397,7 @@ void DebugTab::showListSelectionDialog() {
     listBox->setPaddingRight(20);
 
     std::vector<std::string> servers = {
-        "Living Room Plex", "Bedroom Server", "Office NAS",
+        "Living Room MA", "Bedroom Server", "Office NAS",
         "Cloud Server (Remote)", "Backup Media Server",
         "Friend's Server", "Test Server"
     };
@@ -499,7 +499,7 @@ void DebugTab::showFullWidthDialog() {
     lbl3a->setWidth(200);
     row3->addView(lbl3a);
     auto* lbl3b = new brls::Label();
-    lbl3b->setText("VitaPlex Debug Tab");
+    lbl3b->setText("Vita Music Assistant Debug Tab");
     lbl3b->setFontSize(16);
     row3->addView(lbl3b);
     content->addView(row3);
@@ -616,7 +616,7 @@ void DebugTab::showSuccessDialog() {
     content->addView(successTitle);
 
     auto* msgLabel = new brls::Label();
-    msgLabel->setText("Download completed successfully!\nFile saved to: ux0:data/VitaPlex/downloads/\nSize: 1.2 GB");
+    msgLabel->setText("Download completed successfully!\nFile saved to: ux0:data/VitaMA/downloads/\nSize: 1.2 GB");
     msgLabel->setFontSize(16);
     msgLabel->setMarginTop(20);
     msgLabel->setMarginLeft(20);
@@ -643,7 +643,7 @@ void DebugTab::showInputPromptDialog() {
     content->addView(titleLabel);
 
     auto* descLabel = new brls::Label();
-    descLabel->setText("Provide the address of your Plex Media Server:");
+    descLabel->setText("Provide the address of your Music Assistant server:");
     descLabel->setFontSize(14);
     descLabel->setMarginBottom(15);
     content->addView(descLabel);
@@ -845,7 +845,7 @@ void DebugTab::createProgressDialogSection() {
 // 24. ProgressDialog — Connecting style with attempt counter
 void DebugTab::showProgressDialogConnecting() {
     auto* dialog = new ProgressDialog("Connecting to Server");
-    dialog->setStatus("Connecting to Living Room Plex...");
+    dialog->setStatus("Connecting to Living Room MA...");
     dialog->setAttempt(1, 3);
     dialog->setProgress(0.35f);
     dialog->setCancelCallback([dialog]() {
@@ -866,4 +866,4 @@ void DebugTab::showProgressDialogDownload() {
     dialog->show();
 }
 
-} // namespace vitaplex
+} // namespace vita_ma

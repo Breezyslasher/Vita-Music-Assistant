@@ -727,4 +727,8 @@ void MAClient::getStreamUrl(const std::string& queueId, MAResponseCallback cb) {
     sendCommand("player_queues/get_stream_url", args, std::move(cb));
 }
 
+void MAClient::getPlayers(MAResponseCallback cb) {
+    sendCommand("players/all", Json(), std::move(cb));
+}
+
 } // namespace vita_ma
