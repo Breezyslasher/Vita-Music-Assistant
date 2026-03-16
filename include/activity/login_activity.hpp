@@ -1,6 +1,6 @@
 /**
  * Vita Music Assistant - Login Activity
- * Handles user authentication via credentials or PIN
+ * Handles connection to a Music Assistant server
  */
 
 #pragma once
@@ -20,11 +20,7 @@ public:
     void onContentAvailable() override;
 
 private:
-    void onLoginPressed();
-    void onPinLoginPressed();
-    void checkPinStatus();
-    void showServerSelectionDialog(const std::vector<ServerInfo>& servers);
-    void connectToSelectedServer(const ServerInfo& server);
+    void onConnectPressed();
 
     BRLS_BIND(brls::Label, titleLabel, "login/title");
     BRLS_BIND(brls::Box, inputContainer, "login/input_container");
@@ -37,12 +33,7 @@ private:
     BRLS_BIND(brls::Label, pinCodeLabel, "login/pin_code");
 
     std::string m_serverUrl;
-    std::string m_username;
-    std::string m_password;
-    PinAuth m_pinAuth;
-    bool m_pinMode = false;
-    int m_pinCheckTimer = 0;
-    brls::RepeatingTimer m_pinTimer;
+    std::string m_authToken;
 };
 
 } // namespace vita_ma

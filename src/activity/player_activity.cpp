@@ -4,6 +4,7 @@
 
 #include "activity/player_activity.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
@@ -31,7 +32,7 @@ PlayerActivity::PlayerActivity(const std::string& mediaKey)
 
 
 PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, const std::string& title) {
-    PlayerActivity* activity = new PlayerActivity("", false);
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isDirectFile = true;  // Use direct file path for stream URLs too
     activity->m_directFilePath = streamUrl;
     activity->m_streamTitle = title;
@@ -40,7 +41,7 @@ PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, co
 }
 
 PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tracks, int startIndex) {
-    PlayerActivity* activity = new PlayerActivity("", false);
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isQueueMode = true;
 
     MusicQueue& queue = MusicQueue::getInstance();
@@ -60,7 +61,7 @@ PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tr
 }
 
 PlayerActivity* PlayerActivity::createResumeQueue() {
-    PlayerActivity* activity = new PlayerActivity("", false);
+    PlayerActivity* activity = new PlayerActivity("");
     activity->m_isQueueMode = true;
     activity->m_isResuming = true;  // Don't restart playback
 
@@ -690,66 +691,16 @@ void PlayerActivity::loadMedia() {
     }
 
     // Remote playback from server
-    // TODO: Implement MA API track loading
-    // For now, use getStreamUrl to get playback URL
-    MAClient& client = MAClient::instance();
+    // TODO: Implement MA API track loading via getStreamUrl
+    // For now, single-track (non-queue) playback from server is not yet implemented.
+    // Queue-based playback works via loadFromQueue() which calls getStreamUrl.
     m_mediaType = MediaType::TRACK;
 
     if (titleLabel) {
         titleLabel->setText("Loading...");
     }
 
-    // Load album art
-    if (albumArt) {
-        // TODO: Get track image from MA API
-        albumArt->setVisibility(brls::Visibility::VISIBLE);
-    }
-
-    bool isAudioContent = true;
-
-    // TODO: Get stream URL from Music Assistant API
-    // MAClient::instance().getStreamUrl(queueId, callback);
-    std::string url = "";  // Placeholder - needs MA API integration
-    if (!url.empty()) {
-            // Pause image loading and free cache memory before initializing MPV.
-            // This stops background thumbnail fetches from competing with media
-            // streaming, and frees memory (Vita only has 256MB).
-            ImageLoader::setPaused(true);
-            ImageLoader::cancelAll();
-            ImageLoader::clearCache();
-
-            MpvPlayer& player = MpvPlayer::getInstance();
-
-            // Set audio-only mode BEFORE initializing
-            player.setAudioOnly(isAudioContent);
-
-            // Stream directly via MPV (transcode API returns mp4/mp3 stream)
-            if (!player.isInitialized()) {
-                // Defer MPV init + load to after activity transition completes.
-                // initRenderContext() creates GXM resources (framebuffer, render target)
-                // and loadUrl() spawns decoder threads that use the shared GXM context
-                // via hwdec=vita-copy. Both conflict with NanoVG drawing during the
-                // borealis activity show phase, causing a consistent SIGSEGV.
-                brls::Logger::info("PlayerActivity: Deferring MPV init to after activity transition");
-                m_pendingPlayUrl = url;
-                m_pendingPlayTitle = item.title;
-                m_pendingIsAudio = isAudioContent;
-            } else {
-                // Player already initialized (e.g., mode didn't change) - load immediately
-                brls::Logger::debug("PlayerActivity: Calling player.loadUrl...");
-                if (!player.loadUrl(url, item.title)) {
-                    brls::Logger::error("Failed to load URL: {}", url);
-                    m_loadingMedia = false;
-                    return;
-                }
-
-                m_isPlaying = true;
-                brls::Logger::debug("PlayerActivity: loadMedia completed successfully for MA stream");
-            }
-        } else {
-            brls::Logger::error("Failed to get transcode URL for: {}", m_mediaKey);
-        }
-    }
+    brls::Logger::warning("PlayerActivity: Single-track server playback not yet implemented for key: {}", m_mediaKey);
 
     brls::Logger::debug("PlayerActivity: loadMedia exiting");
     m_loadingMedia = false;
