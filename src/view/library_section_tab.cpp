@@ -310,25 +310,42 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
     std::string playlistId = playlist.itemId;
     std::string playlistName = playlist.name;
 
-    // TODO: Implement via MAClient::getPlaylistTracks
-    // MAClient::instance().getPlaylistTracks(playlistId,
-    //     [this, alive, playlistId, playlistName](bool success, const Json& result) {
-    //         if (!alive || !*alive) return;
-    //         if (!success) {
-    //             brls::sync([]() {
-    //                 brls::Application::notify("Failed to load playlist tracks");
-    //             });
-    //             return;
-    //         }
-    //         // Parse result JSON into tracks vector
-    //         std::vector<MusicItem> tracks;
-    //         // ... parse tracks from result ...
-    //         brls::sync([this, alive, tracks = std::move(tracks), playlistName, playlistId]() mutable {
-    //             if (!alive || !*alive) return;
-    //             showPlaylistTrackList(std::move(tracks), playlistName, playlistId);
-    //         });
-    //     });
-    brls::Logger::warning("LibrarySectionTab::onPlaylistSelected - TODO: Implement via MAClient::getPlaylistTracks");
+    std::string provider = playlist.provider;
+
+    MAClient::instance().getPlaylistTracks(playlistId, [this, alive, playlistId, playlistName](bool success, const Json& result) {
+        if (!alive || !*alive) return;
+        if (!success) {
+            brls::sync([]() {
+                brls::Application::notify("Failed to load playlist tracks");
+            });
+            return;
+        }
+
+        std::vector<MusicItem> tracks;
+        if (result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& obj = result[i];
+                MusicItem mi;
+                mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
+                mi.name       = obj.has("name")          ? obj["name"].str()        : "";
+                mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
+                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
+                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                mi.mediaType  = MediaType::TRACK;
+                mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
+                mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
+                if (obj.has("artist_name"))  mi.artistName  = obj["artist_name"].str();
+                if (obj.has("album_name"))   mi.albumName   = obj["album_name"].str();
+                if (obj.has("track_number")) mi.trackNumber = obj["track_number"].intVal();
+                tracks.push_back(mi);
+            }
+        }
+
+        brls::sync([this, alive, tracks = std::move(tracks), playlistName, playlistId]() mutable {
+            if (!alive || !*alive) return;
+            showPlaylistTrackList(std::move(tracks), playlistName, playlistId);
+        });
+    }, 0, provider);
 }
 
 void LibrarySectionTab::showPlaylistTrackList(std::vector<MusicItem>&& tracks,
@@ -702,22 +719,51 @@ void LibrarySectionTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
 void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int startIndex) {
     auto alive = m_alive;
 
-    // TODO: Implement via MAClient::getPlaylistTracks
-    // MAClient::instance().getPlaylistTracks(playlistId,
-    //     [this, alive, startIndex](bool success, const Json& result) {
-    //         if (!alive || !*alive) return;
-    //         if (!success) return;
-    //         // Parse tracks from result
-    //         std::vector<MusicItem> tracks;
-    //         // ... parse ...
-    //         brls::sync([tracks = std::move(tracks), startIndex]() {
-    //             if (!tracks.empty()) {
-    //                 brls::Application::pushActivity(
-    //                     PlayerActivity::createWithQueue(tracks, startIndex));
-    //             }
-    //         });
-    //     });
-    brls::Logger::warning("LibrarySectionTab::playPlaylistWithQueue - TODO: Implement via MAClient::getPlaylistTracks");
+    // If we already have the playlist tracks loaded, use them directly
+    if (!m_playlistTracks.empty() && m_currentPlaylistId == playlistId) {
+        auto* playerActivity = PlayerActivity::createWithQueue(m_playlistTracks, startIndex);
+        brls::Application::pushActivity(playerActivity);
+        return;
+    }
+
+    MAClient::instance().getPlaylistTracks(playlistId, [alive, startIndex](bool success, const Json& result) {
+        if (!alive || !*alive) return;
+        if (!success) {
+            brls::sync([]() {
+                brls::Application::notify("Failed to load playlist");
+            });
+            return;
+        }
+
+        std::vector<MusicItem> tracks;
+        if (result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& obj = result[i];
+                MusicItem mi;
+                mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
+                mi.name       = obj.has("name")          ? obj["name"].str()        : "";
+                mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
+                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
+                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                mi.mediaType  = MediaType::TRACK;
+                mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
+                mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
+                if (obj.has("artist_name"))  mi.artistName  = obj["artist_name"].str();
+                if (obj.has("album_name"))   mi.albumName   = obj["album_name"].str();
+                if (obj.has("track_number")) mi.trackNumber = obj["track_number"].intVal();
+                tracks.push_back(mi);
+            }
+        }
+
+        brls::sync([tracks = std::move(tracks), startIndex]() {
+            if (!tracks.empty()) {
+                brls::Application::pushActivity(
+                    PlayerActivity::createWithQueue(tracks, startIndex));
+            } else {
+                brls::Application::notify("Playlist is empty");
+            }
+        });
+    });
 }
 
 } // namespace vita_ma

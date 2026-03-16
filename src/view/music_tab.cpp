@@ -317,15 +317,107 @@ void MusicTab::onItemSelected(const MusicItem& item) {
 }
 
 void MusicTab::onPlaylistSelected(const MusicItem& playlist) {
-    brls::Logger::debug("MusicTab: Selected playlist: {} - TODO: implement with MA async API", playlist.name);
-    // TODO: Use MAClient async API to fetch playlist tracks
-    // MAClient::instance().getPlaylistTracks(playlist.itemId, [this, playlist](bool success, const Json& result) { ... });
+    brls::Logger::debug("MusicTab: Selected playlist: {}", playlist.name);
+
+    std::weak_ptr<bool> aliveWeak = m_alive;
+    MusicItem capturedPlaylist = playlist;
+
+    MAClient::instance().getPlaylistTracks(playlist.itemId, [this, aliveWeak, capturedPlaylist](bool success, const Json& result) {
+        auto alive = aliveWeak.lock();
+        if (!alive || !*alive) return;
+
+        if (!success) {
+            brls::sync([]() {
+                brls::Application::notify("Failed to load playlist tracks");
+            });
+            return;
+        }
+
+        std::vector<MusicItem> tracks;
+        if (result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& obj = result[i];
+                MusicItem mi;
+                mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
+                mi.name       = obj.has("name")          ? obj["name"].str()        : "";
+                mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
+                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
+                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                mi.mediaType  = MediaType::TRACK;
+                mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
+                mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
+                if (obj.has("artist_name"))  mi.artistName  = obj["artist_name"].str();
+                if (obj.has("album_name"))   mi.albumName   = obj["album_name"].str();
+                if (obj.has("track_number")) mi.trackNumber = obj["track_number"].intVal();
+                tracks.push_back(mi);
+            }
+        }
+
+        brls::sync([this, aliveWeak, tracks, capturedPlaylist]() {
+            auto alive2 = aliveWeak.lock();
+            if (!alive2 || !*alive2) return;
+
+            brls::Logger::info("MusicTab: Loaded {} tracks from playlist '{}'",
+                               tracks.size(), capturedPlaylist.name);
+            m_items = tracks;
+            m_currentPlaylistId = capturedPlaylist.itemId;
+            m_viewingPlaylist = true;
+
+            if (m_contentGrid) {
+                m_contentGrid->setItems(tracks);
+            }
+        });
+    }, 0, capturedPlaylist.provider);
 }
 
 void MusicTab::playPlaylistWithQueue(const std::string& playlistId, int startIndex) {
-    brls::Logger::debug("MusicTab::playPlaylistWithQueue - TODO: implement with MA async API");
-    // TODO: Use MAClient async API to fetch playlist tracks and create queue
-    // MAClient::instance().getPlaylistTracks(playlistId, [startIndex](bool success, const Json& result) { ... });
+    brls::Logger::debug("MusicTab::playPlaylistWithQueue for playlist {}", playlistId);
+
+    // If we already have the tracks loaded for this playlist, use them directly
+    if (m_viewingPlaylist && m_currentPlaylistId == playlistId && !m_items.empty()) {
+        auto* playerActivity = PlayerActivity::createWithQueue(m_items, startIndex);
+        brls::Application::pushActivity(playerActivity);
+        return;
+    }
+
+    // Otherwise fetch tracks first
+    MAClient::instance().getPlaylistTracks(playlistId, [startIndex](bool success, const Json& result) {
+        if (!success) {
+            brls::sync([]() {
+                brls::Application::notify("Failed to load playlist");
+            });
+            return;
+        }
+
+        std::vector<MusicItem> tracks;
+        if (result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& obj = result[i];
+                MusicItem mi;
+                mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
+                mi.name       = obj.has("name")          ? obj["name"].str()        : "";
+                mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
+                mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
+                                obj.has("image_url")     ? obj["image_url"].str()   : "";
+                mi.mediaType  = MediaType::TRACK;
+                mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
+                mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
+                if (obj.has("artist_name"))  mi.artistName  = obj["artist_name"].str();
+                if (obj.has("album_name"))   mi.albumName   = obj["album_name"].str();
+                if (obj.has("track_number")) mi.trackNumber = obj["track_number"].intVal();
+                tracks.push_back(mi);
+            }
+        }
+
+        brls::sync([tracks, startIndex]() {
+            if (!tracks.empty()) {
+                auto* playerActivity = PlayerActivity::createWithQueue(tracks, startIndex);
+                brls::Application::pushActivity(playerActivity);
+            } else {
+                brls::Application::notify("Playlist is empty");
+            }
+        });
+    });
 }
 
 void MusicTab::showCreatePlaylistDialog() {
@@ -335,9 +427,18 @@ void MusicTab::showCreatePlaylistDialog() {
     brls::Application::getImeManager()->openForText([this, aliveWeak](std::string playlistName) {
         if (playlistName.empty()) return;
 
-        brls::Logger::debug("MusicTab::showCreatePlaylistDialog - TODO: implement with MA async API");
-        // TODO: Use MAClient async API to create playlist
-        // MAClient::instance().createPlaylist(playlistName, [this, aliveWeak](bool success, const Json& result) { ... });
+        MAClient::instance().createPlaylist(playlistName, [this, aliveWeak](bool success, const Json& result) {
+            brls::sync([this, aliveWeak, success]() {
+                auto alive = aliveWeak.lock();
+                if (!alive || !*alive) return;
+                if (success) {
+                    brls::Application::notify("Playlist created");
+                    refreshPlaylists();
+                } else {
+                    brls::Application::notify("Failed to create playlist");
+                }
+            });
+        });
     }, "New Playlist", "Enter playlist name", 128, "");
 }
 
@@ -438,9 +539,41 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
 
     addDialogButton("Add to Queue", [capturedPlaylist, dialog](brls::View*) {
         dialog->dismiss();
-        brls::Logger::debug("MusicTab: Add playlist to queue - TODO: implement with MA async API");
-        // TODO: Use MAClient async API to fetch playlist tracks and add to queue
-        // MAClient::instance().getPlaylistTracks(capturedPlaylist.itemId, [](bool success, const Json& result) { ... });
+
+        MAClient::instance().getPlaylistTracks(capturedPlaylist.itemId, [](bool success, const Json& result) {
+            if (!success) {
+                brls::sync([]() {
+                    brls::Application::notify("Failed to load playlist tracks");
+                });
+                return;
+            }
+
+            std::vector<MusicItem> tracks;
+            if (result.type() == Json::ARRAY) {
+                for (size_t i = 0; i < result.size(); i++) {
+                    const Json& obj = result[i];
+                    MusicItem mi;
+                    mi.itemId     = obj.has("item_id")      ? obj["item_id"].str()     : "";
+                    mi.name       = obj.has("name")          ? obj["name"].str()        : "";
+                    mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
+                    mi.imageUrl   = obj.has("image")         ? obj["image"].str()       :
+                                    obj.has("image_url")     ? obj["image_url"].str()   : "";
+                    mi.mediaType  = MediaType::TRACK;
+                    mi.duration   = obj.has("duration")      ? obj["duration"].intVal() : 0;
+                    mi.provider   = obj.has("provider")      ? obj["provider"].str()    : "";
+                    if (obj.has("artist_name"))  mi.artistName  = obj["artist_name"].str();
+                    if (obj.has("album_name"))   mi.albumName   = obj["album_name"].str();
+                    tracks.push_back(mi);
+                }
+            }
+
+            brls::sync([tracks]() {
+                if (!tracks.empty()) {
+                    MusicQueue::instance().addTracks(tracks);
+                    brls::Application::notify("Added " + std::to_string(tracks.size()) + " tracks to queue");
+                }
+            });
+        }, 0, capturedPlaylist.provider);
         return true;
     });
 
@@ -450,9 +583,19 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
             dialog->dismiss();
             brls::Dialog* confirmDialog = new brls::Dialog("Delete this playlist?");
             confirmDialog->addButton("Yes, Delete", [this, capturedPlaylist]() {
-                brls::Logger::debug("MusicTab: Delete playlist - TODO: implement with MA async API");
-                // TODO: Use MAClient async API to delete playlist
-                // MAClient::instance().deletePlaylist(capturedPlaylist.itemId, [this](bool success, const Json& result) { ... });
+                std::weak_ptr<bool> aliveWeak = m_alive;
+                MAClient::instance().deletePlaylist(capturedPlaylist.itemId, [this, aliveWeak, capturedPlaylist](bool success, const Json& result) {
+                    brls::sync([this, aliveWeak, success, capturedPlaylist]() {
+                        auto alive = aliveWeak.lock();
+                        if (!alive || !*alive) return;
+                        if (success) {
+                            brls::Application::notify("Playlist deleted");
+                            refreshPlaylists();
+                        } else {
+                            brls::Application::notify("Failed to delete playlist");
+                        }
+                    });
+                });
             });
             confirmDialog->addButton("Cancel", []() {});
             confirmDialog->open();
