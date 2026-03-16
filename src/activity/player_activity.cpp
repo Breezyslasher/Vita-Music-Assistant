@@ -556,22 +556,21 @@ void PlayerActivity::loadFromQueue() {
     ImageLoader::setPaused(true);
     ImageLoader::cancelAll();
 
-    // Stream from server
     {
         m_isLocalFile = false;
         MAClient& client = MAClient::instance();
-        if (!client.getTranscodeUrl(track->ratingKey, url, 0)) {
-            brls::Logger::error("Failed to get transcode URL for track: {}", track->ratingKey);
+
+        // Get stream URL from Music Assistant
+        url = client.getStreamUrl(track->ratingKey);
+        if (url.empty()) {
+            brls::Logger::error("Failed to get stream URL for track: {}", track->ratingKey);
             m_loadingMedia = false;
             return;
         }
 
-        // Load album art from server - temporarily unpause so loadAsync
-        // accepts the request, then re-pause to block other page loads.
-        // The async worker no longer checks pause, so the load will complete.
+        // Load album art from server
         if (albumArt && !track->thumb.empty()) {
-            MAClient& artClient = MAClient::instance();
-            std::string thumbUrl = artClient.getThumbnailUrl(track->thumb, 300, 300);
+            std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300);
             ImageLoader::setPaused(false);
             ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                 img->setVisibility(brls::Visibility::VISIBLE);
@@ -685,12 +684,6 @@ void PlayerActivity::loadMedia() {
             return;
         }
 
-        // Show video view only for video files
-        if (videoView && !isAudioFile) {
-            videoView->setVisibility(brls::Visibility::VISIBLE);
-            videoView->setVideoVisible(true);
-        }
-
         m_isPlaying = true;
         m_loadingMedia = false;
         return;
@@ -713,7 +706,6 @@ void PlayerActivity::loadMedia() {
     }
 
     bool isAudioContent = true;
-    m_transcodeBaseOffsetMs = 0;
 
     // TODO: Get stream URL from Music Assistant API
     // MAClient::instance().getStreamUrl(queueId, callback);
@@ -751,13 +743,6 @@ void PlayerActivity::loadMedia() {
                     return;
                 }
 
-                // Show video view only for video content
-                if (videoView && !isAudioContent) {
-                    videoView->setVisibility(brls::Visibility::VISIBLE);
-                    videoView->setVideoVisible(true);
-                    brls::Logger::debug("Video view enabled");
-                }
-
                 m_isPlaying = true;
                 brls::Logger::debug("PlayerActivity: loadMedia completed successfully for MA stream");
             }
@@ -771,8 +756,8 @@ void PlayerActivity::loadMedia() {
 }
 
 void PlayerActivity::updateProgress() {
-    // Don't update if destroying or showing photo
-    if (m_destroying || m_isPhoto) return;
+    // Don't update if destroying
+    if (m_destroying) return;
 
     // Deferred MPV initialization (Phase 1 of 2):
     // Create MPV and its GXM render context, but do NOT call loadUrl yet.
