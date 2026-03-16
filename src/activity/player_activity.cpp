@@ -912,12 +912,6 @@ void PlayerActivity::updateProgress() {
     }
 }
 
-void PlayerActivity::playNextEpisode() {
-    // Not applicable for music-only app - use queue-based next track instead
-    brls::Logger::debug("PlayerActivity: playNextEpisode called - not applicable, using queue");
-    brls::Application::popActivity();
-}
-
 void PlayerActivity::togglePlayPause() {
     MpvPlayer& player = MpvPlayer::getInstance();
 
@@ -939,76 +933,6 @@ void PlayerActivity::updatePlayPauseLabel() {
     if (musicPlayIcon) {
         musicPlayIcon->setImageFromRes(m_isPlaying ? "icons/pause.png" : "icons/play.png");
     }
-}
-
-void PlayerActivity::cycleAudioTrack() {
-    showTrackOverlay(TrackSelectMode::AUDIO);
-}
-
-void PlayerActivity::cycleSubtitleTrack() {
-    showTrackOverlay(TrackSelectMode::SUBTITLE);
-}
-
-void PlayerActivity::fetchAudioStreams() {
-    // Not applicable for Music Assistant - audio streams handled by MA server
-}
-
-void PlayerActivity::showTrackOverlay(TrackSelectMode mode) {
-    if (m_trackSelectMode != TrackSelectMode::NONE) {
-        hideTrackOverlay();
-        return;
-    }
-
-    m_trackSelectMode = mode;
-    populateTrackList(mode);
-
-    if (trackOverlay) {
-        trackOverlay->setVisibility(brls::Visibility::VISIBLE);
-        // Register B button to dismiss overlay
-        trackOverlay->registerAction("Back", brls::ControllerButton::BUTTON_B, [this](brls::View* view) {
-            hideTrackOverlay();
-            return true;
-        });
-
-        // Give focus to first track item for controller navigation
-        if (trackList && !trackList->getChildren().empty()) {
-            brls::Application::giveFocus(trackList->getChildren()[0]);
-        }
-        // Reset overlay title focusable state (was set temporarily during list rebuild)
-        if (trackOverlayTitle) {
-            trackOverlayTitle->setFocusable(false);
-        }
-    }
-}
-
-void PlayerActivity::hideTrackOverlay() {
-    TrackSelectMode prevMode = m_trackSelectMode;
-    m_trackSelectMode = TrackSelectMode::NONE;
-    // Restore the overlay title's focusable state (may have been set temporarily)
-    if (trackOverlayTitle) {
-        trackOverlayTitle->setFocusable(false);
-    }
-    if (trackOverlay) {
-        trackOverlay->setVisibility(brls::Visibility::GONE);
-    }
-    // Restore focus to the appropriate button
-    if (m_isQueueMode && musicPlayBtn) {
-        brls::Application::giveFocus(musicPlayBtn);
-    } else if (playBtn) {
-        brls::Application::giveFocus(playBtn);
-    }
-}
-
-void PlayerActivity::populateTrackList(TrackSelectMode mode) {
-    // Not applicable for Music Assistant - track selection handled by MA server
-    if (!trackList || !trackOverlayTitle) return;
-    trackOverlayTitle->setText("Not available");
-}
-
-
-void PlayerActivity::selectTrack(TrackSelectMode mode, int trackId) {
-    // Not applicable for Music Assistant audio-only player
-    hideTrackOverlay();
 }
 
 void PlayerActivity::seek(int seconds) {
@@ -2435,14 +2359,6 @@ void PlayerActivity::playFromQueue(int index) {
 }
 
 // Controls visibility toggle (like Suwayomi reader settings show/hide)
-
-void PlayerActivity::updateSkipButton(double positionMs) {
-    // Not applicable - Music Assistant doesn't have intro/credits markers
-}
-
-void PlayerActivity::skipToMarkerEnd() {
-    // Not applicable for Music Assistant
-}
 
 void PlayerActivity::toggleControls() {
     if (m_controlsVisible) {

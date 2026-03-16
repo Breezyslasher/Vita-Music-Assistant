@@ -163,32 +163,6 @@ private:
     bool m_isLocalFile = false;
     bool m_isDirectFile = false;
 
-    // Plex-era members (TODO: remove when player is fully converted to MA API)
-    int m_episodeIndex = 0;
-    bool m_isPhoto = false;
-    bool m_introSkipped = false;
-    bool m_creditsSkipped = false;
-    bool m_skipButtonVisible = false;
-    bool m_streamsLoaded = false;
-    int m_partId = 0;
-    int m_transcodeBaseOffsetMs = 0;
-    int m_activeMarkerEndMs = 0;
-    std::string m_activeMarkerType;
-    std::vector<std::string> m_markers;  // Placeholder type
-    std::vector<int> m_audioStreams;     // Placeholder type
-
-    // Track overlay (Plex audio/subtitle selection - not used with MA)
-    enum class TrackSelectMode { NONE, AUDIO, SUBTITLE, VIDEO };
-    TrackSelectMode m_trackSelectMode = TrackSelectMode::NONE;
-    void showTrackOverlay(TrackSelectMode mode);
-    void hideTrackOverlay();
-    void populateTrackList(TrackSelectMode mode);
-    void populateSubtitleSearchResults();
-    void fetchAudioStreams();
-    void cycleAudioTrack();
-    void cycleSubtitleTrack();
-    void selectTrack(TrackSelectMode mode, int trackId);
-    void playNextEpisode();
 
     bool m_endHandled = false;      // Prevent multiple triggers when playback ends
     bool m_isPlaying = false;
@@ -199,8 +173,6 @@ private:
     double m_pendingSeek = 0.0;    // Pending seek position (set when resuming)
     bool m_updatingSlider = false;  // Guard to prevent slider update from triggering seek
     brls::RepeatingTimer m_updateTimer;
-    int m_timelineCounter = 0;           // Seconds since last timeline report
-    std::string m_lastTimelineState;     // Last reported state to detect changes
 
     // Deferred MPV init: URL and title are stored here during onContentAvailable()
     // and loaded in the first updateProgress() call. This prevents GXM context
@@ -240,13 +212,6 @@ private:
     BRLS_BIND(brls::Box, queueList, "player/queue_list");
     BRLS_BIND(brls::ScrollingFrame, queueScroll, "player/queue_scroll");
 
-    // Plex-era UI bindings (TODO: remove when fully converted)
-    BRLS_BIND(brls::Box, videoView, "player/video_view");
-    BRLS_BIND(brls::Image, photoImage, "player/photo_image");
-    BRLS_BIND(brls::Box, skipBtn, "player/skip_btn");
-    BRLS_BIND(brls::Box, trackOverlay, "player/track_overlay");
-    BRLS_BIND(brls::Box, trackList, "player/track_list");
-    BRLS_BIND(brls::Label, trackOverlayTitle, "player/track_overlay_title");
 
     // Music-specific UI elements
     BRLS_BIND(brls::Box, musicInfo, "player/music_info");
