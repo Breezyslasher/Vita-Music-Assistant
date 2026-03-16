@@ -124,14 +124,18 @@ target_link_libraries(${PROJECT_NAME}
     borealis
     ${APP_PLATFORM_LIB}
 
-    # External libraries (audio-only, no video decoding)
+    # External libraries
     curl
     mpv
+    ass
+    avfilter
     avformat
     avcodec
+    swscale
     swresample
     avutil
     avcodec
+    archive
     freetype
     png
     bz2
@@ -153,6 +157,9 @@ target_link_libraries(${PROJECT_NAME}
     SceAudio_stub
     SceVshBridge_stub
     SceAppMgr_stub
+    SceVideodec_stub
+    SceAvcdec_stub
+    SceCodecEngine_stub
 
     # Standard libraries last (m is provided by libstdc++)
     z

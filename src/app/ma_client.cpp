@@ -731,4 +731,44 @@ void MAClient::getPlayers(MAResponseCallback cb) {
     sendCommand("players/all", Json(), std::move(cb));
 }
 
+std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height) {
+    if (imageUrl.empty()) return "";
+
+    // If it's already a full URL, return as-is
+    if (imageUrl.find("http://") == 0 || imageUrl.find("https://") == 0) {
+        return imageUrl;
+    }
+
+    // Build URL from server base + image path
+    std::string url = m_serverUrl;
+    // Ensure no double slashes
+    if (!url.empty() && url.back() == '/') url.pop_back();
+    if (!imageUrl.empty() && imageUrl.front() != '/') url += '/';
+    url += imageUrl;
+
+    // Add size parameters if specified
+    if (width > 0 || height > 0) {
+        url += (url.find('?') != std::string::npos) ? "&" : "?";
+        if (width > 0) url += "width=" + std::to_string(width);
+        if (height > 0) {
+            url += (width > 0 ? "&" : "");
+            url += "height=" + std::to_string(height);
+        }
+    }
+
+    return url;
+}
+
+void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {
+    Json args;
+    args["item_id"] = Json(itemId);
+    sendCommand("music/playlists/delete", args, std::move(cb));
+}
+
+// App singleton implementation (legacy, used for player ID storage)
+App& App::instance() {
+    static App s_instance;
+    return s_instance;
+}
+
 } // namespace vita_ma
