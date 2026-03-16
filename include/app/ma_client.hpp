@@ -18,6 +18,7 @@ public:
     Json() : m_type(OBJECT) {}
     Json(Type t) : m_type(t) {}
     Json(const std::string& s) : m_type(STRING), m_strVal(s) {}
+    Json(const char* s) : m_type(STRING), m_strVal(s ? s : "") {}
     Json(int n) : m_type(NUMBER), m_numVal(n) {}
     Json(double n) : m_type(NUMBER), m_numVal(n) {}
     Json(bool b) : m_type(BOOL), m_boolVal(b) {}

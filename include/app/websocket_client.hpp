@@ -40,7 +40,8 @@ public:
 
     // Connect to a WebSocket server
     // url format: ws://host:port/path or wss://host:port/path
-    bool connect(const std::string& url);
+    // subprotocol: optional WebSocket subprotocol (e.g. "json")
+    bool connect(const std::string& url, const std::string& subprotocol = "");
     void disconnect();
 
     // Send a text message
@@ -58,7 +59,7 @@ public:
 
 private:
     void receiveLoop();
-    bool performHandshake(const std::string& host, const std::string& path, int port);
+    bool performHandshake(const std::string& host, const std::string& path, int port, const std::string& subprotocol);
     bool sendFrame(WsOpcode opcode, const uint8_t* data, size_t len);
     bool readFrame(std::string& payload, WsOpcode& opcode);
     std::string generateKey();
@@ -71,6 +72,7 @@ private:
     void* m_entropy = nullptr;   // mbedtls_entropy_context*
     void* m_netCtx = nullptr;    // mbedtls_net_context*
     bool m_useSsl = false;
+    std::string m_subprotocol;
 
     // Thread
     std::thread m_receiveThread;

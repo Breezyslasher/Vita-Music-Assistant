@@ -292,7 +292,7 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     m_ws.setOnError([this](const std::string& err) { onError(err); });
     m_ws.setOnClose([this](int code, const std::string& reason) { onClose(code, reason); });
 
-    return m_ws.connect(wsUrl);
+    return m_ws.connect(wsUrl, "json");
 }
 
 void MAClient::disconnect() {

@@ -77,7 +77,8 @@ std::string WebSocketClient::generateKey() {
     return std::string(reinterpret_cast<char*>(b64), olen);
 }
 
-bool WebSocketClient::connect(const std::string& url) {
+bool WebSocketClient::connect(const std::string& url, const std::string& subprotocol) {
+    m_subprotocol = subprotocol;
     if (m_state.load() != WsState::DISCONNECTED) {
         disconnect();
     }
@@ -226,7 +227,7 @@ bool WebSocketClient::connect(const std::string& url) {
     }
 
     // Perform WebSocket handshake
-    if (!performHandshake(host, path, port)) {
+    if (!performHandshake(host, path, port, m_subprotocol)) {
         brls::Logger::error("WS: handshake failed");
         cleanupSocket();
         m_state.store(WsState::DISCONNECTED);
@@ -242,7 +243,7 @@ bool WebSocketClient::connect(const std::string& url) {
     return true;
 }
 
-bool WebSocketClient::performHandshake(const std::string& host, const std::string& path, int port) {
+bool WebSocketClient::performHandshake(const std::string& host, const std::string& path, int port, const std::string& subprotocol) {
     std::string key = generateKey();
 
     std::ostringstream req;
@@ -254,7 +255,9 @@ bool WebSocketClient::performHandshake(const std::string& host, const std::strin
     req << "Connection: Upgrade\r\n";
     req << "Sec-WebSocket-Key: " << key << "\r\n";
     req << "Sec-WebSocket-Version: 13\r\n";
-    req << "Sec-WebSocket-Protocol: json\r\n";
+    if (!subprotocol.empty()) {
+        req << "Sec-WebSocket-Protocol: " << subprotocol << "\r\n";
+    }
     req << "\r\n";
 
     std::string reqStr = req.str();
