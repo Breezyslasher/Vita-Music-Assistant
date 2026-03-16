@@ -8,6 +8,7 @@
 #include "view/progress_dialog.hpp"
 #include "activity/player_activity.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "app/music_queue.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"

@@ -4,8 +4,8 @@
 
 #include "view/settings_tab.hpp"
 #include "app/application.hpp"
+#include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
-// Downloads removed - audio only app
 #include "player/mpv_player.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/http_client.hpp"
@@ -869,9 +869,9 @@ void SettingsTab::onTestLocalPlayback() {
         return;
     }
 
-    // Push player activity with the test file (this shows the video view properly)
+    // Push player activity with the test file
     brls::Logger::info("SettingsTab: Pushing player activity for: {}", testFile);
-    PlayerActivity* activity = PlayerActivity::createForDirectFile(testFile);
+    PlayerActivity* activity = PlayerActivity::createForStream(testFile, "Local Test");
     brls::Application::pushActivity(activity);
 }
 
