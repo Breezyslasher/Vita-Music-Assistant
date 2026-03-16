@@ -9,7 +9,6 @@
 #include "player/mpv_player.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
-#include "view/video_view.hpp"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -30,19 +29,6 @@ PlayerActivity::PlayerActivity(const std::string& mediaKey)
     brls::Logger::debug("PlayerActivity created for media: {}", mediaKey);
 }
 
-PlayerActivity::PlayerActivity(const std::string& mediaKey, bool isLocalFile)
-    : m_mediaKey(mediaKey), m_isLocalFile(isLocalFile) {
-    brls::Logger::debug("PlayerActivity created for {} media: {}",
-                       isLocalFile ? "local" : "remote", mediaKey);
-}
-
-PlayerActivity* PlayerActivity::createForDirectFile(const std::string& filePath) {
-    PlayerActivity* activity = new PlayerActivity("", false);
-    activity->m_isDirectFile = true;
-    activity->m_directFilePath = filePath;
-    brls::Logger::debug("PlayerActivity created for direct file: {}", filePath);
-    return activity;
-}
 
 PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, const std::string& title) {
     PlayerActivity* activity = new PlayerActivity("", false);
@@ -68,8 +54,8 @@ PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tr
         activity->onTrackEnded(nextTrack);
     });
 
-    brls::Logger::info("PlayerActivity created with queue of {} tracks, starting at {} (server={})",
-                      tracks.size(), startIndex, serverOk);
+    brls::Logger::info("PlayerActivity created with queue of {} tracks, starting at {}",
+                      tracks.size(), startIndex);
     return activity;
 }
 
