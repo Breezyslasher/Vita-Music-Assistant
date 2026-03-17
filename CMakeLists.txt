@@ -99,12 +99,20 @@ set(APP_SOURCES
     src/utils/http_client.cpp
     src/utils/image_loader.cpp
     src/utils/audio_stream_server.cpp
+    src/utils/qr_scanner.cpp
     src/utils/vita_stubs.c
+
+    # Third-party: quirc QR code decoder
+    lib/quirc/quirc.c
+    lib/quirc/decode.c
+    lib/quirc/identify.c
+    lib/quirc/version_db.c
 )
 
 # Include directories
 set(APP_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/quirc
     ${BOREALIS_LIBRARY}/include
     ${BOREALIS_LIBRARY}/include/borealis/extern
 )
@@ -163,6 +171,7 @@ target_link_libraries(${PROJECT_NAME}
     SceAppMgr_stub
     SceVideodec_stub
     SceCodecEngine_stub
+    SceCamera_stub
 
     # Standard libraries last (m is provided by libstdc++)
     z

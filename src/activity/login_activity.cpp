@@ -26,6 +26,12 @@ LoginActivity::LoginActivity() {
     brls::Logger::debug("LoginActivity created");
 }
 
+LoginActivity::~LoginActivity() {
+    if (m_qrScanner && m_qrScanner->isRunning()) {
+        m_qrScanner->stop();
+    }
+}
+
 brls::View* LoginActivity::createContentView() {
     return brls::View::createFromXMLResource("activity/login.xml");
 }
@@ -115,6 +121,15 @@ void LoginActivity::onContentAvailable() {
     if (modeButton) {
         modeButton->registerClickAction([this](brls::View* view) {
             switchAuthMode();
+            return true;
+        });
+    }
+
+    // QR scan button - scans a QR code using the Vita's front camera
+    if (qrButton) {
+        qrButton->setText("Scan QR");
+        qrButton->registerClickAction([this](brls::View* view) {
+            startQRScan();
             return true;
         });
     }
@@ -225,6 +240,88 @@ void LoginActivity::onLoginPressed() {
         loginWithMA(m_serverUrl, m_username, m_password);
     } else {
         loginWithHA(m_serverUrl, m_username, m_password);
+    }
+}
+
+void LoginActivity::startQRScan() {
+    if (m_qrScanner && m_qrScanner->isRunning()) {
+        brls::Logger::info("QR scan already in progress");
+        return;
+    }
+
+    if (statusLabel) statusLabel->setText("Point camera at QR code...");
+
+    m_qrScanner = std::make_unique<QRScanner>();
+    bool started = m_qrScanner->start([this](const QRScanResult& result) {
+        onQRScanned(result);
+    });
+
+    if (!started) {
+        if (statusLabel) statusLabel->setText("Failed to open camera for QR scanning");
+        m_qrScanner.reset();
+    }
+}
+
+void LoginActivity::onQRScanned(const QRScanResult& result) {
+    brls::Logger::info("QR scanned: type={}, raw={}", static_cast<int>(result.type), result.rawData);
+
+    // Stop the scanner
+    if (m_qrScanner) {
+        m_qrScanner->stop();
+    }
+
+    switch (result.type) {
+        case QRResultType::SERVER_LOGIN:
+            if (!result.serverUrl.empty()) {
+                m_serverUrl = result.serverUrl;
+                if (serverLabel) serverLabel->setText(std::string("Server: ") + m_serverUrl);
+
+                if (!result.authToken.empty()) {
+                    // QR has a token - connect directly
+                    m_authToken = result.authToken;
+                    if (!result.username.empty()) {
+                        m_username = result.username;
+                        if (usernameLabel) usernameLabel->setText(std::string("Username: ") + m_username);
+                    }
+                    if (statusLabel) statusLabel->setText("QR scanned! Connecting...");
+                    connectWithToken(m_serverUrl, m_authToken, m_username);
+
+                    // Check connection and proceed
+                    if (MAClient::instance().isConnected()) {
+                        Application::getInstance().connectSendspin();
+                        Application::getInstance().pushMainActivity();
+                    } else {
+                        if (statusLabel) statusLabel->setText("QR scanned - server set. Enter credentials to login.");
+                    }
+                } else {
+                    if (statusLabel) statusLabel->setText("QR scanned! Server URL set. Enter credentials.");
+                }
+            }
+            break;
+
+        case QRResultType::REMOTE_ACCESS:
+            if (!result.remoteId.empty()) {
+                m_remoteId = result.remoteId;
+                m_authToken = result.authToken;
+
+                // Switch to remote access mode
+                m_authMode = AuthMode::REMOTE_ACCESS;
+                updateUIForMode();
+
+                if (!m_authToken.empty()) {
+                    // QR has both remote ID and token - connect immediately
+                    if (statusLabel) statusLabel->setText("QR scanned! Connecting via remote access...");
+                    loginWithRemoteId(m_remoteId, m_authToken);
+                } else {
+                    if (statusLabel) statusLabel->setText("QR scanned! Remote ID set. Enter auth token.");
+                }
+            }
+            break;
+
+        case QRResultType::PLAIN_TEXT:
+        default:
+            if (statusLabel) statusLabel->setText("QR scanned: " + result.rawData.substr(0, 64));
+            break;
     }
 }
 
@@ -496,9 +593,9 @@ void LoginActivity::loginWithRemoteId(const std::string& remoteId,
                 app.setAuthToken(authToken);
                 app.saveSettings();
 
-                // Note: Sendspin audio streaming is not available over WebRTC.
-                // The app will use the remote player for playback instead.
-                brls::Logger::info("Login: WebRTC connected - using remote player for playback");
+                // Connect Sendspin over WebRTC relay for remote audio playback
+                Application::getInstance().connectSendspin();
+                brls::Logger::info("Login: WebRTC connected - Sendspin via relay");
 
                 brls::delay(500, [this, progressDialog]() {
                     progressDialog->dismiss();

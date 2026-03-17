@@ -70,8 +70,14 @@ public:
     static SendspinClient& instance();
 
     // Connect to the MA server's Sendspin port and register as a player.
+    // Used for direct local connections.
     bool connect(const std::string& serverIp, int sendspinPort,
                  const std::string& clientId, const std::string& clientName);
+
+    // Connect via WebRTC relay (remote access mode).
+    // Messages are routed through WebRTCClient's sendspin data channel.
+    // No auth needed - inherited from the WebRTC peer establishment.
+    bool connectViaWebRTC(const std::string& clientId, const std::string& clientName);
 
     // Disconnect from Sendspin
     void disconnect();
@@ -84,6 +90,7 @@ public:
             || s == SendspinState::BUFFERING || s == SendspinState::PAUSED;
     }
     bool isStreaming() const { return m_state.load() == SendspinState::STREAMING; }
+    bool isWebRTCMode() const { return m_webrtcMode; }
     SendspinAudioFormat getAudioFormat() const { return m_format; }
 
     // The player_id to use with player_queues/play_media
@@ -107,6 +114,7 @@ private:
     SendspinAudioFormat m_format;
     std::string m_clientId;
     std::string m_clientName;
+    bool m_webrtcMode = false;  // True when connected via WebRTC relay
 
     // Local HTTP server that bridges Sendspin audio to MPV
     AudioStreamServer m_audioServer;
@@ -117,11 +125,14 @@ private:
     StreamStateCallback m_stateCallback;
     StreamMetadataCallback m_metadataCallback;
 
-    // Protocol handlers
+    // Protocol handlers (used by both direct WebSocket and WebRTC transport)
     void onTextMessage(const std::string& message);
     void onBinaryData(const uint8_t* data, size_t size);
     void onClose(int code, const std::string& reason);
     void setState(SendspinState state);
+
+    // Send a text message via the active transport (WebSocket or WebRTC)
+    void sendText(const std::string& message);
 
     // Handshake
     void sendClientHello();

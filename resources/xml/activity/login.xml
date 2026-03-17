@@ -73,7 +73,13 @@
         <brls:Button
             id="login/mode_button"
             text="Switch Mode"
-            width="180"/>
+            width="180"
+            marginRight="20"/>
+
+        <brls:Button
+            id="login/qr_button"
+            text="Scan QR"
+            width="140"/>
 
     </brls:Box>
 

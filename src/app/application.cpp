@@ -73,7 +73,8 @@ void Application::run() {
                 // WebRTC connection is async - wait briefly for it
                 // The main loop will start and the connection will complete
                 brls::Logger::info("WebRTC connection initiated, proceeding to main");
-                // Don't connect Sendspin over WebRTC (not supported)
+                // Connect Sendspin over WebRTC relay for remote audio playback
+                connectSendspin();
                 pushMainActivity();
             } else {
                 brls::Logger::error("WebRTC connection also failed, showing login");
@@ -89,6 +90,7 @@ void Application::run() {
         brls::Logger::info("No local URL, connecting via remote access {}",
                          m_settings.remoteId);
         if (MAClient::instance().connectViaRemoteId(m_settings.remoteId, m_authToken)) {
+            connectSendspin();
             pushMainActivity();
         } else {
             pushLoginActivity();
@@ -112,17 +114,20 @@ void Application::shutdown() {
 }
 
 void Application::connectSendspin() {
-    if (m_serverUrl.empty()) return;
+    // Use configured player name, falling back to default
+    std::string clientId = "vita_ma_player";
+    std::string clientName = m_settings.sendspinPlayerName;
+    if (clientName.empty()) clientName = "PS Vita";
 
-    // Sendspin requires a direct network connection to the server's port 8927.
-    // It uses binary WebSocket frames for audio streaming, which can't be
-    // tunneled through the WebRTC text relay. When connected remotely,
-    // the user controls remote players instead of local playback.
+    // If connected via WebRTC remote access, use the sendspin relay channel.
+    // Audio is tunneled through the signaling server (base64-encoded binary).
     if (MAClient::instance().isRemoteAccess()) {
-        brls::Logger::info("Sendspin: skipping - not available over WebRTC remote access");
-        brls::Logger::info("Sendspin: use a remote player for playback instead");
+        brls::Logger::info("Sendspin: connecting via WebRTC relay for remote audio playback");
+        SendspinClient::instance().connectViaWebRTC(clientId, clientName);
         return;
     }
+
+    if (m_serverUrl.empty()) return;
 
     // Extract host from server URL (e.g., "http://192.168.1.28:8095" -> "192.168.1.28")
     std::string host;
@@ -150,11 +155,6 @@ void Application::connectSendspin() {
         brls::Logger::error("Sendspin: cannot extract host from server URL");
         return;
     }
-
-    // Use configured player name, falling back to default
-    std::string clientId = "vita_ma_player";
-    std::string clientName = m_settings.sendspinPlayerName;
-    if (clientName.empty()) clientName = "PS Vita";
 
     brls::Logger::info("Sendspin: connecting to {} port 8927", host);
     SendspinClient::instance().connect(host, 8927, clientId, clientName);

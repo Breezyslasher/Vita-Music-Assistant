@@ -8,6 +8,8 @@
 
 #include <borealis.hpp>
 #include "app/ma_types.hpp"
+#include "utils/qr_scanner.hpp"
+#include <memory>
 
 namespace vita_ma {
 
@@ -20,6 +22,7 @@ enum class AuthMode {
 class LoginActivity : public brls::Activity {
 public:
     LoginActivity();
+    ~LoginActivity();
 
     brls::View* createContentView() override;
 
@@ -29,6 +32,10 @@ private:
     void onLoginPressed();
     void switchAuthMode();
     void updateUIForMode();
+
+    // QR code scanning
+    void startQRScan();
+    void onQRScanned(const QRScanResult& result);
 
     // Auth flows
     void loginWithMA(const std::string& serverUrl,
@@ -53,6 +60,7 @@ private:
     BRLS_BIND(brls::Label, passwordLabel, "login/password_label");
     BRLS_BIND(brls::Button, loginButton, "login/login_button");
     BRLS_BIND(brls::Button, modeButton, "login/mode_button");
+    BRLS_BIND(brls::Button, qrButton, "login/qr_button");
     BRLS_BIND(brls::Label, statusLabel, "login/status");
 
     AuthMode m_authMode = AuthMode::MUSIC_ASSISTANT;
@@ -61,6 +69,9 @@ private:
     std::string m_password;
     std::string m_remoteId;    // MA-XXXX-XXXX for remote access
     std::string m_authToken;   // Auth token for remote access
+
+    // QR scanner
+    std::unique_ptr<QRScanner> m_qrScanner;
 };
 
 } // namespace vita_ma

@@ -1,5 +1,6 @@
 #include "app/sendspin_client.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "player/mpv_player.hpp"
 #include "app.h"
 #include <borealis.hpp>
@@ -24,6 +25,7 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
 
     m_clientId = clientId;
     m_clientName = clientName;
+    m_webrtcMode = false;
 
     setState(SendspinState::CONNECTING);
     brls::Logger::info("Sendspin: connecting to {}:{}/sendspin", serverIp, sendspinPort);
@@ -64,12 +66,66 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
     return true;
 }
 
+bool SendspinClient::connectViaWebRTC(const std::string& clientId, const std::string& clientName) {
+    disconnect();
+
+    m_clientId = clientId;
+    m_clientName = clientName;
+    m_webrtcMode = true;
+
+    setState(SendspinState::CONNECTING);
+    brls::Logger::info("Sendspin: connecting via WebRTC relay");
+
+    // Start the local HTTP audio stream server
+    if (!m_audioServer.isRunning()) {
+        if (!m_audioServer.start()) {
+            brls::Logger::error("Sendspin: failed to start audio stream server");
+            setState(SendspinState::ERROR);
+            return false;
+        }
+    }
+
+    auto& webrtc = WebRTCClient::instance();
+    if (!webrtc.isConnected()) {
+        brls::Logger::error("Sendspin: WebRTC not connected, cannot start sendspin");
+        setState(SendspinState::ERROR);
+        return false;
+    }
+
+    // Hook into WebRTCClient's sendspin channel callbacks
+    webrtc.setSendspinMessageCallback([this](const std::string& msg) {
+        onTextMessage(msg);
+    });
+    webrtc.setSendspinBinaryCallback([this](const uint8_t* data, size_t size) {
+        onBinaryData(data, size);
+    });
+
+    // Send the client/hello handshake via WebRTC sendspin channel.
+    // No auth required - WebRTC connections inherit auth from peer establishment.
+    // Per the Sendspin protocol, when connected via WebRTC:
+    //   mainConnectionPort = null -> requiresAuth = false
+    setState(SendspinState::HANDSHAKING);
+    sendClientHello();
+
+    return true;
+}
+
 void SendspinClient::disconnect() {
     if (m_state.load() == SendspinState::DISCONNECTED) return;
 
-    brls::Logger::info("Sendspin: disconnecting");
-    m_ws.disconnect();
+    brls::Logger::info("Sendspin: disconnecting (webrtc={})", m_webrtcMode);
+
+    if (m_webrtcMode) {
+        // Unhook WebRTC callbacks
+        auto& webrtc = WebRTCClient::instance();
+        webrtc.setSendspinMessageCallback(nullptr);
+        webrtc.setSendspinBinaryCallback(nullptr);
+    } else {
+        m_ws.disconnect();
+    }
+
     m_audioServer.signalStreamEnd();
+    m_webrtcMode = false;
     setState(SendspinState::DISCONNECTED);
 }
 
@@ -78,6 +134,14 @@ void SendspinClient::stopStream() {
     if (m_state.load() == SendspinState::STREAMING ||
         m_state.load() == SendspinState::BUFFERING) {
         setState(SendspinState::CONNECTED);
+    }
+}
+
+void SendspinClient::sendText(const std::string& message) {
+    if (m_webrtcMode) {
+        WebRTCClient::instance().sendSendspinMessage(message);
+    } else {
+        m_ws.send(message);
     }
 }
 
@@ -128,8 +192,8 @@ void SendspinClient::sendClientHello() {
     payload["player@v1_support"] = playerSupport;
     msg["payload"] = payload;
 
-    brls::Logger::info("Sendspin: sending client/hello as '{}'", m_clientName);
-    m_ws.send(msg.dump());
+    brls::Logger::info("Sendspin: sending client/hello as '{}' (webrtc={})", m_clientName, m_webrtcMode);
+    sendText(msg.dump());
 }
 
 void SendspinClient::onTextMessage(const std::string& message) {
@@ -144,7 +208,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         // Handshake complete - we are now registered as a player
         Json payload = msg.has("payload") ? msg["payload"] : msg;
         std::string serverName = payload.has("name") ? payload["name"].str() : "unknown";
-        brls::Logger::info("Sendspin: registered with server '{}'", serverName);
+        brls::Logger::info("Sendspin: registered with server '{}' (webrtc={})", serverName, m_webrtcMode);
 
         // Send initial player state
         Json stateMsg;
@@ -156,7 +220,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         playerState["muted"] = Json(false);
         statePayload["player"] = playerState;
         stateMsg["payload"] = statePayload;
-        m_ws.send(stateMsg.dump());
+        sendText(stateMsg.dump());
 
         setState(SendspinState::CONNECTED);
 
@@ -210,9 +274,9 @@ void SendspinClient::onTextMessage(const std::string& message) {
             brls::Logger::info("Sendspin: synthesized FLAC header ({} bytes)", m_format.codec_header.size());
         }
 
-        brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit (header={}B)",
+        brls::Logger::info("Sendspin: stream/start - {} {}Hz {}ch {}bit (header={}B, webrtc={})",
             m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth,
-            m_format.codec_header.size());
+            m_format.codec_header.size(), m_webrtcMode);
 
         // Reset the audio server for the new stream and set the codec
         m_audioServer.resetStream();
@@ -257,7 +321,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
             now.time_since_epoch()).count();
         timePayload["client_transmitted"] = Json(static_cast<int>(us & 0x7FFFFFFF));
         timeMsg["payload"] = timePayload;
-        m_ws.send(timeMsg.dump());
+        sendText(timeMsg.dump());
     }
     else if (type == "server/command") {
         // Server command (e.g., volume change)
@@ -279,7 +343,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
 }
 
 void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
-    // This runs on the WebSocket receive thread - must be thread-safe
+    // This runs on the WebSocket receive thread (or WebRTC relay thread) - must be thread-safe
     if (size < SENDSPIN_HEADER_SIZE) return;
 
     // Only process audio data after stream/start has been received.
@@ -299,7 +363,8 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
         if (audioSize > 0) {
             m_audioChunkCount++;
             if (m_audioChunkCount <= 3) {
-                brls::Logger::debug("Sendspin: audio chunk #{} ({} bytes)", m_audioChunkCount, audioSize);
+                brls::Logger::debug("Sendspin: audio chunk #{} ({} bytes, webrtc={})",
+                    m_audioChunkCount, audioSize, m_webrtcMode);
             }
 
             // Push audio data to the local HTTP server's queue.
@@ -398,7 +463,7 @@ std::vector<uint8_t> SendspinClient::buildFlacHeader(int sampleRate, int channel
 
 void SendspinClient::startMpvPlayback() {
     std::string url = getLocalStreamUrl();
-    brls::Logger::info("Sendspin: starting MPV with {}", url);
+    brls::Logger::info("Sendspin: starting MPV with {} (webrtc={})", url, m_webrtcMode);
 
     brls::sync([url]() {
         auto& mpv = MpvPlayer::getInstance();

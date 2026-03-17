@@ -18,6 +18,7 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <cstdint>
 
 namespace vita_ma {
 
@@ -47,9 +48,17 @@ struct IceCandidate {
     int sdpMLineIndex = 0;
 };
 
+// Channel identifiers for multiplexing over the relay
+// The official mobile app uses two WebRTC data channels: "ma-api" and "sendspin".
+// Since PS Vita relays everything through the signaling server, we multiplex
+// both channels over the same relay WebSocket using a "channel" field.
+static constexpr const char* CHANNEL_MA_API = "ma-api";
+static constexpr const char* CHANNEL_SENDSPIN = "sendspin";
+
 // Callback types
 using WebRTCStateCallback = std::function<void(WebRTCState state)>;
 using WebRTCMessageCallback = std::function<void(const std::string& message)>;
+using WebRTCBinaryCallback = std::function<void(const uint8_t* data, size_t size)>;
 
 /**
  * WebRTC Remote Access Client
@@ -58,11 +67,14 @@ using WebRTCMessageCallback = std::function<void(const std::string& message)>;
  * 1. Connect to signaling server via WebSocket
  * 2. Exchange SDP offer/answer with the MA server peer
  * 3. Exchange ICE candidates
- * 4. Establish a data channel for API messages
+ * 4. Establish data channels for API messages and Sendspin audio
  *
- * Since PS Vita lacks native WebRTC, we use the signaling server as a relay
- * when direct P2P fails, with the data channel messages tunneled through
- * the signaling WebSocket as a fallback.
+ * Since PS Vita lacks native WebRTC, we use the signaling server as a relay.
+ * Two logical channels are multiplexed over the relay:
+ *   - "ma-api":    Text JSON messages for the Music Assistant API
+ *   - "sendspin":  Text control messages + binary audio data for Sendspin streaming
+ *
+ * Binary data (audio) is base64-encoded for relay transport (~33% overhead).
  */
 class WebRTCClient {
 public:
@@ -75,17 +87,28 @@ public:
     // Disconnect from the remote server
     void disconnect();
 
-    // Send a message through the data channel (same format as WebSocket API)
+    // Send a message through the ma-api data channel
     bool sendMessage(const std::string& message);
+
+    // Send a text message through the sendspin data channel
+    bool sendSendspinMessage(const std::string& message);
+
+    // Send binary data through the sendspin data channel (base64-encoded for relay)
+    bool sendSendspinBinary(const uint8_t* data, size_t size);
 
     // State
     WebRTCState getState() const { return m_state.load(); }
     bool isConnected() const { return m_state.load() == WebRTCState::CONNECTED; }
+    bool isSendspinAvailable() const { return m_sendspinChannelOpen.load(); }
     const std::string& getRemoteId() const { return m_remoteId; }
 
-    // Callbacks
+    // Callbacks - ma-api channel
     void setStateCallback(WebRTCStateCallback cb) { m_stateCallback = std::move(cb); }
     void setMessageCallback(WebRTCMessageCallback cb) { m_messageCallback = std::move(cb); }
+
+    // Callbacks - sendspin channel
+    void setSendspinMessageCallback(WebRTCMessageCallback cb) { m_sendspinMessageCallback = std::move(cb); }
+    void setSendspinBinaryCallback(WebRTCBinaryCallback cb) { m_sendspinBinaryCallback = std::move(cb); }
 
     // Get remote access info from a locally-connected MA server
     // (used to discover the Remote ID before connecting remotely)
@@ -107,6 +130,11 @@ private:
     WebRTCStateCallback m_stateCallback;
     WebRTCMessageCallback m_messageCallback;
 
+    // Sendspin channel state and callbacks
+    std::atomic<bool> m_sendspinChannelOpen{false};
+    WebRTCMessageCallback m_sendspinMessageCallback;
+    WebRTCBinaryCallback m_sendspinBinaryCallback;
+
     // Session
     std::string m_sessionId;
     std::string m_localSdp;
@@ -123,7 +151,8 @@ private:
     void sendOffer();
     void handleAnswer(const Json& data);
     void handleIceCandidate(const Json& data);
-    void handleDataChannelMessage(const std::string& message);
+    void handleDataChannelMessage(const std::string& channel, const std::string& data);
+    void handleDataChannelBinary(const std::string& channel, const std::string& base64Data);
 
     // State management
     void setState(WebRTCState state);
@@ -134,7 +163,8 @@ private:
 
     // Relay mode: when P2P fails, tunnel messages through signaling server
     bool m_relayMode = false;
-    void sendViaRelay(const std::string& message);
+    void sendViaRelay(const std::string& channel, const std::string& message);
+    void sendBinaryViaRelay(const std::string& channel, const uint8_t* data, size_t size);
 };
 
 } // namespace vita_ma
