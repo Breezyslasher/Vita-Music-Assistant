@@ -429,72 +429,17 @@ void LibraryTab::onItemSelected(const MusicItem& item) {
 }
 
 void LibraryTab::showAlbumContextMenu(const MusicItem& album) {
-    auto* dialog = new brls::Dialog(album.name);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MusicItem capturedAlbum = album;
-
-    addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        // TODO: Replace with MAClient async API to fetch tracks and play
-        // Example:
-        //   MAClient::instance().getAlbumTracks(capturedAlbum.itemId,
-        //       [](bool ok, const Json& result) {
-        //           auto tracks = parseMusicItems(result, MediaType::TRACK);
-        //           brls::sync([tracks]() {
-        //               auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-        //               brls::Application::pushActivity(playerActivity);
-        //           });
-        //       });
-        brls::Logger::warning("LibraryTab: Play album - TODO: Implement via MAClient::getAlbumTracks for '{}'",
-                              capturedAlbum.name);
-        brls::Application::notify("Play album: not yet implemented");
-        return true;
-    });
-
-    addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        // TODO: Use MAClient::getAlbumTracks to fetch tracks, then insert after current queue position
-        // via MusicQueue::insertTrackAfterCurrent
-        brls::Logger::warning("LibraryTab: Play next - TODO: Implement via MAClient::getAlbumTracks for '{}'",
-                              capturedAlbum.name);
-        brls::Application::notify("Queue next: not yet implemented");
-        return true;
-    });
-
-    addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        // TODO: Use MAClient::getAlbumTracks to fetch tracks, then append via MusicQueue::addTracks
-        brls::Logger::warning("LibraryTab: Add to queue - TODO: Implement via MAClient::getAlbumTracks for '{}'",
-                              capturedAlbum.name);
-        brls::Application::notify("Add to queue: not yet implemented");
-        return true;
-    });
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    // Delegate to the fully-implemented static context menus in MediaDetailView.
+    // These support both local and remote players via playTracksOnSelectedPlayer.
+    if (album.mediaType == MediaType::ARTIST) {
+        MediaDetailView::showArtistContextMenuStatic(album);
+    } else if (album.mediaType == MediaType::TRACK) {
+        MediaDetailView::performTrackActionStatic(album);
+    } else {
+        // Albums, Playlists, and anything else: use album context menu
+        // (works for playlists too since both fetch tracks and queue them)
+        MediaDetailView::showAlbumContextMenuStatic(album);
+    }
 }
 
 } // namespace vita_ma

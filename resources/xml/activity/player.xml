@@ -257,7 +257,6 @@
                 marginLeft="16"
                 paddingLeft="12"
                 paddingRight="14"
-                backgroundColor="#40FFFFFF"
                 visibility="gone">
                 <brls:Image
                     id="player/player_switch_icon"

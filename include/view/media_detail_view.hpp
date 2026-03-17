@@ -33,6 +33,13 @@ public:
     static void showArtistContextMenuStatic(const MusicItem& artist);
     static void showAlbumContextMenuStatic(const MusicItem& album);
     static void performTrackActionStatic(const MusicItem& track);
+
+    // Play tracks on the currently selected player (remote or local).
+    // For remote players, sends playMedia to the server.
+    // For local players, creates a PlayerActivity with a queue.
+    // option: "play" (clear queue), "next" (play next), "add" (add to bottom)
+    static void playTracksOnSelectedPlayer(const std::vector<MusicItem>& tracks,
+                                           const std::string& option = "play");
     void performTrackAction(const MusicItem& track, size_t trackIndex);  // Handle track default action
     void showTrackActionDialog(const MusicItem& track, size_t trackIndex);  // Ask user what to do
 

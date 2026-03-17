@@ -216,6 +216,12 @@ private:
     void updatePlayerNameLabel();  // Update the label showing which player is active
     std::vector<PlayerInfo> m_availablePlayers;  // Cached player list
 
+    // Returns the player/queue ID for the currently selected player.
+    // If a remote player is selected, returns its ID; otherwise returns the local Vita player ID.
+    std::string getActivePlayerId() const;
+    // Returns true if a remote player is currently selected
+    bool isRemotePlayer() const;
+
     // Music-specific UI elements
     BRLS_BIND(brls::Box, musicInfo, "player/music_info");
     BRLS_BIND(brls::Label, musicTitleLabel, "player/music_title");
