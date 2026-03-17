@@ -207,6 +207,15 @@ private:
     BRLS_BIND(brls::ScrollingFrame, queueScroll, "player/queue_scroll");
 
 
+    // Player switcher
+    BRLS_BIND(brls::Box, playerSwitchBtn, "player/player_switch_btn");
+    BRLS_BIND(brls::Image, playerSwitchIcon, "player/player_switch_icon");
+    BRLS_BIND(brls::Label, playerNameLabel, "player/player_name_label");
+    void showPlayerSwitcher();
+    void loadRemotePlayerState();  // Fetch and display the selected remote player's state
+    void updatePlayerNameLabel();  // Update the label showing which player is active
+    std::vector<PlayerInfo> m_availablePlayers;  // Cached player list
+
     // Music-specific UI elements
     BRLS_BIND(brls::Box, musicInfo, "player/music_info");
     BRLS_BIND(brls::Label, musicTitleLabel, "player/music_title");

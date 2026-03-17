@@ -8,6 +8,7 @@
 
 #include "utils/audio_stream_server.hpp"
 #include <borealis.hpp>
+#include <chrono>
 #include <cstring>
 #include <sstream>
 
@@ -196,6 +197,9 @@ void AudioStreamServer::resetStream() {
 
 void AudioStreamServer::serverLoop() {
     while (!m_shouldStop.load()) {
+        // Check if listen socket is still valid (stop() may have closed it)
+        if (m_listenSocket < 0) break;
+
         // Accept a client connection (blocking)
 #ifdef __vita__
         SceNetSockaddrIn clientAddr;
@@ -210,8 +214,14 @@ void AudioStreamServer::serverLoop() {
 #endif
 
         if (clientSocket < 0) {
-            if (m_shouldStop.load()) break;
+            if (m_shouldStop.load() || m_listenSocket < 0) break;
             brls::Logger::error("AudioStreamServer: accept failed");
+            // Backoff to avoid tight spin loop on persistent errors
+#ifdef __vita__
+            sceKernelDelayThread(100 * 1000);  // 100ms
+#else
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+#endif
             continue;
         }
 

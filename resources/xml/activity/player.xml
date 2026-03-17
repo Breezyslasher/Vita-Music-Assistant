@@ -220,7 +220,7 @@
                 textColor="#AAAAAA"/>
         </brls:Box>
 
-        <!-- Queue list button -->
+        <!-- Queue + player switcher buttons -->
         <brls:Box
             width="100%"
             axis="row"
@@ -243,6 +243,33 @@
                     height="34"
                     image="@res/icons/format-list-group.png"
                     scalingType="fit"/>
+            </brls:Box>
+
+            <!-- Player switcher button with name -->
+            <brls:Box
+                id="player/player_switch_btn"
+                height="44"
+                axis="row"
+                justifyContent="center"
+                alignItems="center"
+                cornerRadius="22"
+                focusable="true"
+                marginLeft="16"
+                paddingLeft="12"
+                paddingRight="14"
+                backgroundColor="#40FFFFFF"
+                visibility="gone">
+                <brls:Image
+                    id="player/player_switch_icon"
+                    width="22"
+                    height="22"
+                    image="@res/icons/speaker-multiple.png"
+                    scalingType="fit"/>
+                <brls:Label
+                    id="player/player_name_label"
+                    text="This Vita"
+                    fontSize="13"
+                    marginLeft="6"/>
             </brls:Box>
 
         </brls:Box>

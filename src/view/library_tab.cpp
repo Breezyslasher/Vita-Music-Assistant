@@ -262,6 +262,12 @@ void LibraryTab::onCategorySelected(MusicCategory category) {
 void LibraryTab::loadCategoryContent(MusicCategory category) {
     brls::Logger::debug("LibraryTab::loadCategoryContent - {}", categoryName(category));
 
+    // Reset pagination state for fresh category load
+    m_offset = 0;
+    m_hasMore = false;
+    m_loadingPage = false;
+    m_items.clear();
+
     MAClient& client = MAClient::instance();
     auto aliveWeak = std::weak_ptr<bool>(m_alive);
 
@@ -285,31 +291,116 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
         }
 
         std::vector<MusicItem> items = parseMusicItems(result, expectedType);
-        brls::Logger::info("LibraryTab: Got {} {} items", items.size(), categoryName(category));
+        int count = (int)items.size();
+        brls::Logger::info("LibraryTab: Got {} {} items (offset {})", count, categoryName(category), m_offset);
 
-        brls::sync([this, items, aliveWeak]() {
+        brls::sync([this, items, count, aliveWeak]() {
             auto alive = aliveWeak.lock();
             if (!alive || !*alive) return;
-            m_items = items;
-            if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                m_contentGrid->setDataSource(m_items);
+
+            m_offset += count;
+            m_hasMore = (count >= PAGE_SIZE);  // If we got a full page, there may be more
+            m_loadingPage = false;
+
+            if (m_items.empty()) {
+                // First page - set as data source
+                m_items = items;
+                if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
+                    m_contentGrid->setDataSource(m_items);
+                }
+            } else {
+                // Subsequent pages - append
+                m_items.insert(m_items.end(), items.begin(), items.end());
+                if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
+                    m_contentGrid->appendItems(items);
+                }
             }
+
+            m_contentGrid->setHasMore(m_hasMore);
             m_loaded = true;
+        });
+    };
+
+    // Set up pagination callback
+    m_contentGrid->setOnLoadMore([this]() { loadNextPage(); });
+
+    switch (category) {
+        case MusicCategory::ARTISTS:
+            client.getLibraryArtists(onResponse, "", PAGE_SIZE, 0);
+            break;
+        case MusicCategory::ALBUMS:
+            client.getLibraryAlbums(onResponse, "", PAGE_SIZE, 0);
+            break;
+        case MusicCategory::TRACKS:
+            client.getLibraryTracks(onResponse, "", PAGE_SIZE, 0);
+            break;
+        case MusicCategory::PLAYLISTS:
+            client.getLibraryPlaylists(onResponse, "", PAGE_SIZE, 0);
+            break;
+    }
+}
+
+void LibraryTab::loadNextPage() {
+    if (m_loadingPage || !m_hasMore) return;
+    m_loadingPage = true;
+
+    MusicCategory category = static_cast<MusicCategory>(m_currentCategory);
+    brls::Logger::debug("LibraryTab: Loading next page at offset {}", m_offset);
+
+    MAClient& client = MAClient::instance();
+    auto aliveWeak = std::weak_ptr<bool>(m_alive);
+
+    auto onResponse = [this, category, aliveWeak](bool success, const Json& result) {
+        if (!success) {
+            brls::sync([this, aliveWeak]() {
+                auto alive = aliveWeak.lock();
+                if (!alive || !*alive) return;
+                m_loadingPage = false;
+                m_contentGrid->setHasMore(false);
+            });
+            return;
+        }
+
+        MediaType expectedType = MediaType::UNKNOWN;
+        switch (category) {
+            case MusicCategory::ARTISTS:   expectedType = MediaType::ARTIST;   break;
+            case MusicCategory::ALBUMS:    expectedType = MediaType::ALBUM;    break;
+            case MusicCategory::TRACKS:    expectedType = MediaType::TRACK;    break;
+            case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
+        }
+
+        std::vector<MusicItem> items = parseMusicItems(result, expectedType);
+        int count = (int)items.size();
+        brls::Logger::info("LibraryTab: Got {} more {} items (offset {})", count, categoryName(category), m_offset);
+
+        brls::sync([this, items, count, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !*alive) return;
+
+            m_offset += count;
+            m_hasMore = (count >= PAGE_SIZE);
+            m_loadingPage = false;
+
+            m_items.insert(m_items.end(), items.begin(), items.end());
+            if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
+                m_contentGrid->appendItems(items);
+            }
+            m_contentGrid->setHasMore(m_hasMore);
         });
     };
 
     switch (category) {
         case MusicCategory::ARTISTS:
-            client.getLibraryArtists(onResponse);
+            client.getLibraryArtists(onResponse, "", PAGE_SIZE, m_offset);
             break;
         case MusicCategory::ALBUMS:
-            client.getLibraryAlbums(onResponse);
+            client.getLibraryAlbums(onResponse, "", PAGE_SIZE, m_offset);
             break;
         case MusicCategory::TRACKS:
-            client.getLibraryTracks(onResponse);
+            client.getLibraryTracks(onResponse, "", PAGE_SIZE, m_offset);
             break;
         case MusicCategory::PLAYLISTS:
-            client.getLibraryPlaylists(onResponse);
+            client.getLibraryPlaylists(onResponse, "", PAGE_SIZE, m_offset);
             break;
     }
 }
@@ -318,6 +409,7 @@ void LibraryTab::showAllItems() {
     m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     m_titleLabel->setText(std::string("Library - ") + m_currentCategoryName);
     m_contentGrid->setDataSource(m_items);
+    m_contentGrid->setHasMore(m_hasMore);
     updateViewModeButtons();
 }
 

@@ -116,9 +116,10 @@ void Application::connectSendspin() {
         return;
     }
 
-    // Generate a stable client ID based on something unique to this Vita
+    // Use configured player name, falling back to default
     std::string clientId = "vita_ma_player";
-    std::string clientName = "PS Vita";
+    std::string clientName = m_settings.sendspinPlayerName;
+    if (clientName.empty()) clientName = "PS Vita";
 
     brls::Logger::info("Sendspin: connecting to {} port 8927", host);
     SendspinClient::instance().connect(host, 8927, clientId, clientName);
@@ -297,6 +298,12 @@ bool Application::loadSettings() {
     }
     m_settings.backgroundMusic = extractBool("backgroundMusic", true);
 
+    // Load player settings
+    m_settings.localPlayback = extractBool("localPlayback", true);
+    m_settings.sendspinPlayerName = extractString("sendspinPlayerName");
+    if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
+    m_settings.selectedPlayerId = extractString("selectedPlayerId");
+
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
 #else
@@ -346,7 +353,12 @@ bool Application::saveSettings() {
 
     // Music settings
     json += "  \"trackDefaultAction\": " + std::to_string(static_cast<int>(m_settings.trackDefaultAction)) + ",\n";
-    json += "  \"backgroundMusic\": " + std::string(m_settings.backgroundMusic ? "true" : "false") + "\n";
+    json += "  \"backgroundMusic\": " + std::string(m_settings.backgroundMusic ? "true" : "false") + ",\n";
+
+    // Player settings
+    json += "  \"localPlayback\": " + std::string(m_settings.localPlayback ? "true" : "false") + ",\n";
+    json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
+    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\"\n";
 
     json += "}\n";
 
