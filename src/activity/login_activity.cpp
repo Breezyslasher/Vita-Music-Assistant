@@ -12,6 +12,7 @@
 #include "activity/login_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
 #include "utils/http_client.hpp"
 #include "utils/async.hpp"
@@ -44,39 +45,55 @@ void LoginActivity::onContentAvailable() {
 
     updateUIForMode();
 
-    // Server URL input (click to edit via IME)
+    // Restore saved remote ID if available
+    m_remoteId = app.getSettings().remoteId;
+
+    // Server URL / Remote ID input (click to edit via IME)
     if (serverLabel) {
         serverLabel->setText(std::string("Server: ") + (m_serverUrl.empty() ? "Not set" : m_serverUrl));
         serverLabel->registerClickAction([this](brls::View* view) {
-            brls::Application::getImeManager()->openForText([this](std::string text) {
-                m_serverUrl = text;
-                serverLabel->setText(std::string("Server: ") + text);
-            }, "Enter Server URL", "http://your-server:8095", 256, m_serverUrl);
+            if (m_authMode == AuthMode::REMOTE_ACCESS) {
+                brls::Application::getImeManager()->openForText([this](std::string text) {
+                    m_remoteId = text;
+                    serverLabel->setText(std::string("Remote ID: ") + text);
+                }, "Enter Remote ID", "MA-XXXX-XXXX", 32, m_remoteId);
+            } else {
+                brls::Application::getImeManager()->openForText([this](std::string text) {
+                    m_serverUrl = text;
+                    serverLabel->setText(std::string("Server: ") + text);
+                }, "Enter Server URL", "http://your-server:8095", 256, m_serverUrl);
+            }
             return true;
         });
         serverLabel->addGestureRecognizer(new brls::TapGestureRecognizer(serverLabel));
     }
 
-    // Username input
+    // Username / Auth Token input
     if (usernameLabel) {
         usernameLabel->setText(std::string("Username: ") + (m_username.empty() ? "Not set" : m_username));
         usernameLabel->registerClickAction([this](brls::View* view) {
-            brls::Application::getImeManager()->openForText([this](std::string text) {
-                m_username = text;
-                usernameLabel->setText(std::string("Username: ") + text);
-            }, "Enter Username", "admin", 128, m_username);
+            if (m_authMode == AuthMode::REMOTE_ACCESS) {
+                brls::Application::getImeManager()->openForText([this](std::string text) {
+                    m_authToken = text;
+                    usernameLabel->setText(std::string("Auth Token: ") + (text.empty() ? "Not set" : "(set)"));
+                }, "Enter Auth Token", "", 256, m_authToken);
+            } else {
+                brls::Application::getImeManager()->openForText([this](std::string text) {
+                    m_username = text;
+                    usernameLabel->setText(std::string("Username: ") + text);
+                }, "Enter Username", "admin", 128, m_username);
+            }
             return true;
         });
         usernameLabel->addGestureRecognizer(new brls::TapGestureRecognizer(usernameLabel));
     }
 
-    // Password input
+    // Password input (hidden in remote access mode)
     if (passwordLabel) {
         passwordLabel->setText("Password: Not set");
         passwordLabel->registerClickAction([this](brls::View* view) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
                 m_password = text;
-                // Show masked password
                 std::string masked(text.length(), '*');
                 passwordLabel->setText(std::string("Password: ") + (text.empty() ? "Not set" : masked));
             }, "Enter Password", "", 128, "");
@@ -104,17 +121,23 @@ void LoginActivity::onContentAvailable() {
 }
 
 void LoginActivity::updateUIForMode() {
+    bool isRemote = (m_authMode == AuthMode::REMOTE_ACCESS);
+
     if (subtitleLabel) {
         if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
             subtitleLabel->setText("Music Assistant Login");
-        } else {
+        } else if (m_authMode == AuthMode::HOME_ASSISTANT) {
             subtitleLabel->setText("Home Assistant Login");
+        } else {
+            subtitleLabel->setText("Remote Access Login");
         }
     }
 
     if (modeButton) {
         if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
             modeButton->setText("Use HA Login");
+        } else if (m_authMode == AuthMode::HOME_ASSISTANT) {
+            modeButton->setText("Use Remote ID");
         } else {
             modeButton->setText("Use MA Login");
         }
@@ -123,8 +146,37 @@ void LoginActivity::updateUIForMode() {
     if (statusLabel) {
         if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
             statusLabel->setText("Enter your Music Assistant server credentials");
-        } else {
+        } else if (m_authMode == AuthMode::HOME_ASSISTANT) {
             statusLabel->setText("Enter your Home Assistant credentials");
+        } else {
+            statusLabel->setText("Enter your Remote ID (MA-XXXX-XXXX) and auth token");
+        }
+    }
+
+    // In remote access mode, repurpose the input fields:
+    // serverLabel -> Remote ID input
+    // usernameLabel -> Auth Token input
+    // passwordLabel -> hidden
+    if (isRemote) {
+        if (serverLabel) {
+            serverLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+        }
+        if (usernameLabel) {
+            usernameLabel->setText(std::string("Auth Token: ") + (m_authToken.empty() ? "Not set" : "(set)"));
+        }
+        if (passwordLabel) {
+            passwordLabel->setVisibility(brls::Visibility::GONE);
+        }
+    } else {
+        if (serverLabel) {
+            serverLabel->setText(std::string("Server: ") + (m_serverUrl.empty() ? "Not set" : m_serverUrl));
+        }
+        if (usernameLabel) {
+            usernameLabel->setText(std::string("Username: ") + (m_username.empty() ? "Not set" : m_username));
+        }
+        if (passwordLabel) {
+            passwordLabel->setVisibility(brls::Visibility::VISIBLE);
+            passwordLabel->setText("Password: Not set");
         }
     }
 }
@@ -132,6 +184,8 @@ void LoginActivity::updateUIForMode() {
 void LoginActivity::switchAuthMode() {
     if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
         m_authMode = AuthMode::HOME_ASSISTANT;
+    } else if (m_authMode == AuthMode::HOME_ASSISTANT) {
+        m_authMode = AuthMode::REMOTE_ACCESS;
     } else {
         m_authMode = AuthMode::MUSIC_ASSISTANT;
     }
@@ -139,6 +193,19 @@ void LoginActivity::switchAuthMode() {
 }
 
 void LoginActivity::onLoginPressed() {
+    if (m_authMode == AuthMode::REMOTE_ACCESS) {
+        if (m_remoteId.empty()) {
+            if (statusLabel) statusLabel->setText("Please enter a Remote ID (MA-XXXX-XXXX)");
+            return;
+        }
+        if (m_authToken.empty()) {
+            if (statusLabel) statusLabel->setText("Please enter an auth token");
+            return;
+        }
+        loginWithRemoteId(m_remoteId, m_authToken);
+        return;
+    }
+
     if (m_serverUrl.empty()) {
         if (statusLabel) statusLabel->setText("Please enter a server URL");
         return;
@@ -372,6 +439,87 @@ void LoginActivity::loginWithHA(const std::string& serverUrl,
     });
 }
 
+void LoginActivity::loginWithRemoteId(const std::string& remoteId,
+                                       const std::string& authToken) {
+    auto* progressDialog = new ProgressDialog("Connecting");
+    progressDialog->setStatus("Connecting via Remote ID...");
+    progressDialog->show();
+
+    auto cancelled = std::make_shared<bool>(false);
+    progressDialog->setCancelCallback([cancelled]() {
+        *cancelled = true;
+    });
+
+    asyncRun([this, remoteId, authToken, progressDialog, cancelled]() {
+        if (*cancelled) return;
+
+        brls::Logger::info("Login: connecting via WebRTC remote ID {}", remoteId);
+
+        MAClient& client = MAClient::instance();
+        bool connected = client.connectViaRemoteId(remoteId, authToken);
+
+        if (*cancelled) return;
+
+        if (!connected) {
+            brls::sync([this, progressDialog]() {
+                progressDialog->setStatus("Failed to connect to signaling server");
+                if (statusLabel) statusLabel->setText("Connection failed - check Remote ID");
+                brls::delay(2000, [progressDialog]() {
+                    progressDialog->dismiss();
+                });
+            });
+            return;
+        }
+
+        // Wait for the WebRTC connection to establish (with timeout)
+        int waitMs = 0;
+        while (waitMs < 15000 && !*cancelled) {
+            if (client.isConnected()) break;
+            auto state = WebRTCClient::instance().getState();
+            if (state == WebRTCState::ERROR) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            waitMs += 200;
+        }
+
+        if (*cancelled) return;
+
+        brls::sync([this, progressDialog, remoteId, authToken]() {
+            MAClient& client = MAClient::instance();
+            if (client.isConnected()) {
+                progressDialog->setStatus("Connected via Remote Access!");
+                progressDialog->setProgress(1.0f);
+
+                // Save remote access settings
+                auto& app = Application::getInstance();
+                app.getSettings().remoteId = remoteId;
+                app.getSettings().remoteAccessEnabled = true;
+                app.setAuthToken(authToken);
+                app.saveSettings();
+
+                // Note: Sendspin audio streaming is not available over WebRTC.
+                // The app will use the remote player for playback instead.
+                brls::Logger::info("Login: WebRTC connected - using remote player for playback");
+
+                brls::delay(500, [this, progressDialog]() {
+                    progressDialog->dismiss();
+                    Application::getInstance().pushMainActivity();
+                });
+            } else {
+                auto state = WebRTCClient::instance().getState();
+                std::string errMsg = "Remote connection failed";
+                if (state == WebRTCState::ERROR) {
+                    errMsg = "Remote ID not found or server offline";
+                }
+                progressDialog->setStatus(errMsg);
+                if (statusLabel) statusLabel->setText(errMsg);
+                brls::delay(2000, [progressDialog]() {
+                    progressDialog->dismiss();
+                });
+            }
+        });
+    });
+}
+
 void LoginActivity::connectWithToken(const std::string& serverUrl,
                                       const std::string& token,
                                       const std::string& username) {
@@ -387,6 +535,17 @@ void LoginActivity::connectWithToken(const std::string& serverUrl,
         app.setAuthToken(token);
         app.setUsername(username);
         app.saveSettings();
+
+        // Fetch and save remote access info for future remote connections
+        WebRTCClient::fetchRemoteAccessInfo(client, [](bool success, const RemoteAccessInfo& info) {
+            if (success && info.enabled && !info.remoteId.empty()) {
+                auto& app = Application::getInstance();
+                app.getSettings().remoteId = info.remoteId;
+                app.getSettings().remoteAccessEnabled = true;
+                app.saveSettings();
+                brls::Logger::info("Login: saved remote ID {} for future use", info.remoteId);
+            }
+        });
     } else {
         brls::Logger::error("Login: WebSocket connection failed");
     }

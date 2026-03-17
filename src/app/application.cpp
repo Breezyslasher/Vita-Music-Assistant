@@ -6,6 +6,7 @@
 #include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
 #include "app/sendspin_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -58,18 +59,42 @@ void Application::run() {
     // Check if we have a saved server URL
     if (!m_serverUrl.empty()) {
         brls::Logger::info("Restoring saved session...");
-        // Connect to Music Assistant server
+        // Try local connection first
         if (MAClient::instance().connect(m_serverUrl, m_authToken)) {
-            brls::Logger::info("Connected to server");
+            brls::Logger::info("Connected to server (local)");
             connectSendspin();
             pushMainActivity();
+        } else if (m_settings.remoteAccessEnabled && !m_settings.remoteId.empty()
+                   && !m_authToken.empty()) {
+            // Local connection failed - try WebRTC remote access
+            brls::Logger::info("Local connection failed, trying remote access via {}",
+                             m_settings.remoteId);
+            if (MAClient::instance().connectViaRemoteId(m_settings.remoteId, m_authToken)) {
+                // WebRTC connection is async - wait briefly for it
+                // The main loop will start and the connection will complete
+                brls::Logger::info("WebRTC connection initiated, proceeding to main");
+                // Don't connect Sendspin over WebRTC (not supported)
+                pushMainActivity();
+            } else {
+                brls::Logger::error("WebRTC connection also failed, showing login");
+                pushLoginActivity();
+            }
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
             pushLoginActivity();
         }
+    } else if (m_settings.remoteAccessEnabled && !m_settings.remoteId.empty()
+               && !m_authToken.empty()) {
+        // No local URL saved but have remote access credentials
+        brls::Logger::info("No local URL, connecting via remote access {}",
+                         m_settings.remoteId);
+        if (MAClient::instance().connectViaRemoteId(m_settings.remoteId, m_authToken)) {
+            pushMainActivity();
+        } else {
+            pushLoginActivity();
+        }
     } else {
         brls::Logger::info("No saved session, showing login screen");
-        // Show login screen
         pushLoginActivity();
     }
 
@@ -88,6 +113,16 @@ void Application::shutdown() {
 
 void Application::connectSendspin() {
     if (m_serverUrl.empty()) return;
+
+    // Sendspin requires a direct network connection to the server's port 8927.
+    // It uses binary WebSocket frames for audio streaming, which can't be
+    // tunneled through the WebRTC text relay. When connected remotely,
+    // the user controls remote players instead of local playback.
+    if (MAClient::instance().isRemoteAccess()) {
+        brls::Logger::info("Sendspin: skipping - not available over WebRTC remote access");
+        brls::Logger::info("Sendspin: use a remote player for playback instead");
+        return;
+    }
 
     // Extract host from server URL (e.g., "http://192.168.1.28:8095" -> "192.168.1.28")
     std::string host;
@@ -304,6 +339,10 @@ bool Application::loadSettings() {
     if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
     m_settings.selectedPlayerId = extractString("selectedPlayerId");
 
+    // Load remote access settings
+    m_settings.remoteId = extractString("remoteId");
+    m_settings.remoteAccessEnabled = extractBool("remoteAccessEnabled", false);
+
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
 #else
@@ -358,7 +397,11 @@ bool Application::saveSettings() {
     // Player settings
     json += "  \"localPlayback\": " + std::string(m_settings.localPlayback ? "true" : "false") + ",\n";
     json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
-    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\"\n";
+    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
+
+    // Remote access settings
+    json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";
+    json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + "\n";
 
     json += "}\n";
 

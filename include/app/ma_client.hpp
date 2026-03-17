@@ -90,8 +90,10 @@ public:
 
     // Connection
     bool connect(const std::string& serverUrl, const std::string& authToken = "");
+    bool connectViaRemoteId(const std::string& remoteId, const std::string& authToken);
     void disconnect();
     bool isConnected() const;
+    bool isRemoteAccess() const { return m_useWebRTC; }
 
     // Set event callback
     void setEventCallback(MAEventCallback cb) { m_eventCallback = std::move(cb); }
@@ -215,8 +217,9 @@ private:
     // Parse events
     MAEvent parseEventType(const std::string& eventStr);
 
-    // WebSocket
+    // Transport
     WebSocketClient m_ws;
+    bool m_useWebRTC = false;  // True when connected via WebRTC relay
     std::string m_serverUrl;
     std::string m_authToken;
     ServerInfo m_serverInfo;

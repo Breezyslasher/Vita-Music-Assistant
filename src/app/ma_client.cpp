@@ -1,4 +1,5 @@
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include <borealis.hpp>
 #include <cstring>
 #include <sstream>
@@ -295,13 +296,51 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     return m_ws.connect(wsUrl, "json");
 }
 
+bool MAClient::connectViaRemoteId(const std::string& remoteId, const std::string& authToken) {
+    m_authToken = authToken;
+    m_useWebRTC = true;
+
+    brls::Logger::info("MA: connecting via WebRTC remote ID {}", remoteId);
+
+    auto& webrtc = WebRTCClient::instance();
+
+    // Wire WebRTC message callback to our message handler
+    webrtc.setMessageCallback([this](const std::string& msg) {
+        onMessage(msg);
+    });
+
+    webrtc.setStateCallback([this](WebRTCState state) {
+        if (state == WebRTCState::ERROR) {
+            brls::Logger::error("MA: WebRTC connection error");
+            if (m_eventCallback) {
+                m_eventCallback(MAEvent::DISCONNECTED, Json());
+            }
+        } else if (state == WebRTCState::DISCONNECTED) {
+            m_authenticated.store(false);
+            if (m_eventCallback) {
+                m_eventCallback(MAEvent::DISCONNECTED, Json());
+            }
+        }
+    });
+
+    return webrtc.connectRemote(remoteId, authToken);
+}
+
 void MAClient::disconnect() {
     m_shouldReconnect.store(false);
-    m_ws.disconnect();
+    if (m_useWebRTC) {
+        WebRTCClient::instance().disconnect();
+        m_useWebRTC = false;
+    } else {
+        m_ws.disconnect();
+    }
     m_authenticated.store(false);
 }
 
 bool MAClient::isConnected() const {
+    if (m_useWebRTC) {
+        return WebRTCClient::instance().isConnected() && m_authenticated.load();
+    }
     return m_ws.isConnected() && m_authenticated.load();
 }
 
@@ -451,7 +490,13 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
     }
 
     std::string json = msg.dump();
-    if (!m_ws.send(json)) {
+    bool sent = false;
+    if (m_useWebRTC) {
+        sent = WebRTCClient::instance().sendMessage(json);
+    } else {
+        sent = m_ws.send(json);
+    }
+    if (!sent) {
         brls::Logger::error("MA: failed to send command: {}", command);
         if (cb) {
             std::lock_guard<std::mutex> lock(m_callbackMutex);
