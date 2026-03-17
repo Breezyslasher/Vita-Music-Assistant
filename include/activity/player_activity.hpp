@@ -14,9 +14,8 @@
 #include <unordered_map>
 #include <chrono>
 #include "app/ma_types.hpp"
+#include "app/ma_client.hpp"
 #include "app/music_queue.hpp"
-
-class Json;  // Forward declaration for event handler signatures
 
 namespace vita_ma {
 
