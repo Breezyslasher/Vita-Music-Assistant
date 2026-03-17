@@ -103,15 +103,12 @@ void MainActivity::onContentAvailable() {
         // Focus first tab
         tabFrame->focusTab(0);
 
-        // Register BUTTON_B on the root content view to return to player
+        // Register BUTTON_B on the root content view to open/return to player
         brls::View* rootBox = tabFrame->getParent();
         if (rootBox) {
             rootBox->registerAction("", brls::ControllerButton::BUTTON_B, [](brls::View* view) {
-                MusicQueue& queue = MusicQueue::getInstance();
-                if (!queue.isEmpty() && queue.getCurrentIndex() >= 0) {
-                    auto* playerActivity = PlayerActivity::createResumeQueue();
-                    brls::Application::pushActivity(playerActivity);
-                }
+                auto* playerActivity = PlayerActivity::createResumeQueue();
+                brls::Application::pushActivity(playerActivity);
                 return true;
             });
         }

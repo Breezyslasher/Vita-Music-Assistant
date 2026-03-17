@@ -468,8 +468,21 @@ void PlayerActivity::loadFromQueue() {
     const QueueItem* track = queue.getCurrentTrack();
 
     if (!track) {
-        brls::Logger::error("PlayerActivity: No current track in queue");
+        brls::Logger::info("PlayerActivity: No current track in queue, showing empty player");
         m_loadingMedia = false;
+
+        // Show the player UI with no track info — user can use the player switcher
+        if (musicTitleLabel) musicTitleLabel->setText("No track playing");
+        if (musicArtistLabel) musicArtistLabel->setText("Press the speaker button to switch players");
+        if (titleLabel) titleLabel->setText("No track playing");
+        if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
+        if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
+
+        // Check if a remote player is selected — load its state
+        const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+        if (!selectedId.empty()) {
+            loadRemotePlayerState();
+        }
         return;
     }
 
