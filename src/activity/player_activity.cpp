@@ -371,6 +371,28 @@ void PlayerActivity::onContentAvailable() {
         updatePlayerNameLabel();
     }
 
+    // Wire up MA server events so remote player state updates in real-time
+    {
+        auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+        MAClient::instance().setEventCallback([this, aliveWeak](MAEvent event, const Json& data) {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
+            if (event == MAEvent::PLAYER_UPDATED) {
+                brls::sync([this, data, aliveWeak]() {
+                    auto a = aliveWeak.lock();
+                    if (!a || !a->load()) return;
+                    onRemotePlayerEvent(data);
+                });
+            } else if (event == MAEvent::QUEUE_UPDATED || event == MAEvent::QUEUE_ITEMS_UPDATED) {
+                brls::sync([this, data, aliveWeak]() {
+                    auto a = aliveWeak.lock();
+                    if (!a || !a->load()) return;
+                    onRemoteQueueEvent(data);
+                });
+            }
+        });
+    }
+
     // Start update timer
     m_updateTimer.setCallback([this]() {
         updateProgress();
@@ -386,6 +408,9 @@ void PlayerActivity::onContentAvailable() {
 
 void PlayerActivity::willDisappear(bool resetState) {
     brls::Activity::willDisappear(resetState);
+
+    // Clear event callback to prevent use-after-free
+    MAClient::instance().setEventCallback(nullptr);
 
     // Re-enable background thumbnail loading now that playback is ending
     ImageLoader::setPaused(false);
@@ -839,6 +864,12 @@ void PlayerActivity::loadMedia() {
 void PlayerActivity::updateProgress() {
     // Don't update if destroying
     if (m_destroying) return;
+
+    // For remote players, poll state periodically instead of local MPV updates
+    if (isRemotePlayer()) {
+        pollRemotePlayerState();
+        return;
+    }
 
     // Deferred MPV initialization (Phase 1 of 2):
     // Create MPV and its GXM render context, but do NOT call loadUrl yet.
@@ -1294,17 +1325,21 @@ void PlayerActivity::showQueueOverlay() {
             struct RemoteQueueItem {
                 std::string name;
                 std::string artist;
+                std::string uri;
                 std::string imageUrl;
                 std::string imageProvider;
                 int duration;
                 bool isCurrent;
             };
+            // Capture current URI for matching
+            std::string currentUri = m_remoteCurrentUri;
             std::vector<RemoteQueueItem> items;
             for (size_t i = 0; i < result.size(); i++) {
                 const Json& item = result[i];
                 RemoteQueueItem qi;
                 qi.duration = 0;
-                qi.isCurrent = (i == 0);  // First item is typically current
+                qi.isCurrent = false;
+                if (item.has("uri")) qi.uri = item["uri"].str();
                 if (item.has("name")) qi.name = item["name"].str();
                 if (item.has("duration")) qi.duration = item["duration"].intVal();
                 if (item.has("media_item") && item["media_item"].type() == Json::OBJECT) {
@@ -1324,6 +1359,12 @@ void PlayerActivity::showQueueOverlay() {
                     if (qi.imageProvider.empty() && item["image"].has("provider"))
                         qi.imageProvider = item["image"]["provider"].str();
                 }
+                // Also get URI from media_item if not on top-level
+                if (qi.uri.empty() && item.has("media_item") && item["media_item"].has("uri"))
+                    qi.uri = item["media_item"]["uri"].str();
+                // Match against current playing track URI
+                if (!currentUri.empty() && !qi.uri.empty() && qi.uri == currentUri)
+                    qi.isCurrent = true;
                 items.push_back(qi);
             }
 
@@ -2744,168 +2785,88 @@ void PlayerActivity::loadRemotePlayerState() {
 
     auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
 
-    // Fetch the player's queue to get the currently playing track and queue items
+    // Fetch the player's queue item count for the queue info label
     client.getQueueItems(playerId, [this, playerId, aliveWeak](bool success, const Json& result) {
-        if (!success) {
-            brls::Logger::error("PlayerActivity: Failed to load queue for player {}", playerId);
-            return;
-        }
+        if (!success) return;
 
-        // Parse queue items
-        std::vector<MAQueueItem> queueItems;
-        if (result.type() == Json::ARRAY) {
-            for (size_t i = 0; i < result.size(); i++) {
-                const Json& item = result[i];
-                MAQueueItem qi;
-                if (item.has("queue_item_id")) qi.queueItemId = item["queue_item_id"].str();
-                if (item.has("uri")) qi.uri = item["uri"].str();
-                if (item.has("name")) qi.name = item["name"].str();
-                if (item.has("media_item")) {
-                    const Json& mi = item["media_item"];
-                    if (mi.has("name")) qi.name = mi["name"].str();
-                    if (mi.has("artists")) {
-                        const Json& artists = mi["artists"];
-                        if (artists.type() == Json::ARRAY && artists.size() > 0) {
-                            if (artists[0].has("name")) qi.artistName = artists[0]["name"].str();
-                        }
-                    }
-                    if (mi.has("album") && mi["album"].has("name")) {
-                        qi.albumName = mi["album"]["name"].str();
-                    }
-                    if (mi.has("image") && mi["image"].has("path")) {
-                        qi.imageUrl = mi["image"]["path"].str();
-                        if (mi["image"].has("provider")) qi.imageProvider = mi["image"]["provider"].str();
-                    }
-                    if (mi.has("metadata") && mi["metadata"].has("images")) {
-                        const Json& images = mi["metadata"]["images"];
-                        if (images.type() == Json::ARRAY && images.size() > 0) {
-                            if (images[0].has("path")) qi.imageUrl = images[0]["path"].str();
-                            if (images[0].has("provider")) qi.imageProvider = images[0]["provider"].str();
-                        }
-                    }
-                }
-                // Fallback: top-level fields
-                if (qi.name.empty() && item.has("name")) qi.name = item["name"].str();
-                if (item.has("duration")) qi.duration = item["duration"].intVal();
-                if (item.has("image")) {
-                    const Json& img = item["image"];
-                    if (img.type() == Json::OBJECT) {
-                        if (img.has("path")) qi.imageUrl = img["path"].str();
-                        if (img.has("provider")) qi.imageProvider = img["provider"].str();
-                    }
-                }
-                queueItems.push_back(qi);
-            }
-        }
+        int totalItems = 0;
+        if (result.type() == Json::ARRAY) totalItems = (int)result.size();
 
-        brls::sync([this, queueItems, aliveWeak]() {
+        brls::sync([this, totalItems, aliveWeak]() {
             auto alive = aliveWeak.lock();
             if (!alive || !alive->load()) return;
 
-            int totalItems = (int)queueItems.size();
             brls::Logger::info("PlayerActivity: Remote player has {} queue items", totalItems);
 
             if (totalItems == 0) {
-                if (musicTitleLabel) musicTitleLabel->setText("No track playing");
-                if (musicArtistLabel) musicArtistLabel->setText("");
                 if (queueLabel) queueLabel->setVisibility(brls::Visibility::GONE);
-                if (albumArt) albumArt->setVisibility(brls::Visibility::GONE);
-                if (progressSlider) progressSlider->setVisibility(brls::Visibility::GONE);
-                if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::GONE);
-                if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::GONE);
-                return;
-            }
-
-            // Remote player has tracks — show progress elements
-            if (progressSlider) progressSlider->setVisibility(brls::Visibility::VISIBLE);
-            if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::VISIBLE);
-            if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::VISIBLE);
-
-            // The first item in the queue response is typically the current/next,
-            // but we need the player state to know the current index.
-            // For now, display the first item as the "now playing" and show queue count.
-            const auto& current = queueItems[0];
-
-            if (musicTitleLabel) musicTitleLabel->setText(current.name);
-            if (musicArtistLabel) musicArtistLabel->setText(current.artistName);
-            if (titleLabel) titleLabel->setText(current.name);
-            if (artistLabel) {
-                artistLabel->setText(current.artistName);
-                artistLabel->setVisibility(current.artistName.empty()
-                    ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
-            }
-
-            // Update queue info label
-            if (queueLabel) {
-                std::string info = "Track 1 of " + std::to_string(totalItems);
-                queueLabel->setText(info);
+            } else if (queueLabel) {
+                queueLabel->setText(std::to_string(totalItems) + " tracks in queue");
                 queueLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-
-            // Load album art
-            if (albumArt && !current.imageUrl.empty()) {
-                MAClient& client = MAClient::instance();
-                std::string thumbUrl = client.getThumbnailUrl(current.imageUrl, 300, 300, current.imageProvider);
-                ImageLoader::setPaused(false);
-                ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                    img->setVisibility(brls::Visibility::VISIBLE);
-                }, albumArt, m_alive);
-                ImageLoader::setPaused(true);
             }
         });
     }, 50, 0);
 
-    // Also fetch the player state directly for current_item and elapsed time
+    // Fetch the player state for current track info, playback state, and elapsed time
+    // The players/get response uses: current_media.title, current_media.artist (string),
+    // current_media.image_url (flat URL), current_media.duration, current_media.uri
     Json playerArgs;
     playerArgs["player_id"] = Json(playerId);
     client.sendCommand("players/get", playerArgs, [this, aliveWeak](bool success, const Json& result) {
         if (!success || result.type() != Json::OBJECT) return;
 
-        // Extract current item info from player state
-        std::string currentName, currentArtist, currentImageUrl, currentImageProvider;
-        int elapsed = 0;
-        std::string state;  // "playing", "paused", "idle"
+        std::string currentName, currentArtist, currentImageUrl, currentUri;
+        int elapsed = 0, duration = 0;
+        std::string state;
 
         if (result.has("elapsed_time")) elapsed = result["elapsed_time"].intVal();
         if (result.has("state")) state = result["state"].str();
 
         if (result.has("current_media") && result["current_media"].type() == Json::OBJECT) {
             const Json& media = result["current_media"];
-            if (media.has("name")) currentName = media["name"].str();
-            if (media.has("artists")) {
-                const Json& artists = media["artists"];
-                if (artists.type() == Json::ARRAY && artists.size() > 0 && artists[0].has("name"))
-                    currentArtist = artists[0]["name"].str();
-            }
-            if (media.has("image") && media["image"].type() == Json::OBJECT) {
-                if (media["image"].has("path")) currentImageUrl = media["image"]["path"].str();
-                if (media["image"].has("provider")) currentImageProvider = media["image"]["provider"].str();
-            }
-        } else if (result.has("current_item") && result["current_item"].type() == Json::OBJECT) {
-            const Json& item = result["current_item"];
-            if (item.has("name")) currentName = item["name"].str();
-            if (item.has("media_item") && item["media_item"].type() == Json::OBJECT) {
-                const Json& mi = item["media_item"];
-                if (mi.has("name")) currentName = mi["name"].str();
-                if (mi.has("artists") && mi["artists"].type() == Json::ARRAY && mi["artists"].size() > 0) {
-                    if (mi["artists"][0].has("name")) currentArtist = mi["artists"][0]["name"].str();
-                }
-                if (mi.has("image") && mi["image"].type() == Json::OBJECT) {
-                    if (mi["image"].has("path")) currentImageUrl = mi["image"]["path"].str();
-                    if (mi["image"].has("provider")) currentImageProvider = mi["image"]["provider"].str();
-                }
-            }
+            // MA API uses "title" and "artist" (singular string), not "name"/"artists"
+            if (media.has("title")) currentName = media["title"].str();
+            if (media.has("artist")) currentArtist = media["artist"].str();
+            if (media.has("image_url")) currentImageUrl = media["image_url"].str();
+            if (media.has("uri")) currentUri = media["uri"].str();
+            if (media.has("duration")) duration = media["duration"].intVal();
+            // Fallback: try "name" in case of older MA versions
+            if (currentName.empty() && media.has("name")) currentName = media["name"].str();
         }
 
-        if (currentName.empty()) return;  // No useful info
-
-        brls::sync([this, currentName, currentArtist, currentImageUrl, currentImageProvider,
-                    elapsed, state, aliveWeak]() {
+        brls::sync([this, currentName, currentArtist, currentImageUrl, currentUri,
+                    elapsed, duration, state, aliveWeak]() {
             auto alive = aliveWeak.lock();
             if (!alive || !alive->load()) return;
 
-            brls::Logger::info("PlayerActivity: Remote player now playing: {} - {} ({})",
-                             currentArtist, currentName, state);
+            // Update remote state tracking
+            m_remoteState = state;
+            m_remoteElapsed = elapsed;
+            m_remoteDuration = duration;
+            m_remoteCurrentUri = currentUri;
+
+            // Update play/pause button state
+            bool isPlaying = (state == "playing");
+            if (isPlaying != m_isPlaying) {
+                m_isPlaying = isPlaying;
+                updatePlayPauseLabel();
+            }
+
+            if (currentName.empty()) {
+                // No current track - show idle state
+                if (state == "idle" || state == "off") {
+                    if (musicTitleLabel) musicTitleLabel->setText("No track playing");
+                    if (musicArtistLabel) musicArtistLabel->setText("");
+                    if (titleLabel) titleLabel->setText("No track playing");
+                    if (progressSlider) progressSlider->setVisibility(brls::Visibility::GONE);
+                    if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::GONE);
+                    if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::GONE);
+                }
+                return;
+            }
+
+            brls::Logger::info("PlayerActivity: Remote player: {} - {} [{}] elapsed={}s duration={}s",
+                             currentArtist, currentName, state, elapsed, duration);
 
             if (musicTitleLabel) musicTitleLabel->setText(currentName);
             if (musicArtistLabel) musicArtistLabel->setText(currentArtist);
@@ -2916,10 +2877,32 @@ void PlayerActivity::loadRemotePlayerState() {
                     ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
             }
 
-            // Load album art
+            // Show progress elements
+            if (progressSlider) progressSlider->setVisibility(brls::Visibility::VISIBLE);
+            if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::VISIBLE);
+            if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::VISIBLE);
+
+            // Update progress bar and time labels
+            if (duration > 0) {
+                m_updatingSlider = true;
+                if (progressSlider) progressSlider->setProgress((float)elapsed / (float)duration);
+                m_updatingSlider = false;
+
+                int posMin = elapsed / 60, posSec = elapsed % 60;
+                int rem = std::max(0, duration - elapsed);
+                int remMin = rem / 60, remSec = rem % 60;
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%d:%02d", posMin, posSec);
+                if (timeElapsedLabel) timeElapsedLabel->setText(buf);
+                snprintf(buf, sizeof(buf), "-%d:%02d", remMin, remSec);
+                if (timeRemainingLabel) timeRemainingLabel->setText(buf);
+            }
+
+            // Load album art from image_url
             if (albumArt && !currentImageUrl.empty()) {
                 MAClient& client = MAClient::instance();
-                std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, currentImageProvider);
+                // image_url from current_media is already a full URL or provider path
+                std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, "");
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                     img->setVisibility(brls::Visibility::VISIBLE);
@@ -2928,6 +2911,161 @@ void PlayerActivity::loadRemotePlayerState() {
             }
         });
     });
+}
+
+void PlayerActivity::pollRemotePlayerState() {
+    if (!isRemotePlayer()) return;
+
+    // Only poll every 3 seconds (called from 1-second updateProgress timer)
+    m_remotePollCounter++;
+    if (m_remotePollCounter < 3) return;
+    m_remotePollCounter = 0;
+
+    const auto& playerId = Application::getInstance().getSettings().selectedPlayerId;
+    auto& client = MAClient::instance();
+    if (!client.isConnected()) return;
+
+    auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+    Json args;
+    args["player_id"] = Json(playerId);
+    client.sendCommand("players/get", args, [this, aliveWeak](bool success, const Json& result) {
+        if (!success || result.type() != Json::OBJECT) return;
+
+        std::string currentName, currentArtist, currentImageUrl, currentUri;
+        int elapsed = 0, duration = 0;
+        std::string state;
+
+        if (result.has("elapsed_time")) elapsed = result["elapsed_time"].intVal();
+        if (result.has("state")) state = result["state"].str();
+
+        if (result.has("current_media") && result["current_media"].type() == Json::OBJECT) {
+            const Json& media = result["current_media"];
+            if (media.has("title")) currentName = media["title"].str();
+            if (media.has("artist")) currentArtist = media["artist"].str();
+            if (media.has("image_url")) currentImageUrl = media["image_url"].str();
+            if (media.has("uri")) currentUri = media["uri"].str();
+            if (media.has("duration")) duration = media["duration"].intVal();
+            if (currentName.empty() && media.has("name")) currentName = media["name"].str();
+        }
+
+        brls::sync([this, currentName, currentArtist, currentImageUrl, currentUri,
+                    elapsed, duration, state, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
+
+            // Update state
+            m_remoteState = state;
+            m_remoteElapsed = elapsed;
+            m_remoteDuration = duration;
+
+            // Update play/pause button
+            bool isPlaying = (state == "playing");
+            if (isPlaying != m_isPlaying) {
+                m_isPlaying = isPlaying;
+                updatePlayPauseLabel();
+            }
+
+            // Check if the track changed
+            bool trackChanged = (!currentUri.empty() && currentUri != m_remoteCurrentUri);
+            if (trackChanged) {
+                m_remoteCurrentUri = currentUri;
+                brls::Logger::info("PlayerActivity: Remote track changed: {} - {} [{}]",
+                                 currentArtist, currentName, state);
+            }
+
+            // Update title/artist if track changed or on first poll
+            if (trackChanged || (m_remoteCurrentUri.empty() && !currentName.empty())) {
+                m_remoteCurrentUri = currentUri;
+                if (musicTitleLabel) musicTitleLabel->setText(currentName);
+                if (musicArtistLabel) musicArtistLabel->setText(currentArtist);
+                if (titleLabel) titleLabel->setText(currentName);
+                if (artistLabel) {
+                    artistLabel->setText(currentArtist);
+                    artistLabel->setVisibility(currentArtist.empty()
+                        ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+                }
+                // Load new album art
+                if (albumArt && !currentImageUrl.empty()) {
+                    MAClient& client = MAClient::instance();
+                    std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, "");
+                    ImageLoader::setPaused(false);
+                    ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+                        img->setVisibility(brls::Visibility::VISIBLE);
+                    }, albumArt, m_alive);
+                    ImageLoader::setPaused(true);
+                }
+            }
+
+            // Update progress bar and time labels
+            if (duration > 0) {
+                m_updatingSlider = true;
+                if (progressSlider) progressSlider->setProgress((float)elapsed / (float)duration);
+                m_updatingSlider = false;
+
+                int posMin = elapsed / 60, posSec = elapsed % 60;
+                int rem = std::max(0, duration - elapsed);
+                int remMin = rem / 60, remSec = rem % 60;
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%d:%02d", posMin, posSec);
+                if (timeElapsedLabel) timeElapsedLabel->setText(buf);
+                snprintf(buf, sizeof(buf), "-%d:%02d", remMin, remSec);
+                if (timeRemainingLabel) timeRemainingLabel->setText(buf);
+            }
+
+            // Handle idle state
+            if (currentName.empty() && (state == "idle" || state == "off")) {
+                if (musicTitleLabel) musicTitleLabel->setText("No track playing");
+                if (musicArtistLabel) musicArtistLabel->setText("");
+            }
+        });
+    });
+}
+
+void PlayerActivity::onRemotePlayerEvent(const Json& data) {
+    if (!isRemotePlayer()) return;
+
+    // The event data contains the updated player object
+    // Check if this event is for our selected player
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    if (data.type() == Json::OBJECT && data.has("player_id")) {
+        if (data["player_id"].str() != selectedId) return;
+    }
+
+    // Trigger an immediate poll to update UI
+    m_remotePollCounter = 3;  // Force next poll cycle
+}
+
+void PlayerActivity::onRemoteQueueEvent(const Json& data) {
+    if (!isRemotePlayer()) return;
+
+    // The event data may contain the queue_id
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    if (data.type() == Json::OBJECT && data.has("queue_id")) {
+        if (data["queue_id"].str() != selectedId) return;
+    }
+
+    // Refresh queue item count
+    auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+    MAClient::instance().getQueueItems(selectedId, [this, aliveWeak](bool success, const Json& result) {
+        if (!success) return;
+        int totalItems = 0;
+        if (result.type() == Json::ARRAY) totalItems = (int)result.size();
+        brls::sync([this, totalItems, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
+            if (queueLabel) {
+                if (totalItems > 0) {
+                    queueLabel->setText(std::to_string(totalItems) + " tracks in queue");
+                    queueLabel->setVisibility(brls::Visibility::VISIBLE);
+                } else {
+                    queueLabel->setVisibility(brls::Visibility::GONE);
+                }
+            }
+        });
+    }, 50, 0);
+
+    // Also trigger a player state poll to update current track
+    m_remotePollCounter = 3;
 }
 
 void PlayerActivity::showPlayerSwitcher() {

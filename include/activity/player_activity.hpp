@@ -16,6 +16,8 @@
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 
+class Json;  // Forward declaration for event handler signatures
+
 namespace vita_ma {
 
 class PlayerActivity : public brls::Activity {
@@ -214,7 +216,17 @@ private:
     void showPlayerSwitcher();
     void loadRemotePlayerState();  // Fetch and display the selected remote player's state
     void updatePlayerNameLabel();  // Update the label showing which player is active
+    void pollRemotePlayerState();  // Periodic poll of remote player state (called from updateProgress)
+    void onRemotePlayerEvent(const Json& data);  // Handle PLAYER_UPDATED events from server
+    void onRemoteQueueEvent(const Json& data);   // Handle QUEUE_UPDATED events from server
     std::vector<PlayerInfo> m_availablePlayers;  // Cached player list
+
+    // Remote player state tracking
+    std::string m_remoteCurrentUri;       // URI of currently playing track on remote player
+    std::string m_remoteState;            // "playing", "paused", "idle"
+    int m_remoteElapsed = 0;              // Elapsed seconds on remote player
+    int m_remoteDuration = 0;             // Duration seconds of current track
+    int m_remotePollCounter = 0;          // Counter for throttling remote polls
 
     // Returns the player/queue ID for the currently selected player.
     // If a remote player is selected, returns its ID; otherwise returns the local Vita player ID.
