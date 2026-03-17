@@ -334,6 +334,7 @@ void PlayerActivity::onContentAvailable() {
     // Player switcher button - allows selecting which player to control
     if (playerSwitchBtn) {
         playerSwitchBtn->setVisibility(brls::Visibility::VISIBLE);
+        playerSwitchBtn->setHideHighlightBackground(true);
         playerSwitchBtn->registerClickAction([this](brls::View* view) {
             showPlayerSwitcher();
             return true;
@@ -470,13 +471,32 @@ void PlayerActivity::loadFromQueue() {
     if (!track) {
         brls::Logger::info("PlayerActivity: No current track in queue, showing empty player");
         m_loadingMedia = false;
+        m_isResuming = false;
 
         // Show the player UI with no track info — user can use the player switcher
         if (musicTitleLabel) musicTitleLabel->setText("No track playing");
-        if (musicArtistLabel) musicArtistLabel->setText("Press the speaker button to switch players");
+        if (musicArtistLabel) musicArtistLabel->setText("");
         if (titleLabel) titleLabel->setText("No track playing");
         if (musicInfo) musicInfo->setVisibility(brls::Visibility::VISIBLE);
         if (musicTransport) musicTransport->setVisibility(brls::Visibility::VISIBLE);
+
+        // Ensure controls are visible and properly laid out
+        if (controlsBox) {
+            controlsBox->setVisibility(brls::Visibility::VISIBLE);
+            controlsBox->setAlpha(1.0f);
+        }
+
+        // Hide the progress bar and time labels since nothing is playing
+        if (progressSlider) progressSlider->setVisibility(brls::Visibility::GONE);
+        if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::GONE);
+        if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::GONE);
+
+        // Hide title/artist from bottom controls (shown in musicInfo instead)
+        if (titleLabel) titleLabel->setVisibility(brls::Visibility::GONE);
+        if (artistLabel) artistLabel->setVisibility(brls::Visibility::GONE);
+
+        // Hide queue info since there's no queue
+        if (queueLabel) queueLabel->setVisibility(brls::Visibility::GONE);
 
         // Check if a remote player is selected — load its state
         const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
@@ -1177,6 +1197,184 @@ void PlayerActivity::updateQueueDisplay() {
 void PlayerActivity::showQueueOverlay() {
     if (m_queueOverlayVisible) {
         hideQueueOverlay();
+        return;
+    }
+
+    // If a remote player is selected, fetch and display its queue
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    if (!selectedId.empty()) {
+        auto& client = MAClient::instance();
+        if (!client.isConnected()) {
+            brls::Application::notify("Not connected to server");
+            return;
+        }
+
+        m_queueOverlayVisible = true;
+        auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+
+        client.getQueueItems(selectedId, [this, aliveWeak](bool success, const Json& result) {
+            if (!success || result.type() != Json::ARRAY) {
+                brls::sync([this, aliveWeak]() {
+                    auto alive = aliveWeak.lock();
+                    if (!alive || !alive->load()) return;
+                    brls::Application::notify("Failed to load remote queue");
+                    m_queueOverlayVisible = false;
+                });
+                return;
+            }
+
+            // Parse queue items
+            struct RemoteQueueItem {
+                std::string name;
+                std::string artist;
+                std::string imageUrl;
+                std::string imageProvider;
+                int duration;
+                bool isCurrent;
+            };
+            std::vector<RemoteQueueItem> items;
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& item = result[i];
+                RemoteQueueItem qi;
+                qi.duration = 0;
+                qi.isCurrent = (i == 0);  // First item is typically current
+                if (item.has("name")) qi.name = item["name"].str();
+                if (item.has("duration")) qi.duration = item["duration"].intVal();
+                if (item.has("media_item") && item["media_item"].type() == Json::OBJECT) {
+                    const Json& mi = item["media_item"];
+                    if (mi.has("name")) qi.name = mi["name"].str();
+                    if (mi.has("artists") && mi["artists"].type() == Json::ARRAY && mi["artists"].size() > 0) {
+                        if (mi["artists"][0].has("name")) qi.artist = mi["artists"][0]["name"].str();
+                    }
+                    if (mi.has("image") && mi["image"].type() == Json::OBJECT) {
+                        if (mi["image"].has("path")) qi.imageUrl = mi["image"]["path"].str();
+                        if (mi["image"].has("provider")) qi.imageProvider = mi["image"]["provider"].str();
+                    }
+                }
+                if (item.has("image") && item["image"].type() == Json::OBJECT) {
+                    if (qi.imageUrl.empty() && item["image"].has("path"))
+                        qi.imageUrl = item["image"]["path"].str();
+                    if (qi.imageProvider.empty() && item["image"].has("provider"))
+                        qi.imageProvider = item["image"]["provider"].str();
+                }
+                items.push_back(qi);
+            }
+
+            brls::sync([this, items, aliveWeak]() {
+                auto alive = aliveWeak.lock();
+                if (!alive || !alive->load()) return;
+
+                // Clear existing queue rows
+                if (queueList) queueList->clearViews();
+                m_queueRowData.clear();
+                m_deferredThumbs.clear();
+
+                // Build queue rows for remote player
+                for (size_t i = 0; i < items.size(); i++) {
+                    const auto& qi = items[i];
+
+                    auto* row = new brls::Box();
+                    row->setAxis(brls::Axis::ROW);
+                    row->setAlignItems(brls::AlignItems::CENTER);
+                    row->setPaddingTop(6);
+                    row->setPaddingBottom(6);
+                    row->setPaddingLeft(8);
+                    row->setPaddingRight(8);
+                    row->setCornerRadius(6);
+                    row->setFocusable(true);
+                    row->setHeight(56);
+
+                    if (qi.isCurrent) {
+                        row->setBackgroundColor(nvgRGBA(70, 90, 210, 150));
+                        row->setBorderColor(nvgRGBA(120, 160, 255, 200));
+                        row->setBorderThickness(1.5f);
+                    } else {
+                        row->setBackgroundColor(nvgRGBA(255, 255, 255, 8));
+                    }
+
+                    // Track number
+                    auto* numLabel = new brls::Label();
+                    numLabel->setText(std::to_string(i + 1));
+                    numLabel->setFontSize(13);
+                    numLabel->setTextColor(nvgRGBA(150, 150, 150, 255));
+                    numLabel->setWidth(28);
+                    numLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+                    row->addView(numLabel);
+
+                    // Cover art (small)
+                    auto* cover = new brls::Image();
+                    cover->setWidth(40);
+                    cover->setHeight(40);
+                    cover->setCornerRadius(4);
+                    cover->setMarginLeft(4);
+                    cover->setMarginRight(10);
+                    cover->setScalingType(brls::ImageScalingType::FIT);
+                    row->addView(cover);
+
+                    // Load thumbnail
+                    if (!qi.imageUrl.empty()) {
+                        MAClient& client = MAClient::instance();
+                        std::string thumbUrl = client.getThumbnailUrl(qi.imageUrl, 100, 100, qi.imageProvider);
+                        ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+                            img->setVisibility(brls::Visibility::VISIBLE);
+                        }, cover, m_alive);
+                    }
+
+                    // Title + artist column
+                    auto* infoBox = new brls::Box();
+                    infoBox->setAxis(brls::Axis::COLUMN);
+                    infoBox->setGrow(1.0f);
+
+                    auto* titleLbl = new brls::Label();
+                    titleLbl->setText(qi.name);
+                    titleLbl->setFontSize(15);
+                    titleLbl->setTextColor(qi.isCurrent
+                        ? nvgRGBA(255, 255, 255, 255)
+                        : nvgRGBA(220, 220, 220, 255));
+                    infoBox->addView(titleLbl);
+
+                    if (!qi.artist.empty()) {
+                        auto* artistLbl = new brls::Label();
+                        artistLbl->setText(qi.artist);
+                        artistLbl->setFontSize(12);
+                        artistLbl->setTextColor(nvgRGBA(160, 160, 160, 255));
+                        infoBox->addView(artistLbl);
+                    }
+
+                    row->addView(infoBox);
+
+                    // Duration
+                    if (qi.duration > 0) {
+                        auto* durLabel = new brls::Label();
+                        int mins = qi.duration / 60;
+                        int secs = qi.duration % 60;
+                        char buf[16];
+                        snprintf(buf, sizeof(buf), "%d:%02d", mins, secs);
+                        durLabel->setText(buf);
+                        durLabel->setFontSize(12);
+                        durLabel->setTextColor(nvgRGBA(140, 140, 140, 255));
+                        durLabel->setMarginLeft(8);
+                        row->addView(durLabel);
+                    }
+
+                    queueList->addView(row);
+                }
+
+                // Update title
+                if (queueOverlayTitle) {
+                    queueOverlayTitle->setText("Queue (" + std::to_string(items.size()) + " tracks)");
+                }
+
+                // Show overlay
+                if (queueOverlay) {
+                    queueOverlay->setVisibility(brls::Visibility::VISIBLE);
+                    queueOverlay->registerAction("Back", brls::ControllerButton::BUTTON_B, [this](brls::View* view) {
+                        hideQueueOverlay();
+                        return true;
+                    });
+                }
+            });
+        }, 100, 0);
         return;
     }
 
@@ -2533,12 +2731,18 @@ void PlayerActivity::loadRemotePlayerState() {
             if (totalItems == 0) {
                 if (musicTitleLabel) musicTitleLabel->setText("No track playing");
                 if (musicArtistLabel) musicArtistLabel->setText("");
-                if (queueLabel) {
-                    queueLabel->setText("Empty queue");
-                    queueLabel->setVisibility(brls::Visibility::VISIBLE);
-                }
+                if (queueLabel) queueLabel->setVisibility(brls::Visibility::GONE);
+                if (albumArt) albumArt->setVisibility(brls::Visibility::GONE);
+                if (progressSlider) progressSlider->setVisibility(brls::Visibility::GONE);
+                if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::GONE);
+                if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::GONE);
                 return;
             }
+
+            // Remote player has tracks — show progress elements
+            if (progressSlider) progressSlider->setVisibility(brls::Visibility::VISIBLE);
+            if (timeElapsedLabel) timeElapsedLabel->setVisibility(brls::Visibility::VISIBLE);
+            if (timeRemainingLabel) timeRemainingLabel->setVisibility(brls::Visibility::VISIBLE);
 
             // The first item in the queue response is typically the current/next,
             // but we need the player state to know the current index.
