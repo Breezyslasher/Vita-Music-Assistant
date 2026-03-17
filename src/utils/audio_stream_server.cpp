@@ -196,6 +196,7 @@ void AudioStreamServer::resetStream() {
 }
 
 void AudioStreamServer::serverLoop() {
+    int consecutiveFailures = 0;
     while (!m_shouldStop.load()) {
         // Check if listen socket is still valid (stop() may have closed it)
         if (m_listenSocket < 0) break;
@@ -215,16 +216,25 @@ void AudioStreamServer::serverLoop() {
 
         if (clientSocket < 0) {
             if (m_shouldStop.load() || m_listenSocket < 0) break;
-            brls::Logger::error("AudioStreamServer: accept failed");
-            // Backoff to avoid tight spin loop on persistent errors
+            consecutiveFailures++;
+            // Exponential backoff: 100ms, 200ms, 400ms, 800ms, max 2s
+            int backoffMs = std::min(100 * (1 << std::min(consecutiveFailures - 1, 4)), 2000);
+            brls::Logger::error("AudioStreamServer: accept failed (attempt {}, backoff {}ms)",
+                consecutiveFailures, backoffMs);
+            // Give up after too many consecutive failures to prevent resource exhaustion
+            if (consecutiveFailures >= 20) {
+                brls::Logger::error("AudioStreamServer: too many accept failures, stopping server loop");
+                break;
+            }
 #ifdef __vita__
-            sceKernelDelayThread(100 * 1000);  // 100ms
+            sceKernelDelayThread(backoffMs * 1000);
 #else
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
 #endif
             continue;
         }
 
+        consecutiveFailures = 0;  // Reset on successful accept
         brls::Logger::info("AudioStreamServer: client connected");
         handleClient(clientSocket);
 

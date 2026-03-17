@@ -985,6 +985,21 @@ void PlayerActivity::updateProgress() {
 }
 
 void PlayerActivity::togglePlayPause() {
+    if (isRemotePlayer()) {
+        // Send play/pause command to the remote player's queue
+        std::string queueId = getActivePlayerId();
+        auto& client = MAClient::instance();
+        if (m_isPlaying) {
+            client.queuePause(queueId);
+            m_isPlaying = false;
+        } else {
+            client.queuePlay(queueId);
+            m_isPlaying = true;
+        }
+        updatePlayPauseLabel();
+        return;
+    }
+
     MpvPlayer& player = MpvPlayer::getInstance();
 
     if (player.isPlaying()) {
@@ -1011,6 +1026,18 @@ void PlayerActivity::seek(int seconds) {
 // Queue control methods
 
 void PlayerActivity::playNext() {
+    if (isRemotePlayer()) {
+        std::string queueId = getActivePlayerId();
+        MAClient::instance().queueNext(queueId, [this](bool success, const Json&) {
+            if (success) {
+                brls::sync([this]() {
+                    if (m_alive && m_alive->load()) loadRemotePlayerState();
+                });
+            }
+        });
+        return;
+    }
+
     if (!m_isQueueMode) return;
 
     MusicQueue& queue = MusicQueue::getInstance();
@@ -1027,6 +1054,18 @@ void PlayerActivity::playNext() {
 }
 
 void PlayerActivity::playPrevious() {
+    if (isRemotePlayer()) {
+        std::string queueId = getActivePlayerId();
+        MAClient::instance().queuePrevious(queueId, [this](bool success, const Json&) {
+            if (success) {
+                brls::sync([this]() {
+                    if (m_alive && m_alive->load()) loadRemotePlayerState();
+                });
+            }
+        });
+        return;
+    }
+
     if (!m_isQueueMode) return;
 
     MpvPlayer& player = MpvPlayer::getInstance();
@@ -1052,34 +1091,52 @@ void PlayerActivity::playPrevious() {
 }
 
 void PlayerActivity::toggleShuffle() {
-    if (!m_isQueueMode) return;
-
     MusicQueue& queue = MusicQueue::getInstance();
-    queue.setShuffle(!queue.isShuffleEnabled());
+    bool newState = !queue.isShuffleEnabled();
 
-    updateQueueDisplay();
+    if (m_isQueueMode) {
+        queue.setShuffle(newState);
+        updateQueueDisplay();
+    }
     updateShuffleIcon();
 
+    // Send to server for both local and remote players
+    std::string queueId = getActivePlayerId();
+    if (!queueId.empty()) {
+        MAClient::instance().queueShuffle(queueId, newState);
+    }
+
     MpvPlayer::getInstance().showOSD(
-        queue.isShuffleEnabled() ? "Shuffle: ON" : "Shuffle: OFF", 1.5);
+        newState ? "Shuffle: ON" : "Shuffle: OFF", 1.5);
 }
 
 void PlayerActivity::toggleRepeat() {
-    if (!m_isQueueMode) return;
-
     MusicQueue& queue = MusicQueue::getInstance();
-    queue.cycleRepeatMode();
 
-    updateQueueDisplay();
+    if (m_isQueueMode) {
+        queue.cycleRepeatMode();
+        updateQueueDisplay();
+    }
     updateRepeatIcon();
 
-    // Show OSD feedback
+    // Determine the new repeat mode string for the server
+    RepeatMode mode = queue.getRepeatMode();
+    std::string modeServerStr = "off";
     const char* modeStr = "Repeat: OFF";
-    if (queue.getRepeatMode() == RepeatMode::ONE) {
+    if (mode == RepeatMode::ONE) {
+        modeServerStr = "one";
         modeStr = "Repeat: ONE";
-    } else if (queue.getRepeatMode() == RepeatMode::ALL) {
+    } else if (mode == RepeatMode::ALL) {
+        modeServerStr = "all";
         modeStr = "Repeat: ALL";
     }
+
+    // Send to server for both local and remote players
+    std::string queueId = getActivePlayerId();
+    if (!queueId.empty()) {
+        MAClient::instance().queueRepeat(queueId, modeServerStr);
+    }
+
     MpvPlayer::getInstance().showOSD(modeStr, 1.5);
 }
 
@@ -2656,6 +2713,16 @@ void PlayerActivity::updatePlayerNameLabel() {
     }
     // Fallback: show truncated ID
     playerNameLabel->setText(selectedId.substr(0, 16));
+}
+
+std::string PlayerActivity::getActivePlayerId() const {
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    if (!selectedId.empty()) return selectedId;
+    return App::instance().getPlayerId();
+}
+
+bool PlayerActivity::isRemotePlayer() const {
+    return !Application::getInstance().getSettings().selectedPlayerId.empty();
 }
 
 void PlayerActivity::loadRemotePlayerState() {

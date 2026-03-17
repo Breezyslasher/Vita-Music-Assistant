@@ -605,55 +605,24 @@ void MediaDetailView::performTrackAction(const MusicItem& track, size_t trackInd
         return;
     }
 
-    MusicQueue& queue = MusicQueue::getInstance();
+    std::vector<MusicItem> single = {track};
 
     switch (action) {
         case TrackDefaultAction::PLAY_NEXT:
-            // Add after current track in queue
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(track);
-                brls::Application::notify("Playing next: " + track.name);
-            }
+            playTracksOnSelectedPlayer(single, "next");
             break;
 
         case TrackDefaultAction::PLAY_NOW_REPLACE:
-            // Replace current track and play
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(track);
-                if (queue.playNext()) {
-                    brls::Application::notify("Now playing: " + track.name);
-                }
-            }
+            playTracksOnSelectedPlayer(single, "play");
             break;
 
         case TrackDefaultAction::ADD_TO_BOTTOM:
-            // Add to end of queue
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.addTrack(track);
-                brls::Application::notify("Added to queue: " + track.name);
-            }
+            playTracksOnSelectedPlayer(single, "add");
             break;
 
         case TrackDefaultAction::PLAY_NOW_CLEAR:
         default:
-            // Clear queue and play just this track
-            {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            }
+            playTracksOnSelectedPlayer(single, "play");
             break;
     }
 }
@@ -682,8 +651,7 @@ void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t track
         MusicItem track = capturedTrack;
         dialog->close([track]() {
             std::vector<MusicItem> single = {track};
-            auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-            brls::Application::pushActivity(playerActivity);
+            playTracksOnSelectedPlayer(single, "play");
         });
         return true;
     });
@@ -691,15 +659,8 @@ void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t track
     addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
         MusicItem track = capturedTrack;
         dialog->close([track]() {
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(track);
-                brls::Application::notify("Playing next: " + track.name);
-            }
+            std::vector<MusicItem> single = {track};
+            playTracksOnSelectedPlayer(single, "next");
         });
         return true;
     });
@@ -707,15 +668,8 @@ void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t track
     addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
         MusicItem track = capturedTrack;
         dialog->close([track]() {
-            MusicQueue& queue = MusicQueue::getInstance();
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.addTrack(track);
-                brls::Application::notify("Added to queue: " + track.name);
-            }
+            std::vector<MusicItem> single = {track};
+            playTracksOnSelectedPlayer(single, "add");
         });
         return true;
     });
@@ -826,8 +780,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
             }
 
             brls::sync([allTracks]() {
-                auto* playerActivity = PlayerActivity::createWithQueue(allTracks, 0);
-                brls::Application::pushActivity(playerActivity);
+                playTracksOnSelectedPlayer(allTracks, "play");
             });
         });
         return true;
@@ -889,8 +842,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
             }
 
             brls::sync([allTracks]() {
-                auto* playerActivity = PlayerActivity::createWithQueue(allTracks, 0);
-                brls::Application::pushActivity(playerActivity);
+                playTracksOnSelectedPlayer(allTracks, "play");
             });
         });
         return true;
@@ -977,8 +929,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
 
             if (!tracks.empty()) {
                 brls::sync([tracks]() {
-                    auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                    brls::Application::pushActivity(playerActivity);
+                    playTracksOnSelectedPlayer(tracks, "play");
                 });
             }
         });
@@ -1021,16 +972,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
 
             if (!tracks.empty()) {
                 brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        for (int i = (int)tracks.size() - 1; i >= 0; i--) {
-                            queue.insertTrackAfterCurrent(tracks[i]);
-                        }
-                        brls::Application::notify("Album queued next");
-                    }
+                    playTracksOnSelectedPlayer(tracks, "next");
                 });
             }
         });
@@ -1073,14 +1015,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
 
             if (!tracks.empty()) {
                 brls::sync([tracks]() {
-                    MusicQueue& queue = MusicQueue::getInstance();
-                    if (queue.isEmpty()) {
-                        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-                        brls::Application::pushActivity(playerActivity);
-                    } else {
-                        queue.addTracks(tracks);
-                        brls::Application::notify("Album added to queue");
-                    }
+                    playTracksOnSelectedPlayer(tracks, "add");
                 });
             }
         });
@@ -1127,8 +1062,7 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
             MusicItem track = capturedTrack;
             dialog->close([track]() {
                 std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
+                playTracksOnSelectedPlayer(single, "play");
             });
             return true;
         });
@@ -1136,15 +1070,8 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
         addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
             MusicItem track = capturedTrack;
             dialog->close([track]() {
-                MusicQueue& queue = MusicQueue::getInstance();
-                if (queue.isEmpty()) {
-                    std::vector<MusicItem> single = {track};
-                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                    brls::Application::pushActivity(playerActivity);
-                } else {
-                    queue.insertTrackAfterCurrent(track);
-                    brls::Application::notify("Playing next: " + track.name);
-                }
+                std::vector<MusicItem> single = {track};
+                playTracksOnSelectedPlayer(single, "next");
             });
             return true;
         });
@@ -1152,15 +1079,8 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
         addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
             MusicItem track = capturedTrack;
             dialog->close([track]() {
-                MusicQueue& queue = MusicQueue::getInstance();
-                if (queue.isEmpty()) {
-                    std::vector<MusicItem> single = {track};
-                    auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                    brls::Application::pushActivity(playerActivity);
-                } else {
-                    queue.addTrack(track);
-                    brls::Application::notify("Added to queue: " + track.name);
-                }
+                std::vector<MusicItem> single = {track};
+                playTracksOnSelectedPlayer(single, "add");
             });
             return true;
         });
@@ -1179,51 +1099,24 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
         return;
     }
 
-    MusicQueue& queue = MusicQueue::getInstance();
+    std::vector<MusicItem> single = {track};
 
     switch (action) {
         case TrackDefaultAction::PLAY_NEXT:
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(track);
-                brls::Application::notify("Playing next: " + track.name);
-            }
+            playTracksOnSelectedPlayer(single, "next");
             break;
 
         case TrackDefaultAction::PLAY_NOW_REPLACE:
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.insertTrackAfterCurrent(track);
-                if (queue.playNext()) {
-                    brls::Application::notify("Now playing: " + track.name);
-                }
-            }
+            playTracksOnSelectedPlayer(single, "play");
             break;
 
         case TrackDefaultAction::ADD_TO_BOTTOM:
-            if (queue.isEmpty()) {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            } else {
-                queue.addTrack(track);
-                brls::Application::notify("Added to queue: " + track.name);
-            }
+            playTracksOnSelectedPlayer(single, "add");
             break;
 
         case TrackDefaultAction::PLAY_NOW_CLEAR:
         default:
-            {
-                std::vector<MusicItem> single = {track};
-                auto* playerActivity = PlayerActivity::createWithQueue(single, 0);
-                brls::Application::pushActivity(playerActivity);
-            }
+            playTracksOnSelectedPlayer(single, "play");
             break;
     }
 }
@@ -1231,6 +1124,80 @@ void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
 void MediaDetailView::setupChildrenFocusTransfer() {
     // Simplified for music-only: focus navigation for children containers
     // is now handled inline in loadTrackList() and loadMusicCategories().
+}
+
+void MediaDetailView::playTracksOnSelectedPlayer(const std::vector<MusicItem>& tracks,
+                                                  const std::string& option) {
+    if (tracks.empty()) return;
+
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+
+    if (!selectedId.empty()) {
+        // Remote player: send tracks to server via playMedia
+        auto& client = MAClient::instance();
+        if (!client.isConnected()) {
+            brls::Application::notify("Not connected to server");
+            return;
+        }
+
+        // Build URI list from tracks
+        Json mediaArr(Json::ARRAY);
+        for (const auto& track : tracks) {
+            std::string uri = track.uri;
+            if (uri.empty()) uri = "library://track/" + track.itemId;
+            mediaArr.push_back(Json(uri));
+        }
+
+        Json args;
+        args["queue_id"] = Json(selectedId);
+        args["media"] = mediaArr;
+        args["option"] = Json(option);
+
+        std::string notifyMsg;
+        if (option == "play") {
+            notifyMsg = "Playing " + std::to_string(tracks.size()) + " tracks on remote player";
+        } else if (option == "next") {
+            notifyMsg = "Queued next on remote player";
+        } else if (option == "add") {
+            notifyMsg = "Added to remote player queue";
+        }
+
+        client.sendCommand("player_queues/play_media", args,
+            [notifyMsg](bool success, const Json&) {
+                if (success && !notifyMsg.empty()) {
+                    brls::sync([notifyMsg]() {
+                        brls::Application::notify(notifyMsg);
+                    });
+                }
+            });
+        return;
+    }
+
+    // Local player: create a PlayerActivity with a queue
+    if (option == "play") {
+        auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
+        brls::Application::pushActivity(playerActivity);
+    } else if (option == "next") {
+        MusicQueue& queue = MusicQueue::getInstance();
+        if (queue.isEmpty()) {
+            auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
+            brls::Application::pushActivity(playerActivity);
+        } else {
+            for (int i = (int)tracks.size() - 1; i >= 0; i--) {
+                queue.insertTrackAfterCurrent(tracks[i]);
+            }
+            brls::Application::notify("Queued next");
+        }
+    } else if (option == "add") {
+        MusicQueue& queue = MusicQueue::getInstance();
+        if (queue.isEmpty()) {
+            auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
+            brls::Application::pushActivity(playerActivity);
+        } else {
+            queue.addTracks(tracks);
+            brls::Application::notify("Added to queue");
+        }
+    }
 }
 
 } // namespace vita_ma
