@@ -341,6 +341,35 @@ void PlayerActivity::onContentAvailable() {
         playerSwitchBtn->addGestureRecognizer(new brls::TapGestureRecognizer(playerSwitchBtn));
     }
 
+    // Initialize player name label and fetch player list for name resolution
+    {
+        auto& client = MAClient::instance();
+        if (client.isConnected()) {
+            auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+            client.getPlayers([this, aliveWeak](bool success, const Json& result) {
+                if (!success || result.type() != Json::ARRAY) return;
+                std::vector<PlayerInfo> players;
+                for (size_t i = 0; i < result.size(); i++) {
+                    const Json& p = result[i];
+                    PlayerInfo info;
+                    if (p.has("player_id")) info.playerId = p["player_id"].str();
+                    if (p.has("name")) info.name = p["name"].str();
+                    if (p.has("type")) info.type = p["type"].str();
+                    if (p.has("available")) info.available = p["available"].boolVal();
+                    if (!info.playerId.empty()) players.push_back(info);
+                }
+                brls::sync([this, players, aliveWeak]() {
+                    auto alive = aliveWeak.lock();
+                    if (!alive || !alive->load()) return;
+                    m_availablePlayers = players;
+                    updatePlayerNameLabel();
+                });
+            });
+        }
+        // Set initial label even before server responds
+        updatePlayerNameLabel();
+    }
+
     // Start update timer
     m_updateTimer.setCallback([this]() {
         updateProgress();
@@ -2400,6 +2429,213 @@ void PlayerActivity::hideControls() {
     }
 }
 
+void PlayerActivity::updatePlayerNameLabel() {
+    if (!playerNameLabel) return;
+    const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    if (selectedId.empty()) {
+        playerNameLabel->setText("This Vita");
+        return;
+    }
+    // Look up the player name from cached list
+    for (const auto& p : m_availablePlayers) {
+        if (p.playerId == selectedId) {
+            playerNameLabel->setText(p.name);
+            return;
+        }
+    }
+    // Fallback: show truncated ID
+    playerNameLabel->setText(selectedId.substr(0, 16));
+}
+
+void PlayerActivity::loadRemotePlayerState() {
+    const auto& playerId = Application::getInstance().getSettings().selectedPlayerId;
+    if (playerId.empty()) return;
+
+    auto& client = MAClient::instance();
+    if (!client.isConnected()) return;
+
+    auto aliveWeak = std::weak_ptr<std::atomic<bool>>(m_alive);
+
+    // Fetch the player's queue to get the currently playing track and queue items
+    client.getQueueItems(playerId, [this, playerId, aliveWeak](bool success, const Json& result) {
+        if (!success) {
+            brls::Logger::error("PlayerActivity: Failed to load queue for player {}", playerId);
+            return;
+        }
+
+        // Parse queue items
+        std::vector<MAQueueItem> queueItems;
+        if (result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size(); i++) {
+                const Json& item = result[i];
+                MAQueueItem qi;
+                if (item.has("queue_item_id")) qi.queueItemId = item["queue_item_id"].str();
+                if (item.has("uri")) qi.uri = item["uri"].str();
+                if (item.has("name")) qi.name = item["name"].str();
+                if (item.has("media_item")) {
+                    const Json& mi = item["media_item"];
+                    if (mi.has("name")) qi.name = mi["name"].str();
+                    if (mi.has("artists")) {
+                        const Json& artists = mi["artists"];
+                        if (artists.type() == Json::ARRAY && artists.size() > 0) {
+                            if (artists[0].has("name")) qi.artistName = artists[0]["name"].str();
+                        }
+                    }
+                    if (mi.has("album") && mi["album"].has("name")) {
+                        qi.albumName = mi["album"]["name"].str();
+                    }
+                    if (mi.has("image") && mi["image"].has("path")) {
+                        qi.imageUrl = mi["image"]["path"].str();
+                        if (mi["image"].has("provider")) qi.imageProvider = mi["image"]["provider"].str();
+                    }
+                    if (mi.has("metadata") && mi["metadata"].has("images")) {
+                        const Json& images = mi["metadata"]["images"];
+                        if (images.type() == Json::ARRAY && images.size() > 0) {
+                            if (images[0].has("path")) qi.imageUrl = images[0]["path"].str();
+                            if (images[0].has("provider")) qi.imageProvider = images[0]["provider"].str();
+                        }
+                    }
+                }
+                // Fallback: top-level fields
+                if (qi.name.empty() && item.has("name")) qi.name = item["name"].str();
+                if (item.has("duration")) qi.duration = item["duration"].intVal();
+                if (item.has("image")) {
+                    const Json& img = item["image"];
+                    if (img.type() == Json::OBJECT) {
+                        if (img.has("path")) qi.imageUrl = img["path"].str();
+                        if (img.has("provider")) qi.imageProvider = img["provider"].str();
+                    }
+                }
+                queueItems.push_back(qi);
+            }
+        }
+
+        brls::sync([this, queueItems, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
+
+            int totalItems = (int)queueItems.size();
+            brls::Logger::info("PlayerActivity: Remote player has {} queue items", totalItems);
+
+            if (totalItems == 0) {
+                if (musicTitleLabel) musicTitleLabel->setText("No track playing");
+                if (musicArtistLabel) musicArtistLabel->setText("");
+                if (queueLabel) {
+                    queueLabel->setText("Empty queue");
+                    queueLabel->setVisibility(brls::Visibility::VISIBLE);
+                }
+                return;
+            }
+
+            // The first item in the queue response is typically the current/next,
+            // but we need the player state to know the current index.
+            // For now, display the first item as the "now playing" and show queue count.
+            const auto& current = queueItems[0];
+
+            if (musicTitleLabel) musicTitleLabel->setText(current.name);
+            if (musicArtistLabel) musicArtistLabel->setText(current.artistName);
+            if (titleLabel) titleLabel->setText(current.name);
+            if (artistLabel) {
+                artistLabel->setText(current.artistName);
+                artistLabel->setVisibility(current.artistName.empty()
+                    ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+            }
+
+            // Update queue info label
+            if (queueLabel) {
+                std::string info = "Track 1 of " + std::to_string(totalItems);
+                queueLabel->setText(info);
+                queueLabel->setVisibility(brls::Visibility::VISIBLE);
+            }
+
+            // Load album art
+            if (albumArt && !current.imageUrl.empty()) {
+                MAClient& client = MAClient::instance();
+                std::string thumbUrl = client.getThumbnailUrl(current.imageUrl, 300, 300, current.imageProvider);
+                ImageLoader::setPaused(false);
+                ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+                    img->setVisibility(brls::Visibility::VISIBLE);
+                }, albumArt, m_alive);
+                ImageLoader::setPaused(true);
+            }
+        });
+    }, 50, 0);
+
+    // Also fetch the player state directly for current_item and elapsed time
+    Json playerArgs;
+    playerArgs["player_id"] = Json(playerId);
+    client.sendCommand("players/get", playerArgs, [this, aliveWeak](bool success, const Json& result) {
+        if (!success || result.type() != Json::OBJECT) return;
+
+        // Extract current item info from player state
+        std::string currentName, currentArtist, currentImageUrl, currentImageProvider;
+        int elapsed = 0;
+        std::string state;  // "playing", "paused", "idle"
+
+        if (result.has("elapsed_time")) elapsed = result["elapsed_time"].intVal();
+        if (result.has("state")) state = result["state"].str();
+
+        if (result.has("current_media") && result["current_media"].type() == Json::OBJECT) {
+            const Json& media = result["current_media"];
+            if (media.has("name")) currentName = media["name"].str();
+            if (media.has("artists")) {
+                const Json& artists = media["artists"];
+                if (artists.type() == Json::ARRAY && artists.size() > 0 && artists[0].has("name"))
+                    currentArtist = artists[0]["name"].str();
+            }
+            if (media.has("image") && media["image"].type() == Json::OBJECT) {
+                if (media["image"].has("path")) currentImageUrl = media["image"]["path"].str();
+                if (media["image"].has("provider")) currentImageProvider = media["image"]["provider"].str();
+            }
+        } else if (result.has("current_item") && result["current_item"].type() == Json::OBJECT) {
+            const Json& item = result["current_item"];
+            if (item.has("name")) currentName = item["name"].str();
+            if (item.has("media_item") && item["media_item"].type() == Json::OBJECT) {
+                const Json& mi = item["media_item"];
+                if (mi.has("name")) currentName = mi["name"].str();
+                if (mi.has("artists") && mi["artists"].type() == Json::ARRAY && mi["artists"].size() > 0) {
+                    if (mi["artists"][0].has("name")) currentArtist = mi["artists"][0]["name"].str();
+                }
+                if (mi.has("image") && mi["image"].type() == Json::OBJECT) {
+                    if (mi["image"].has("path")) currentImageUrl = mi["image"]["path"].str();
+                    if (mi["image"].has("provider")) currentImageProvider = mi["image"]["provider"].str();
+                }
+            }
+        }
+
+        if (currentName.empty()) return;  // No useful info
+
+        brls::sync([this, currentName, currentArtist, currentImageUrl, currentImageProvider,
+                    elapsed, state, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !alive->load()) return;
+
+            brls::Logger::info("PlayerActivity: Remote player now playing: {} - {} ({})",
+                             currentArtist, currentName, state);
+
+            if (musicTitleLabel) musicTitleLabel->setText(currentName);
+            if (musicArtistLabel) musicArtistLabel->setText(currentArtist);
+            if (titleLabel) titleLabel->setText(currentName);
+            if (artistLabel) {
+                artistLabel->setText(currentArtist);
+                artistLabel->setVisibility(currentArtist.empty()
+                    ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
+            }
+
+            // Load album art
+            if (albumArt && !currentImageUrl.empty()) {
+                MAClient& client = MAClient::instance();
+                std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, currentImageProvider);
+                ImageLoader::setPaused(false);
+                ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
+                    img->setVisibility(brls::Visibility::VISIBLE);
+                }, albumArt, m_alive);
+                ImageLoader::setPaused(true);
+            }
+        });
+    });
+}
+
 void PlayerActivity::showPlayerSwitcher() {
     auto& client = MAClient::instance();
     if (!client.isConnected()) {
@@ -2448,6 +2684,7 @@ void PlayerActivity::showPlayerSwitcher() {
                     settings.selectedPlayerId.clear();
                     Application::getInstance().saveSettings();
                     dialog->close();
+                    updatePlayerNameLabel();
                     brls::Application::notify("Switched to local Vita player");
                     return true;
                 });
@@ -2464,12 +2701,15 @@ void PlayerActivity::showPlayerSwitcher() {
                 btn->setText(label);
                 btn->setMarginBottom(4);
                 std::string pid = m_availablePlayers[i].playerId;
-                btn->registerClickAction([this, dialog, pid](brls::View*) {
+                std::string pname = m_availablePlayers[i].name;
+                btn->registerClickAction([this, dialog, pid, pname](brls::View*) {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;
                     Application::getInstance().saveSettings();
                     dialog->close();
-                    brls::Application::notify("Player switched");
+                    updatePlayerNameLabel();
+                    loadRemotePlayerState();
+                    brls::Application::notify("Switched to " + pname);
                     return true;
                 });
                 box->addView(btn);
