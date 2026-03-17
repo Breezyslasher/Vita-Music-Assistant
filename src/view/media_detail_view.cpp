@@ -233,7 +233,7 @@ void MediaDetailView::loadDetails() {
     // Load children if applicable
     if (m_item.mediaType == MediaType::ARTIST) {
         loadMusicCategories();
-    } else if (m_item.mediaType == MediaType::ALBUM) {
+    } else if (m_item.mediaType == MediaType::ALBUM || m_item.mediaType == MediaType::PLAYLIST) {
         loadTrackList();
     }
 }
@@ -385,15 +385,13 @@ void MediaDetailView::loadMusicCategories() {
 
 void MediaDetailView::onPlay(bool resume) {
     if (m_item.mediaType == MediaType::TRACK) {
-        Application::getInstance().pushPlayerActivity(m_item.itemId);
+        std::vector<MusicItem> single = {m_item};
+        playTracksOnSelectedPlayer(single, "play");
     }
-    // For albums, play the first child item
-    else if (m_item.mediaType == MediaType::ALBUM) {
+    // For albums and playlists, play loaded children tracks
+    else if (m_item.mediaType == MediaType::ALBUM || m_item.mediaType == MediaType::PLAYLIST) {
         if (!m_children.empty()) {
-            // First child is directly playable
-            std::vector<MusicItem> tracks = m_children;
-            auto* playerActivity = PlayerActivity::createWithQueue(tracks, 0);
-            brls::Application::pushActivity(playerActivity);
+            playTracksOnSelectedPlayer(m_children, "play");
         }
     }
 }
@@ -405,13 +403,14 @@ void MediaDetailView::loadTrackList() {
     std::string provider = m_item.provider;
     std::weak_ptr<std::atomic<bool>> aliveWeak = m_alive;
 
-    asyncRun([this, itemId, provider, aliveWeak]() {
+    bool isPlaylist = (m_item.mediaType == MediaType::PLAYLIST);
+    asyncRun([this, itemId, provider, aliveWeak, isPlaylist]() {
         MAClient& client = MAClient::instance();
 
         bool done = false;
         std::vector<MusicItem> tracks;
 
-        client.getAlbumTracks(itemId, [&done, &tracks](bool success, const Json& result) {
+        auto tracksCb = [&done, &tracks](bool success, const Json& result) {
             if (success && result.type() == Json::ARRAY) {
                 for (size_t i = 0; i < result.size(); i++) {
                     const Json& item = result[i];
@@ -447,7 +446,13 @@ void MediaDetailView::loadTrackList() {
                 }
             }
             done = true;
-        }, provider);
+        };
+
+        if (isPlaylist) {
+            client.getPlaylistTracks(itemId, tracksCb, 0, provider);
+        } else {
+            client.getAlbumTracks(itemId, tracksCb, provider);
+        }
 
         // Wait for async response
         // TODO: Refactor to fully async callback chain
@@ -879,29 +884,28 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
 
     MusicItem capturedAlbum = album;
 
-    addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        asyncRun([capturedAlbum]() {
+    // Helper: fetch tracks for an album or playlist, then play with given option
+    auto fetchAndPlay = [](MusicItem item, std::string option) {
+        asyncRun([item, option]() {
             MAClient& client = MAClient::instance();
 
             bool done = false;
             std::vector<MusicItem> tracks;
 
-            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
+            auto tracksCb = [&done, &tracks](bool success, const Json& result) {
                 if (success && result.type() == Json::ARRAY) {
                     for (size_t i = 0; i < result.size(); i++) {
-                        const Json& item = result[i];
+                        const Json& r = result[i];
                         MusicItem mi;
-                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
-                        mi.name = item.has("name") ? item["name"].str() : "";
-                        // Extract image URL: try image object, then metadata.images array
-                        if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
-                            mi.imageUrl = item["image"]["path"].str();
-                            if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
-                        } else if (item.has("image") && item["image"].type() == Json::STRING) {
-                            mi.imageUrl = item["image"].str();
-                        } else if (item.has("metadata") && item["metadata"].type() == Json::OBJECT) {
-                            const Json& meta = item["metadata"];
+                        mi.itemId = r.has("item_id") ? r["item_id"].str() : "";
+                        mi.name = r.has("name") ? r["name"].str() : "";
+                        if (r.has("image") && r["image"].type() == Json::OBJECT && r["image"].has("path")) {
+                            mi.imageUrl = r["image"]["path"].str();
+                            if (r["image"].has("provider")) mi.imageProvider = r["image"]["provider"].str();
+                        } else if (r.has("image") && r["image"].type() == Json::STRING) {
+                            mi.imageUrl = r["image"].str();
+                        } else if (r.has("metadata") && r["metadata"].type() == Json::OBJECT) {
+                            const Json& meta = r["metadata"];
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
                                 if (img.has("path")) mi.imageUrl = img["path"].str();
@@ -909,13 +913,24 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                             }
                         }
                         mi.mediaType = MediaType::TRACK;
-                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
-                        mi.uri = item.has("uri") ? item["uri"].str() : "";
+                        mi.duration = r.has("duration") ? r["duration"].intVal() : 0;
+                        mi.uri = r.has("uri") ? r["uri"].str() : "";
+                        mi.provider = r.has("provider") ? r["provider"].str() : "";
+                        mi.artistName = r.has("artist") ? r["artist"].str() :
+                            (r.has("artists") && r["artists"].size() > 0 &&
+                             r["artists"][static_cast<size_t>(0)].has("name") ?
+                             r["artists"][static_cast<size_t>(0)]["name"].str() : "");
                         tracks.push_back(mi);
                     }
                 }
                 done = true;
-            }, capturedAlbum.provider);
+            };
+
+            if (item.mediaType == MediaType::PLAYLIST) {
+                client.getPlaylistTracks(item.itemId, tracksCb, 0, item.provider);
+            } else {
+                client.getAlbumTracks(item.itemId, tracksCb, item.provider);
+            }
 
             int waitMs = 0;
             while (!done && waitMs < 10000) {
@@ -928,97 +943,28 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
             }
 
             if (!tracks.empty()) {
-                brls::sync([tracks]() {
-                    playTracksOnSelectedPlayer(tracks, "play");
+                brls::sync([tracks, option]() {
+                    playTracksOnSelectedPlayer(tracks, option);
                 });
             }
         });
+    };
+
+    addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
+        dialog->dismiss();
+        fetchAndPlay(capturedAlbum, "play");
         return true;
     });
 
-    addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
+    addDialogButton("Play Next", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
         dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-
-            bool done = false;
-            std::vector<MusicItem> tracks;
-
-            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
-                if (success && result.type() == Json::ARRAY) {
-                    for (size_t i = 0; i < result.size(); i++) {
-                        const Json& item = result[i];
-                        MusicItem mi;
-                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
-                        mi.name = item.has("name") ? item["name"].str() : "";
-                        mi.mediaType = MediaType::TRACK;
-                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
-                        mi.uri = item.has("uri") ? item["uri"].str() : "";
-                        tracks.push_back(mi);
-                    }
-                }
-                done = true;
-            });
-
-            int waitMs = 0;
-            while (!done && waitMs < 10000) {
-#ifdef __vita__
-                sceKernelDelayThread(50 * 1000);
-#else
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-#endif
-                waitMs += 50;
-            }
-
-            if (!tracks.empty()) {
-                brls::sync([tracks]() {
-                    playTracksOnSelectedPlayer(tracks, "next");
-                });
-            }
-        });
+        fetchAndPlay(capturedAlbum, "next");
         return true;
     });
 
-    addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
+    addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
         dialog->dismiss();
-        asyncRun([capturedAlbum]() {
-            MAClient& client = MAClient::instance();
-
-            bool done = false;
-            std::vector<MusicItem> tracks;
-
-            client.getAlbumTracks(capturedAlbum.itemId, [&done, &tracks](bool success, const Json& result) {
-                if (success && result.type() == Json::ARRAY) {
-                    for (size_t i = 0; i < result.size(); i++) {
-                        const Json& item = result[i];
-                        MusicItem mi;
-                        mi.itemId = item.has("item_id") ? item["item_id"].str() : "";
-                        mi.name = item.has("name") ? item["name"].str() : "";
-                        mi.mediaType = MediaType::TRACK;
-                        mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
-                        mi.uri = item.has("uri") ? item["uri"].str() : "";
-                        tracks.push_back(mi);
-                    }
-                }
-                done = true;
-            });
-
-            int waitMs = 0;
-            while (!done && waitMs < 10000) {
-#ifdef __vita__
-                sceKernelDelayThread(50 * 1000);
-#else
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-#endif
-                waitMs += 50;
-            }
-
-            if (!tracks.empty()) {
-                brls::sync([tracks]() {
-                    playTracksOnSelectedPlayer(tracks, "add");
-                });
-            }
-        });
+        fetchAndPlay(capturedAlbum, "add");
         return true;
     });
 

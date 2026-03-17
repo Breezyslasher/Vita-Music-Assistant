@@ -1005,9 +1005,19 @@ void PlayerActivity::togglePlayPause() {
     if (player.isPlaying()) {
         player.pause();
         m_isPlaying = false;
+        // Also pause on the server so the MA dashboard stays in sync
+        std::string queueId = getActivePlayerId();
+        if (!queueId.empty()) {
+            MAClient::instance().queuePause(queueId);
+        }
     } else if (player.isPaused()) {
         player.play();
         m_isPlaying = true;
+        // Also resume on the server
+        std::string queueId = getActivePlayerId();
+        if (!queueId.empty()) {
+            MAClient::instance().queuePlay(queueId);
+        }
     }
     updatePlayPauseLabel();
 }
