@@ -1,0 +1,58 @@
+name: Build usrsctp vita-package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: vitasdk/vitasdk:latest
+
+    steps:
+      - name: Install build requirements
+        run: |
+          apk update
+          apk add cmake ninja git tar xz
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Build usrsctp
+        run: |
+          COMPAT_DIR=$GITHUB_WORKSPACE/src/platform/vita/compat
+          cd lib/libdatachannel/deps/usrsctp
+          cmake -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dsctp_build_shared_lib=OFF \
+            -Dsctp_build_programs=OFF \
+            -Dsctp_inet=OFF \
+            -Dsctp_inet6=OFF \
+            -Dsctp_werror=OFF \
+            -DCMAKE_C_FLAGS="-include $COMPAT_DIR/vita_bsd_types.h -isystem $COMPAT_DIR"
+          cmake --build build
+
+      - name: Package
+        run: |
+          STAGING=$(mktemp -d)
+          mkdir -p $STAGING/arm-vita-eabi/lib $STAGING/arm-vita-eabi/include
+          cp lib/libdatachannel/deps/usrsctp/build/usrsctplib/libusrsctp.a $STAGING/arm-vita-eabi/lib/
+          cp lib/libdatachannel/deps/usrsctp/usrsctplib/usrsctp.h $STAGING/arm-vita-eabi/include/
+          tar -cJf usrsctp-0.9.5-1-arm.tar.xz -C $STAGING .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: usrsctp-0.9.5-1-arm
+          path: usrsctp-0.9.5-1-arm.tar.xz
+
+      - name: Upload to release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload vita-packages usrsctp-0.9.5-1-arm.tar.xz --clobber || \
+          gh release create vita-packages usrsctp-0.9.5-1-arm.tar.xz --title "Vita Packages" --notes "Pre-built libraries for PS Vita"
