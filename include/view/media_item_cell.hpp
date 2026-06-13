@@ -40,12 +40,25 @@ public:
 private:
     void loadThumbnail();
     void updateFocusInfo(bool focused);
+    // Fit the title to one line of the given width (ellipsised), cached until the
+    // item changes. Like Vita_Suwayomi, the title is drawn with nvgText instead
+    // of a brls::Label child so a screenful of cells costs almost nothing.
+    void cacheTitleText(NVGcontext* vg, float fontSize, float maxWidth);
+    // The secondary line under the title: track number normally, or year /
+    // duration / item-count when focused.
+    std::string secondaryLine() const;
 
     bool m_pressed = false;  // Touch press feedback overlay
+    bool m_focused = false;  // Whether this cell currently has focus
     bool m_thumbLoaded = false;  // Whether GPU texture is currently loaded
 
     MusicItem m_item;
-    std::string m_originalTitle;  // Store original truncated title
+
+    // Cached one-line, width-fitted title (drawn via nvgText). Invalidated when
+    // the item or the fit width changes.
+    std::string m_cachedTitle;
+    bool m_titleCached = false;
+    float m_cachedTitleWidth = 0.0f;
 
     // Alive flag - set to false in destructor to prevent use-after-free
     // in async image loader callbacks
@@ -53,19 +66,16 @@ private:
 
     // Cover area: m_thumbnailImage is kept as an (empty) layout spacer that
     // reserves the cover's box; the actual cover is a raw NanoVG image handle
-    // drawn by draw(). This keeps the heavy setImageFromMem upload off the
-    // scroll path while leaving the cell's layout and focus behaviour intact.
+    // drawn by draw(). Title/subtitle are drawn with nvgText below it.
     brls::Image* m_thumbnailImage = nullptr;
     int m_nvgCover = 0;   // NanoVG image handle (0 = none); owned by this cell
     int m_coverW = 0;     // source pixel width of the loaded cover
     int m_coverH = 0;     // source pixel height of the loaded cover
 
-    brls::Label* m_titleLabel = nullptr;
-    brls::Label* m_subtitleLabel = nullptr;
-    brls::Label* m_descriptionLabel = nullptr;  // Shows on focus
-    brls::Box* m_buttonHintBox = nullptr;       // Shows button image + text hints on focus
+    // Focus-only child (absolutely positioned, GONE by default) — negligible
+    // per-frame cost since only the focused cell shows it.
+    brls::Box* m_buttonHintBox = nullptr;       // Shows the START button hint on focus
     brls::Image* m_buttonHintIcon = nullptr;
-    brls::Label* m_buttonHintLabel = nullptr;
 };
 
 } // namespace vita_ma

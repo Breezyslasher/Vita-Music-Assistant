@@ -8,6 +8,7 @@
 #include "app/ma_client.hpp"
 #include "utils/image_loader.hpp"
 #include <algorithm>
+#include <cstdio>
 
 namespace vita_ma {
 
@@ -67,33 +68,13 @@ MediaItemCell::MediaItemCell()
     m_thumbnailImage = cover;
     this->addView(m_thumbnailImage);
 
-    // Title label
-    m_titleLabel = new brls::Label();
-    m_titleLabel->setFontSize(12);
-    m_titleLabel->setMarginTop(5);
-    m_titleLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    this->addView(m_titleLabel);
+    // Title and secondary line are drawn directly with nvgText in draw() (no
+    // brls::Label children), so a full screen of cells is cheap to render.
 
-    // Subtitle label (e.g. track number)
-    m_subtitleLabel = new brls::Label();
-    m_subtitleLabel->setFontSize(10);
-    m_subtitleLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    m_subtitleLabel->setVisibility(brls::Visibility::GONE);
-    this->addView(m_subtitleLabel);
-
-    // Description label (shows on focus)
-    m_descriptionLabel = new brls::Label();
-    m_descriptionLabel->setFontSize(9);
-    m_descriptionLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-    this->addView(m_descriptionLabel);
-
-    // Button hint box (shown on focus for album/artist/playlist items)
-    // Small pill badge in top-right corner of album art
+    // START button hint (shown on focus for album/artist/playlist items), a
+    // small image in the top-right of the cover. Focus-only, so it is GONE for
+    // every cell except the focused one — negligible per-frame cost.
     m_buttonHintBox = new brls::Box();
-    m_buttonHintBox->setAxis(brls::Axis::ROW);
-    m_buttonHintBox->setJustifyContent(brls::JustifyContent::CENTER);
-    m_buttonHintBox->setAlignItems(brls::AlignItems::CENTER);
     m_buttonHintBox->setPositionType(brls::PositionType::ABSOLUTE);
     m_buttonHintBox->setPositionTop(7);    // Small offset from top edge
     m_buttonHintBox->setPositionRight(7);  // Anchor to top-right corner
@@ -106,11 +87,6 @@ MediaItemCell::MediaItemCell()
     m_buttonHintIcon->setHeight(16);
     m_buttonHintIcon->setScalingType(brls::ImageScalingType::FIT);
     m_buttonHintBox->addView(m_buttonHintIcon);
-
-    m_buttonHintLabel = new brls::Label();
-    m_buttonHintLabel->setFontSize(8);
-    m_buttonHintLabel->setTextColor(nvgRGBA(255, 255, 255, 220));
-    m_buttonHintBox->addView(m_buttonHintLabel);
 
     this->addView(m_buttonHintBox);
 }
@@ -144,49 +120,31 @@ void MediaItemCell::setItem(const MusicItem& item) {
     }
     m_thumbLoaded = false;
 
+    // New item — the fitted title must be recomputed in draw().
+    m_titleCached = false;
+
     // All items use square album art (music-only client)
     m_thumbnailImage->setWidth(110);
     m_thumbnailImage->setHeight(110);
     this->setWidth(120);
     this->setHeight(150);
 
-    // Set title
-    if (m_titleLabel) {
-        std::string title = item.name;
-        // Truncate long titles
-        if (title.length() > 15) {
-            title = title.substr(0, 13) + "...";
-        }
-        m_originalTitle = title;  // Store truncated title for focus restore
-        m_titleLabel->setText(title);
-        m_titleLabel->setVisibility(brls::Visibility::VISIBLE);
-    }
-
-    // Set subtitle for tracks
-    if (m_subtitleLabel) {
-        if (item.mediaType == MediaType::TRACK && item.trackNumber > 0) {
-            m_subtitleLabel->setText("Track " + std::to_string(item.trackNumber));
-            m_subtitleLabel->setVisibility(brls::Visibility::VISIBLE);
-        } else {
-            m_subtitleLabel->setVisibility(brls::Visibility::GONE);
-        }
-    }
-
-    // Don't load thumbnail eagerly - RecyclingGrid::updateVisibleTextures()
-    // will call reloadThumbnail() for cells in the visible viewport.
-    // This prevents loading 500+ textures at once on large datasets.
+    // Title / secondary line are drawn in draw(); nothing to set here.
+    // Cover loading is driven by RecyclingGrid's progressive loader and draw(),
+    // so covers load a few per frame instead of all at once on a large dataset.
 }
 
 void MediaItemCell::loadThumbnail() {
+    // Mark as loaded up front: the grid (and draw()) call this every frame, so we
+    // must not re-enqueue while a load is in flight — and cells with no art must
+    // not rebuild their URL every frame either.
+    m_thumbLoaded = true;
+
     if (m_item.imageUrl.empty()) return;
 
     // Convert relative image paths to full URLs via the server
     std::string fullUrl = MAClient::instance().getThumbnailUrl(m_item.imageUrl, 300, 300, m_item.imageProvider);
     if (fullUrl.empty()) return;
-
-    // Mark as loaded up front: the grid (and draw()) may call this every frame,
-    // so we must not enqueue the same request repeatedly while it's in flight.
-    m_thumbLoaded = true;
 
     MediaItemCell* self = this;
     std::shared_ptr<std::atomic<bool>> alive = m_alive;
@@ -240,9 +198,36 @@ void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float he
     // grid too (home/search/music/detail rows), which have no preloader.
     loadThumbnailIfNeeded();
 
-    // The cover itself is painted by the CoverView child (so the focus hint,
-    // added after it, still draws on top); Box::draw renders all children.
+    // Box::draw renders the background, border, the cover (CoverView child) and
+    // the focus START hint.
     brls::Box::draw(vg, x, y, width, height, style, ctx);
+
+    // Title + secondary line, drawn directly with nvgText below the cover (no
+    // Label child views). The cover occupies the top: cell top padding (5) plus
+    // a 110px cover, so text starts at y + 115.
+    float textTop = y + 5.0f + 110.0f;
+    float cx = x + width * 0.5f;
+    float maxW = width - 8.0f;
+
+    // Fit/measure first (this sets its own LEFT align internally), then set the
+    // centered draw state for the actual nvgText calls.
+    cacheTitleText(vg, 12.0f, maxW);
+
+    nvgFontFace(vg, "regular");
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+
+    if (!m_cachedTitle.empty()) {
+        nvgFontSize(vg, 12.0f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+        nvgText(vg, cx, textTop + 4.0f, m_cachedTitle.c_str(), nullptr);
+    }
+
+    std::string secondary = secondaryLine();
+    if (!secondary.empty()) {
+        nvgFontSize(vg, 10.0f);
+        nvgFillColor(vg, nvgRGBA(200, 200, 200, 255));
+        nvgText(vg, cx, textTop + 20.0f, secondary.c_str(), nullptr);
+    }
 
     // Touch press feedback overlay
     if (m_pressed) {
@@ -274,87 +259,70 @@ void MediaItemCell::onFocusLost() {
 }
 
 void MediaItemCell::updateFocusInfo(bool focused) {
-    if (!m_titleLabel || !m_descriptionLabel) return;
+    m_focused = focused;
 
-    if (m_item.mediaType == MediaType::ALBUM) {
-        // Show full title and year for albums on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.name);
-            std::string info;
-            if (m_item.year > 0) {
-                info = std::to_string(m_item.year);
-            }
-            if (!info.empty()) {
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            // Show button hint overlay
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::ARTIST) {
-        // Show full title for artists on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.name);
-            // Show button hint overlay
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::TRACK) {
-        // Show full title and duration for tracks on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.name);
-            if (m_item.duration > 0) {
-                int minutes = m_item.duration / 60;
-                int seconds = m_item.duration % 60;
-                char info[16];
-                snprintf(info, sizeof(info), "%d:%02d", minutes, seconds);
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-        }
-    } else if (m_item.mediaType == MediaType::PLAYLIST) {
-        // Show full title and item count for playlists on focus
-        if (focused) {
-            m_titleLabel->setText(m_item.name);
-            if (m_item.itemCount > 0) {
-                std::string info = std::to_string(m_item.itemCount) + " items";
-                m_descriptionLabel->setText(info);
-                m_descriptionLabel->setVisibility(brls::Visibility::VISIBLE);
-            }
-            if (m_buttonHintBox) {
-                if (m_buttonHintIcon) {
-                    m_buttonHintIcon->setImageFromRes("images/start_button.png");
-                }
-                if (m_buttonHintLabel) m_buttonHintLabel->setVisibility(brls::Visibility::GONE);
-                m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
-            }
-        } else {
-            m_titleLabel->setText(m_originalTitle);
-            m_descriptionLabel->setVisibility(brls::Visibility::GONE);
-            if (m_buttonHintBox) m_buttonHintBox->setVisibility(brls::Visibility::GONE);
-        }
+    // The START hint shows on focus for items that have a context action
+    // (albums, artists, playlists). Tracks show their duration instead.
+    if (!m_buttonHintBox) return;
+    bool showHint = focused && (m_item.mediaType == MediaType::ALBUM ||
+                                m_item.mediaType == MediaType::ARTIST ||
+                                m_item.mediaType == MediaType::PLAYLIST);
+    if (showHint) {
+        if (m_buttonHintIcon) m_buttonHintIcon->setImageFromRes("images/start_button.png");
+        m_buttonHintBox->setVisibility(brls::Visibility::VISIBLE);
+    } else {
+        m_buttonHintBox->setVisibility(brls::Visibility::GONE);
     }
+}
+
+void MediaItemCell::cacheTitleText(NVGcontext* vg, float fontSize, float maxWidth) {
+    if (m_titleCached && m_cachedTitleWidth == maxWidth) return;
+    m_titleCached = true;
+    m_cachedTitleWidth = maxWidth;
+
+    const std::string& title = m_item.name;
+    if (title.empty()) {
+        m_cachedTitle.clear();
+        return;
+    }
+
+    nvgFontFace(vg, "regular");
+    nvgFontSize(vg, fontSize);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+
+    // Fit to a single line; if it overflows, ellipsise the first row.
+    NVGtextRow rows[2];
+    int nrows = nvgTextBreakLines(vg, title.c_str(), nullptr, maxWidth, rows, 2);
+    if (nrows <= 0) {
+        m_cachedTitle = title;
+        return;
+    }
+    if (nrows == 1 && rows[0].end == title.c_str() + title.size()) {
+        m_cachedTitle.assign(rows[0].start, rows[0].end);  // fits as-is
+        return;
+    }
+    std::string line(rows[0].start, rows[0].end);
+    while (!line.empty() && line.back() == ' ') line.pop_back();
+    m_cachedTitle = line + "...";
+}
+
+std::string MediaItemCell::secondaryLine() const {
+    if (m_focused) {
+        if (m_item.mediaType == MediaType::ALBUM && m_item.year > 0)
+            return std::to_string(m_item.year);
+        if (m_item.mediaType == MediaType::TRACK && m_item.duration > 0) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%d:%02d", m_item.duration / 60, m_item.duration % 60);
+            return buf;
+        }
+        if (m_item.mediaType == MediaType::PLAYLIST && m_item.itemCount > 0)
+            return std::to_string(m_item.itemCount) + " items";
+        return "";
+    }
+    // Unfocused: track number for tracks.
+    if (m_item.mediaType == MediaType::TRACK && m_item.trackNumber > 0)
+        return "Track " + std::to_string(m_item.trackNumber);
+    return "";
 }
 
 } // namespace vita_ma

@@ -12,6 +12,8 @@
 
 namespace vita_ma {
 
+class MediaItemCell;
+
 class RecyclingGrid : public brls::ScrollingFrame {
 public:
     RecyclingGrid();
@@ -43,7 +45,8 @@ private:
     void rebuildGrid();
     void onItemClicked(int index);
     void addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index);
-    void updateVisibleTextures();
+    // Prioritise loading covers for cells in/near the viewport (no unloading).
+    void loadCoversForScrollPosition();
     // Hide off-screen rows (Visibility::INVISIBLE) so ScrollingFrame::draw skips
     // their entire subtree — the single biggest scroll-time CPU saving.
     void updateRowVisibility();
@@ -64,10 +67,10 @@ private:
     bool m_hasMore = false;
     bool m_loading = false;  // Prevents duplicate fetch requests
 
-    // Texture management: only keep textures loaded for rows near the viewport
-    int m_lastVisibleStart = -1;
-    int m_lastVisibleEnd = -1;
-    static constexpr int TEXTURE_BUFFER_ROWS = 3;  // Extra rows above/below viewport to keep loaded
+    // Flat list of every cell, in item order, for cover loading.
+    std::vector<MediaItemCell*> m_cells;
+
+    static constexpr int TEXTURE_BUFFER_ROWS = 3;  // Extra rows near viewport to prioritise
 
     // Approx vertical pitch of one row (cell height 150 + 10 row margin).
     static constexpr float ROW_PITCH = 160.0f;
@@ -82,9 +85,15 @@ private:
     int m_scrollSettledFrames = 0;   // frames since the last noticeable scroll delta
     bool m_uploadsDeferred = false;  // whether we currently have uploads paused
 
-    // Throttle for scroll-driven texture window updates: limits how often the
-    // load/unload window is recomputed during touch scrolling.
+    // Throttle for the scroll-position cover prioritiser.
+    float m_lastScrollLoadY = 0.0f;
     int m_scrollLoadCooldown = 0;
+
+    // Progressive cover loader: like Vita_Suwayomi, every cover is loaded once
+    // (a few per frame) and never unloaded, so the whole library fills in and
+    // scrolling never re-decodes/re-uploads a texture.
+    int m_nextCoverLoadIdx = 0;
+    bool m_allCoversQueued = false;
 };
 
 } // namespace vita_ma
