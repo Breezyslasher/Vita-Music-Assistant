@@ -1,6 +1,11 @@
 /**
  * Vita Music Assistant - Media Item Cell
- * A cell for displaying media items in a grid
+ * A cell for displaying media items in a grid.
+ *
+ * The cover and title are drawn with NanoVG (no Label children). Inside a
+ * RecyclingGrid the grid draws them in batched passes (all covers, then all
+ * titles) to avoid per-cell GPU shader switches; standalone cells (outside a
+ * grid) draw their own content. See setDeferContentDraw().
  */
 
 #pragma once
@@ -8,6 +13,7 @@
 #include <borealis.hpp>
 #include <memory>
 #include <atomic>
+#include <string>
 #include "app/ma_types.hpp"
 
 namespace vita_ma {
@@ -27,55 +33,68 @@ public:
 
     static brls::View* create();
 
-    // Unload thumbnail texture to free GPU memory (off-screen cells)
+    // Cover (NanoVG handle) management
     void unloadThumbnail();
-    // Reload thumbnail from cache/network (when cell scrolls back into view)
     void reloadThumbnail();
-    // Load the thumbnail once if it hasn't been requested yet. Cheap to call
-    // every frame (guarded by m_thumbLoaded). Used by RecyclingGrid to preload
-    // cells near the viewport and by draw() so standalone cells load lazily.
     void loadThumbnailIfNeeded();
     bool isThumbnailLoaded() const { return m_thumbLoaded; }
 
-private:
-    void loadThumbnail();
-    void updateFocusInfo(bool focused);
-    // Fit the title to one line of the given width (ellipsised), cached until the
-    // item changes. Like Vita_Suwayomi, the title is drawn with nvgText instead
-    // of a brls::Label child so a screenful of cells costs almost nothing.
-    void cacheTitleText(NVGcontext* vg, float fontSize, float maxWidth);
-    // The secondary line under the title: track number normally, or year /
-    // duration / item-count when focused.
+    // --- Batched-draw support (RecyclingGrid draws covers/titles itself) ---
+    // When true, draw() only renders the box background; the grid paints the
+    // cover and title from the getters below in batched passes.
+    void setDeferContentDraw(bool defer) { m_deferDraw = defer; }
+
+    float getDrawX() const { return m_drawX; }
+    float getDrawY() const { return m_drawY; }
+    float getDrawW() const { return m_drawW; }
+    float getDrawH() const { return m_drawH; }
+
+    int getCoverImage() const { return m_nvgCover; }
+    int getCoverWidth() const { return m_coverW; }
+    int getCoverHeight() const { return m_coverH; }
+    bool cellHasFocus() const { return m_focused; }
+
+    // Fit the title to one line of maxWidth (ellipsised), cached until the item
+    // changes. Sets NanoVG font state, so call it BEFORE starting a text batch.
+    const std::string& fittedTitle(NVGcontext* vg, float fontSize, float maxWidth);
+    // The already-fitted title (no measuring / no state change). Valid after
+    // fittedTitle() has run for this item.
+    const std::string& cachedTitle() const { return m_cachedTitle; }
+    // Secondary line: track number, or year / duration / item-count when focused.
     std::string secondaryLine() const;
 
-    bool m_pressed = false;  // Touch press feedback overlay
-    bool m_focused = false;  // Whether this cell currently has focus
-    bool m_thumbLoaded = false;  // Whether GPU texture is currently loaded
+    // Cover box geometry (top-centred square) derived from the last draw rect.
+    static constexpr float COVER_SIZE = 110.0f;
+    static constexpr float CELL_PADDING = 5.0f;
+
+private:
+    void loadThumbnail();
+    void drawCover(NVGcontext* vg);
+    void drawText(NVGcontext* vg);
+
+    bool m_pressed = false;
+    bool m_focused = false;
+    bool m_thumbLoaded = false;
+    bool m_deferDraw = false;  // true when a RecyclingGrid batches our drawing
 
     MusicItem m_item;
 
-    // Cached one-line, width-fitted title (drawn via nvgText). Invalidated when
-    // the item or the fit width changes.
+    // Cached one-line, width-fitted title.
     std::string m_cachedTitle;
     bool m_titleCached = false;
     float m_cachedTitleWidth = 0.0f;
 
-    // Alive flag - set to false in destructor to prevent use-after-free
-    // in async image loader callbacks
+    // Alive flag - set to false in destructor to prevent use-after-free in async
+    // cover-load callbacks.
     std::shared_ptr<std::atomic<bool>> m_alive;
 
-    // Cover area: m_thumbnailImage is kept as an (empty) layout spacer that
-    // reserves the cover's box; the actual cover is a raw NanoVG image handle
-    // drawn by draw(). Title/subtitle are drawn with nvgText below it.
-    brls::Image* m_thumbnailImage = nullptr;
-    int m_nvgCover = 0;   // NanoVG image handle (0 = none); owned by this cell
-    int m_coverW = 0;     // source pixel width of the loaded cover
-    int m_coverH = 0;     // source pixel height of the loaded cover
+    // Cover: a raw NanoVG image handle owned by this cell.
+    int m_nvgCover = 0;
+    int m_coverW = 0;
+    int m_coverH = 0;
 
-    // Focus-only child (absolutely positioned, GONE by default) — negligible
-    // per-frame cost since only the focused cell shows it.
-    brls::Box* m_buttonHintBox = nullptr;       // Shows the START button hint on focus
-    brls::Image* m_buttonHintIcon = nullptr;
+    // Last draw rectangle, recorded so the grid can paint our cover/title.
+    float m_drawX = 0.0f, m_drawY = 0.0f, m_drawW = 0.0f, m_drawH = 0.0f;
 };
 
 } // namespace vita_ma

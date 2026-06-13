@@ -10,6 +10,13 @@
 #include "utils/image_loader.hpp"
 #include <cmath>
 
+// From the patched nanovg.c (patches/nanovg.c): accumulates consecutive nvgText
+// calls that share state into a single render call.
+extern "C" {
+void nvgTextBatchBegin(NVGcontext* ctx);
+void nvgTextBatchEnd(NVGcontext* ctx);
+}
+
 namespace vita_ma {
 
 RecyclingGrid::RecyclingGrid() {
@@ -132,6 +139,7 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
     auto* cell = new MediaItemCell();
     cell->setItem(m_items[index]);
     cell->setMarginRight(10);
+    cell->setDeferContentDraw(true);  // the grid batch-draws covers/titles
 
     int idx = (int)index;
     cell->registerClickAction([this, idx](brls::View* view) {
@@ -190,6 +198,94 @@ void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float he
     updateRowVisibility();
 
     brls::ScrollingFrame::draw(vg, x, y, width, height, style, ctx);
+
+    // Batched content draw: all covers first (image shader), then all titles
+    // (text shader, accumulated into one render call). Drawing every cell's
+    // cover and then every cell's title — instead of cover+title per cell —
+    // stops the GPU ping-ponging between shaders each cell, which is the main
+    // remaining scroll cost vs Vita_Suwayomi. The cells defer their own content
+    // draw (setDeferContentDraw) so only their box background is drawn above.
+    if (m_cachedFirstVisible >= 0 && !m_cells.empty()) {
+        int total = static_cast<int>(m_cells.size());
+        int startIdx = std::max(0, m_cachedFirstVisible * m_columns);
+        int endIdx = std::min(m_cachedLastVisible * m_columns, total);
+
+        nvgSave(vg);
+        nvgIntersectScissor(vg, x, y, width, height);
+
+        // Pass 1: covers.
+        for (int i = startIdx; i < endIdx; i++) {
+            MediaItemCell* cell = m_cells[i];
+            if (!cell) continue;
+            int img = cell->getCoverImage();
+            int iw = cell->getCoverWidth();
+            int ih = cell->getCoverHeight();
+            float dw = cell->getDrawW();
+            if (img == 0 || iw <= 0 || ih <= 0 || dw <= 0.0f) continue;
+
+            float cw = MediaItemCell::COVER_SIZE;
+            float ch = MediaItemCell::COVER_SIZE;
+            float cx = cell->getDrawX() + (dw - cw) * 0.5f;
+            float cy = cell->getDrawY() + MediaItemCell::CELL_PADDING;
+            float scale = std::max(cw / static_cast<float>(iw), ch / static_cast<float>(ih));
+            float sw = static_cast<float>(iw) * scale;
+            float sh = static_cast<float>(ih) * scale;
+            float ox = cx + (cw - sw) * 0.5f;
+            float oy = cy + (ch - sh) * 0.5f;
+
+            NVGpaint paint = nvgImagePattern(vg, ox, oy, sw, sh, 0.0f, img, 1.0f);
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, cx, cy, cw, ch, 4.0f);
+            nvgFillPaint(vg, paint);
+            nvgFill(vg);
+        }
+
+        // Pre-fit every visible title first: fittedTitle() sets the font state
+        // for measuring, which would otherwise break the text batch below.
+        for (int i = startIdx; i < endIdx; i++) {
+            MediaItemCell* cell = m_cells[i];
+            if (cell && cell->getDrawW() > 0.0f)
+                cell->fittedTitle(vg, 12.0f, cell->getDrawW() - 8.0f);
+        }
+
+        float titleY = MediaItemCell::CELL_PADDING + MediaItemCell::COVER_SIZE + 4.0f;
+
+        // Pass 2a: titles (white, 12px) in a single batched run.
+        nvgFontFace(vg, "regular");
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+        nvgFontSize(vg, 12.0f);
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+        nvgTextBatchBegin(vg);
+        for (int i = startIdx; i < endIdx; i++) {
+            MediaItemCell* cell = m_cells[i];
+            if (!cell) continue;
+            float dw = cell->getDrawW();
+            if (dw <= 0.0f) continue;
+            const std::string& title = cell->cachedTitle();
+            if (title.empty()) continue;
+            nvgText(vg, cell->getDrawX() + dw * 0.5f, cell->getDrawY() + titleY,
+                    title.c_str(), nullptr);
+        }
+        nvgTextBatchEnd(vg);
+
+        // Pass 2b: secondary lines (grey, 10px) in their own batched run.
+        nvgFontSize(vg, 10.0f);
+        nvgFillColor(vg, nvgRGBA(200, 200, 200, 255));
+        nvgTextBatchBegin(vg);
+        for (int i = startIdx; i < endIdx; i++) {
+            MediaItemCell* cell = m_cells[i];
+            if (!cell) continue;
+            float dw = cell->getDrawW();
+            if (dw <= 0.0f) continue;
+            std::string sec = cell->secondaryLine();
+            if (sec.empty()) continue;
+            nvgText(vg, cell->getDrawX() + dw * 0.5f, cell->getDrawY() + titleY + 16.0f,
+                    sec.c_str(), nullptr);
+        }
+        nvgTextBatchEnd(vg);
+
+        nvgRestore(vg);
+    }
 
     // After drawing: pause/resume brls::Image uploads based on scroll speed.
     updateScrollGating();
