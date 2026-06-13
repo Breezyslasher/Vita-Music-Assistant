@@ -59,11 +59,12 @@ private:
     LibraryTabViewMode m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     bool m_loaded = false;
 
-    // Fetch state. The whole category is loaded automatically: each page that
-    // comes back triggers the next until the library is exhausted, so the user
-    // never has to scroll to the bottom to pull in more. A larger page keeps the
-    // number of round-trips down.
-    static constexpr int PAGE_SIZE = 200;
+    // Fetch state. Music Assistant's */library_items commands don't cap the
+    // `limit` (it becomes a SQL LIMIT), and there is no separate "get all"
+    // endpoint, so we request one effectively-unlimited page to pull the whole
+    // category in a single call — no pagination. The auto-continue path below
+    // stays as a safety net in case a server ever does cap a response.
+    static constexpr int PAGE_SIZE = 100000;
     int m_offset = 0;
     bool m_hasMore = false;
     // Bumped on every fresh category load; in-flight page responses from a
