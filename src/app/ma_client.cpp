@@ -575,10 +575,13 @@ void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb,
 
 void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
                                   int page, const std::string& provider) {
+    // MA: playlist_tracks(item_id, provider_instance_id_or_domain, ...) returns
+    // the full track list (no 'page' parameter exists). Callers paginate the
+    // returned list client-side, so we must not send a 'page' arg.
+    (void)page;
     Json args;
     args["item_id"] = Json(itemId);
     args["provider_instance_id_or_domain"] = Json(provider);
-    args["page"] = Json(page);
     sendCommand("music/playlists/playlist_tracks", args, std::move(cb));
 }
 
@@ -623,7 +626,8 @@ void MAClient::removeFromFavorites(const std::string& mediaType, const std::stri
                                     MAResponseCallback cb) {
     Json args;
     args["media_type"] = Json(mediaType);
-    args["item_id"] = Json(itemId);
+    // MA: remove_item_from_favorites(media_type, library_item_id)
+    args["library_item_id"] = Json(itemId);
     sendCommand("music/favorites/remove_item", args, std::move(cb));
 }
 
@@ -818,9 +822,12 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
 }
 
 void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {
+    // There is no "music/playlists/remove" command; deleting a playlist from the
+    // library is the generic remove_item_from_library(media_type, library_item_id).
     Json args;
-    args["item_id"] = Json(itemId);
-    sendCommand("music/playlists/remove", args, std::move(cb));
+    args["media_type"] = Json(std::string("playlist"));
+    args["library_item_id"] = Json(itemId);
+    sendCommand("music/library/remove_item", args, std::move(cb));
 }
 
 // App singleton implementation (legacy, used for player ID storage)
