@@ -267,11 +267,12 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
     m_hasMore = false;
     m_loadingPage = false;
     m_items.clear();
+    int loadGen = ++m_loadGen;  // invalidates any in-flight pages from a prior category
 
     MAClient& client = MAClient::instance();
     auto aliveWeak = std::weak_ptr<bool>(m_alive);
 
-    auto onResponse = [this, category, aliveWeak](bool success, const Json& result) {
+    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const Json& result) {
         if (!success) {
             brls::Logger::error("LibraryTab: Failed to load {} content", categoryName(category));
             brls::sync([aliveWeak]() {
@@ -294,9 +295,10 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
         int count = (int)items.size();
         brls::Logger::info("LibraryTab: Got {} {} items (offset {})", count, categoryName(category), m_offset);
 
-        brls::sync([this, items, count, aliveWeak]() {
+        brls::sync([this, items, count, aliveWeak, loadGen]() {
             auto alive = aliveWeak.lock();
             if (!alive || !*alive) return;
+            if (loadGen != m_loadGen) return;  // category changed while loading
 
             m_offset += count;
             m_hasMore = (count >= PAGE_SIZE);  // If we got a full page, there may be more
@@ -318,6 +320,9 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
 
             m_contentGrid->setHasMore(m_hasMore);
             m_loaded = true;
+
+            // Keep pulling pages until the whole category is loaded.
+            if (m_hasMore) loadNextPage();
         });
     };
 
@@ -343,6 +348,7 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
 void LibraryTab::loadNextPage() {
     if (m_loadingPage || !m_hasMore) return;
     m_loadingPage = true;
+    int loadGen = m_loadGen;  // bound to the current category load
 
     MusicCategory category = static_cast<MusicCategory>(m_currentCategory);
     brls::Logger::debug("LibraryTab: Loading next page at offset {}", m_offset);
@@ -350,11 +356,12 @@ void LibraryTab::loadNextPage() {
     MAClient& client = MAClient::instance();
     auto aliveWeak = std::weak_ptr<bool>(m_alive);
 
-    auto onResponse = [this, category, aliveWeak](bool success, const Json& result) {
+    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const Json& result) {
         if (!success) {
-            brls::sync([this, aliveWeak]() {
+            brls::sync([this, aliveWeak, loadGen]() {
                 auto alive = aliveWeak.lock();
                 if (!alive || !*alive) return;
+                if (loadGen != m_loadGen) return;
                 m_loadingPage = false;
                 m_contentGrid->setHasMore(false);
             });
@@ -373,9 +380,10 @@ void LibraryTab::loadNextPage() {
         int count = (int)items.size();
         brls::Logger::info("LibraryTab: Got {} more {} items (offset {})", count, categoryName(category), m_offset);
 
-        brls::sync([this, items, count, aliveWeak]() {
+        brls::sync([this, items, count, aliveWeak, loadGen]() {
             auto alive = aliveWeak.lock();
             if (!alive || !*alive) return;
+            if (loadGen != m_loadGen) return;  // category changed while loading
 
             m_offset += count;
             m_hasMore = (count >= PAGE_SIZE);
@@ -386,6 +394,9 @@ void LibraryTab::loadNextPage() {
                 m_contentGrid->appendItems(items);
             }
             m_contentGrid->setHasMore(m_hasMore);
+
+            // Continue pulling pages until the whole category is loaded.
+            if (m_hasMore) loadNextPage();
         });
     };
 

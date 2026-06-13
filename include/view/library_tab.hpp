@@ -59,10 +59,17 @@ private:
     LibraryTabViewMode m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     bool m_loaded = false;
 
-    // Pagination state
-    static constexpr int PAGE_SIZE = 50;
+    // Fetch state. The whole category is loaded automatically: each page that
+    // comes back triggers the next until the library is exhausted, so the user
+    // never has to scroll to the bottom to pull in more. A larger page keeps the
+    // number of round-trips down.
+    static constexpr int PAGE_SIZE = 200;
     int m_offset = 0;
     bool m_hasMore = false;
+    // Bumped on every fresh category load; in-flight page responses from a
+    // previous category compare against it and bail, so switching category
+    // can't append the old category's items into the new grid.
+    int m_loadGen = 0;
     bool m_loadingPage = false;
     void loadNextPage();
 
