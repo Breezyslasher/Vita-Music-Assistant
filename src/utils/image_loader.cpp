@@ -8,10 +8,26 @@
 #include <fstream>
 #include <vector>
 #include <chrono>
+#include <algorithm>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
 #endif
+
+// stb_image: decode JPEG/PNG/BMP/GIF to RGBA on worker threads for the NVG cover
+// path. STB_IMAGE_STATIC makes these symbols file-local so they don't clash with
+// the copy bundled inside nanovg.c. The Music Assistant image proxy serves
+// stb-decodable formats (the same decoder brls::Image already relied on).
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_ONLY_BMP
+#define STBI_ONLY_GIF
+#define STBI_NO_HDR
+#define STBI_NO_LINEAR
+#define STBI_NO_STDIO
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 namespace vita_ma {
 
@@ -25,6 +41,10 @@ std::queue<ImageLoader::PendingTextureUpdate> ImageLoader::s_pendingTextures;
 std::mutex ImageLoader::s_pendingMutex;
 std::atomic<bool> ImageLoader::s_pendingScheduled{false};
 std::atomic<bool> ImageLoader::s_deferTextureUploads{false};
+
+std::queue<ImageLoader::PendingCoverUpload> ImageLoader::s_pendingCovers;
+std::mutex ImageLoader::s_pendingCoverMutex;
+std::atomic<bool> ImageLoader::s_pendingCoverScheduled{false};
 
 void ImageLoader::setPaused(bool paused) {
     s_paused.store(paused);
@@ -201,6 +221,122 @@ void ImageLoader::processPendingTextures() {
         bool expected = false;
         if (s_pendingScheduled.compare_exchange_strong(expected, true)) {
             brls::sync([]() { processPendingTextures(); });
+        }
+    }
+}
+
+bool ImageLoader::cacheGetBytes(const std::string& url, std::vector<uint8_t>& out) {
+    std::lock_guard<std::mutex> lock(s_cacheMutex);
+    auto it = s_cache.find(url);
+    if (it == s_cache.end()) return false;
+    // Promote to most-recently-used.
+    s_lruOrder.erase(it->second.lruIt);
+    s_lruOrder.push_front(url);
+    it->second.lruIt = s_lruOrder.begin();
+    out = it->second.data;
+    return true;
+}
+
+void ImageLoader::cachePutBytes(const std::string& url, std::vector<uint8_t> data) {
+    std::lock_guard<std::mutex> lock(s_cacheMutex);
+    if (s_cache.find(url) != s_cache.end()) return;  // already cached
+    while (s_cache.size() >= MAX_CACHE_SIZE && !s_lruOrder.empty()) {
+        const std::string& oldest = s_lruOrder.back();
+        s_cache.erase(oldest);
+        s_lruOrder.pop_back();
+    }
+    s_lruOrder.push_front(url);
+    CacheEntry entry;
+    entry.data = std::move(data);
+    entry.lruIt = s_lruOrder.begin();
+    s_cache[url] = std::move(entry);
+}
+
+void ImageLoader::loadCoverAsync(const std::string& url, CoverReadyCallback callback,
+                                 std::shared_ptr<std::atomic<bool>> alive) {
+    if (url.empty() || !alive || !callback) return;
+    if (s_paused.load()) return;
+
+    uint64_t gen = s_generation.load();
+
+    brls::async([url, callback, alive, gen]() {
+        if (!alive->load() || gen != s_generation.load()) return;
+
+        // Get the raw encoded bytes: cache first, otherwise download and cache.
+        std::vector<uint8_t> bytes;
+        if (!cacheGetBytes(url, bytes)) {
+            HttpClient client;
+            HttpResponse resp = client.get(url);
+            if (!resp.success || resp.body.empty()) return;
+            bytes.assign(resp.body.begin(), resp.body.end());
+            cachePutBytes(url, bytes);
+        }
+
+        if (!alive->load() || gen != s_generation.load()) return;
+
+        // Decode to RGBA here, off the main thread. The main thread then only
+        // has to hand the pixels to the GPU (nvgCreateImageRGBA).
+        int w = 0, h = 0, channels = 0;
+        unsigned char* rgba = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+                                                    &w, &h, &channels, 4);
+        if (!rgba) return;
+        std::vector<uint8_t> rgbaVec(rgba, rgba + static_cast<size_t>(w) * h * 4);
+        stbi_image_free(rgba);
+
+        queueCoverUpload(std::move(rgbaVec), w, h, callback, alive, gen);
+    });
+}
+
+void ImageLoader::queueCoverUpload(std::vector<uint8_t> rgba, int w, int h,
+                                   CoverReadyCallback callback,
+                                   std::shared_ptr<std::atomic<bool>> alive, uint64_t gen) {
+    {
+        std::lock_guard<std::mutex> lock(s_pendingCoverMutex);
+        s_pendingCovers.push({std::move(rgba), w, h, std::move(callback), std::move(alive), gen});
+    }
+    bool expected = false;
+    if (s_pendingCoverScheduled.compare_exchange_strong(expected, true)) {
+        brls::sync([]() { processPendingCovers(); });
+    }
+}
+
+void ImageLoader::processPendingCovers() {
+    s_pendingCoverScheduled.store(false);
+
+    NVGcontext* vg = brls::Application::getNVGContext();
+    if (!vg) return;
+
+    int uploaded = 0;
+    while (uploaded < MAX_COVERS_PER_FRAME) {
+        PendingCoverUpload up;
+        {
+            std::lock_guard<std::mutex> lock(s_pendingCoverMutex);
+            if (s_pendingCovers.empty()) return;
+            up = std::move(s_pendingCovers.front());
+            s_pendingCovers.pop();
+        }
+
+        // Skip if the cell was destroyed or cancelAll() bumped the generation.
+        if (up.alive && !up.alive->load()) continue;
+        if (up.gen != s_generation.load()) continue;
+        if (up.rgba.empty() || up.width <= 0 || up.height <= 0) continue;
+
+        int nvgImg = nvgCreateImageRGBA(vg, up.width, up.height, 0, up.rgba.data());
+        if (nvgImg != 0 && up.callback) {
+            up.callback(nvgImg, up.width, up.height);
+        }
+        uploaded++;
+    }
+
+    bool morePending;
+    {
+        std::lock_guard<std::mutex> lock(s_pendingCoverMutex);
+        morePending = !s_pendingCovers.empty();
+    }
+    if (morePending) {
+        bool expected = false;
+        if (s_pendingCoverScheduled.compare_exchange_strong(expected, true)) {
+            brls::sync([]() { processPendingCovers(); });
         }
     }
 }

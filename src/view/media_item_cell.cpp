@@ -7,8 +7,43 @@
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
 #include "utils/image_loader.hpp"
+#include <algorithm>
 
 namespace vita_ma {
+
+namespace {
+// Paints the cover from a raw NanoVG image handle owned by the cell. It sits
+// where the old brls::Image cover sat in the child list, so the focus "start"
+// hint (added to the cell after it) still draws on top. It reads the cell's
+// handle/size through pointers, so it always reflects the latest loaded cover.
+class CoverView : public brls::Image {
+public:
+    const int* coverHandle = nullptr;
+    const int* coverW = nullptr;
+    const int* coverH = nullptr;
+
+    void draw(NVGcontext* vg, float x, float y, float width, float height,
+              brls::Style style, brls::FrameContext* ctx) override {
+        if (!coverHandle || *coverHandle == 0) return;
+        if (!coverW || !coverH || *coverW <= 0 || *coverH <= 0) return;
+        if (width <= 0.0f || height <= 0.0f) return;
+
+        // Cover-fit: scale to fill the box, center-cropping the overflow. The
+        // rounded-rect fill path clips both the corners and the overflow.
+        float scale = std::max(width / static_cast<float>(*coverW),
+                               height / static_cast<float>(*coverH));
+        float sw = static_cast<float>(*coverW) * scale;
+        float sh = static_cast<float>(*coverH) * scale;
+        float ox = x + (width - sw) * 0.5f;
+        float oy = y + (height - sh) * 0.5f;
+        NVGpaint paint = nvgImagePattern(vg, ox, oy, sw, sh, 0.0f, *coverHandle, 1.0f);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, x, y, width, height, 4.0f);
+        nvgFillPaint(vg, paint);
+        nvgFill(vg);
+    }
+};
+}  // namespace
 
 MediaItemCell::MediaItemCell()
     : m_alive(std::make_shared<std::atomic<bool>>(true)) {
@@ -20,14 +55,16 @@ MediaItemCell::MediaItemCell()
     this->setCornerRadius(8);
     this->setBackgroundColor(nvgRGBA(50, 50, 50, 255));
 
-    // Thumbnail image - square album art for music-only client
-    // Hidden until texture loads to prevent null texture crash on Vita
-    m_thumbnailImage = new brls::Image();
-    m_thumbnailImage->setWidth(110);
-    m_thumbnailImage->setHeight(110);
-    m_thumbnailImage->setScalingType(brls::ImageScalingType::FIT);
-    m_thumbnailImage->setCornerRadius(4);
-    m_thumbnailImage->setVisibility(brls::Visibility::INVISIBLE);
+    // Cover view - square album art, painted from a NanoVG handle (see CoverView).
+    // Kept VISIBLE so its draw() runs; it paints nothing until a cover loads.
+    auto* cover = new CoverView();
+    cover->coverHandle = &m_nvgCover;
+    cover->coverW = &m_coverW;
+    cover->coverH = &m_coverH;
+    cover->setWidth(110);
+    cover->setHeight(110);
+    cover->setCornerRadius(4);
+    m_thumbnailImage = cover;
     this->addView(m_thumbnailImage);
 
     // Title label
@@ -83,10 +120,29 @@ MediaItemCell::~MediaItemCell() {
     if (m_alive) {
         m_alive->store(false);
     }
+    // Free the cover texture. The cell is destroyed on the UI thread, so the
+    // NanoVG context is valid here.
+    if (m_nvgCover != 0) {
+        NVGcontext* vg = brls::Application::getNVGContext();
+        if (vg) nvgDeleteImage(vg, m_nvgCover);
+        m_nvgCover = 0;
+    }
 }
 
 void MediaItemCell::setItem(const MusicItem& item) {
     m_item = item;
+
+    // Reset cover state so a reused cell reloads art for its new item rather
+    // than showing the previous one (cells are normally created fresh, so this
+    // is defensive).
+    if (m_nvgCover != 0) {
+        NVGcontext* vg = brls::Application::getNVGContext();
+        if (vg) nvgDeleteImage(vg, m_nvgCover);
+        m_nvgCover = 0;
+        m_coverW = 0;
+        m_coverH = 0;
+    }
+    m_thumbLoaded = false;
 
     // All items use square album art (music-only client)
     m_thumbnailImage->setWidth(110);
@@ -122,8 +178,6 @@ void MediaItemCell::setItem(const MusicItem& item) {
 }
 
 void MediaItemCell::loadThumbnail() {
-    if (!m_thumbnailImage) return;
-
     if (m_item.imageUrl.empty()) return;
 
     // Convert relative image paths to full URLs via the server
@@ -131,14 +185,27 @@ void MediaItemCell::loadThumbnail() {
     if (fullUrl.empty()) return;
 
     // Mark as loaded up front: the grid (and draw()) may call this every frame,
-    // and the upload itself is deferred/batched, so we must not enqueue the same
-    // request repeatedly while it's in flight.
+    // so we must not enqueue the same request repeatedly while it's in flight.
     m_thumbLoaded = true;
 
-    ImageLoader::loadAsync(fullUrl, [this](brls::Image* image) {
-        // Show thumbnail once the texture is actually uploaded
-        image->setVisibility(brls::Visibility::VISIBLE);
-    }, m_thumbnailImage, m_alive);
+    MediaItemCell* self = this;
+    std::shared_ptr<std::atomic<bool>> alive = m_alive;
+    ImageLoader::loadCoverAsync(fullUrl, [self, alive](int nvgImg, int w, int h) {
+        // Runs on the UI thread. Re-check liveness before touching the cell;
+        // if it's gone, free the just-created texture instead of leaking it.
+        if (!alive->load()) {
+            NVGcontext* vg = brls::Application::getNVGContext();
+            if (vg && nvgImg != 0) nvgDeleteImage(vg, nvgImg);
+            return;
+        }
+        if (self->m_nvgCover != 0) {
+            NVGcontext* vg = brls::Application::getNVGContext();
+            if (vg) nvgDeleteImage(vg, self->m_nvgCover);
+        }
+        self->m_nvgCover = nvgImg;
+        self->m_coverW = w;
+        self->m_coverH = h;
+    }, m_alive);
 }
 
 void MediaItemCell::loadThumbnailIfNeeded() {
@@ -147,9 +214,13 @@ void MediaItemCell::loadThumbnailIfNeeded() {
 }
 
 void MediaItemCell::unloadThumbnail() {
-    if (!m_thumbnailImage || !m_thumbLoaded) return;
-    m_thumbnailImage->clear();
-    m_thumbnailImage->setVisibility(brls::Visibility::INVISIBLE);
+    if (m_nvgCover != 0) {
+        NVGcontext* vg = brls::Application::getNVGContext();
+        if (vg) nvgDeleteImage(vg, m_nvgCover);
+        m_nvgCover = 0;
+        m_coverW = 0;
+        m_coverH = 0;
+    }
     m_thumbLoaded = false;
 }
 
@@ -169,6 +240,8 @@ void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float he
     // grid too (home/search/music/detail rows), which have no preloader.
     loadThumbnailIfNeeded();
 
+    // The cover itself is painted by the CoverView child (so the focus hint,
+    // added after it, still draws on top); Box::draw renders all children.
     brls::Box::draw(vg, x, y, width, height, style, ctx);
 
     // Touch press feedback overlay

@@ -20,12 +20,23 @@ namespace vita_ma {
 class ImageLoader {
 public:
     using LoadCallback = std::function<void(brls::Image*)>;
+    // Receives a ready-to-draw NanoVG image handle plus its pixel dimensions.
+    using CoverReadyCallback = std::function<void(int nvgImage, int w, int h)>;
 
     // Load image asynchronously from URL, using an alive flag to prevent use-after-free.
     // The caller must hold a shared_ptr<std::atomic<bool>> that is set to false when
     // the target brls::Image* is destroyed (e.g. in the cell's destructor).
     static void loadAsync(const std::string& url, LoadCallback callback,
                           brls::Image* target, std::shared_ptr<std::atomic<bool>> alive);
+
+    // Load a grid cover. A worker thread fetches + decodes the image to RGBA, and
+    // the main thread does only nvgCreateImageRGBA (a pure GPU upload, no decode),
+    // a few per frame. The callback receives the NVG image handle + dimensions and
+    // the cell draws it itself with nvgImagePattern. This avoids brls::Image's
+    // setImageFromMem path, whose on-the-main-thread decode+upload stalls scroll.
+    // The cell owns the returned handle and must nvgDeleteImage it.
+    static void loadCoverAsync(const std::string& url, CoverReadyCallback callback,
+                               std::shared_ptr<std::atomic<bool>> alive);
 
     // Load image synchronously from a local file path into a brls::Image.
     // Returns true on success.
@@ -94,6 +105,32 @@ private:
                                    std::shared_ptr<std::atomic<bool>> alive, uint64_t gen);
     // Upload a budgeted batch of pending textures (runs on the main thread).
     static void processPendingTextures();
+
+    // Cover upload queue: carries pre-decoded RGBA from the worker thread; the
+    // main thread only runs nvgCreateImageRGBA. Not gated by
+    // s_deferTextureUploads, so covers keep appearing during scroll (the upload
+    // is cheap because there's no decode).
+    struct PendingCoverUpload {
+        std::vector<uint8_t> rgba;
+        int width = 0;
+        int height = 0;
+        CoverReadyCallback callback;
+        std::shared_ptr<std::atomic<bool>> alive;
+        uint64_t gen = 0;
+    };
+    static std::queue<PendingCoverUpload> s_pendingCovers;
+    static std::mutex s_pendingCoverMutex;
+    static std::atomic<bool> s_pendingCoverScheduled;
+    static constexpr int MAX_COVERS_PER_FRAME = 2;
+
+    static void queueCoverUpload(std::vector<uint8_t> rgba, int w, int h,
+                                 CoverReadyCallback callback,
+                                 std::shared_ptr<std::atomic<bool>> alive, uint64_t gen);
+    static void processPendingCovers();
+
+    // Raw-bytes LRU cache helpers (shared by the brls::Image and cover paths).
+    static bool cacheGetBytes(const std::string& url, std::vector<uint8_t>& out);
+    static void cachePutBytes(const std::string& url, std::vector<uint8_t> data);
 };
 
 } // namespace vita_ma

@@ -51,7 +51,15 @@ private:
     // in async image loader callbacks
     std::shared_ptr<std::atomic<bool>> m_alive;
 
+    // Cover area: m_thumbnailImage is kept as an (empty) layout spacer that
+    // reserves the cover's box; the actual cover is a raw NanoVG image handle
+    // drawn by draw(). This keeps the heavy setImageFromMem upload off the
+    // scroll path while leaving the cell's layout and focus behaviour intact.
     brls::Image* m_thumbnailImage = nullptr;
+    int m_nvgCover = 0;   // NanoVG image handle (0 = none); owned by this cell
+    int m_coverW = 0;     // source pixel width of the loaded cover
+    int m_coverH = 0;     // source pixel height of the loaded cover
+
     brls::Label* m_titleLabel = nullptr;
     brls::Label* m_subtitleLabel = nullptr;
     brls::Label* m_descriptionLabel = nullptr;  // Shows on focus
