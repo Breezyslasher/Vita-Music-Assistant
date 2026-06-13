@@ -37,12 +37,14 @@ RecyclingGrid::~RecyclingGrid() {
 void RecyclingGrid::setDataSource(const std::vector<MusicItem>& items) {
     m_items = items;
     m_loading = false;
-    m_lastVisibleStart = -1;
-    m_lastVisibleEnd = -1;
     // Rows are rebuilt below, so the cached visibility/scroll state is stale.
     m_cachedFirstVisible = -1;
     m_cachedLastVisible = -1;
     m_scrollLoadCooldown = 0;
+    m_lastScrollLoadY = 0.0f;
+    // Restart the progressive cover loader for the new cell set.
+    m_nextCoverLoadIdx = 0;
+    m_allCoversQueued = false;
     rebuildGrid();
 }
 
@@ -73,14 +75,15 @@ void RecyclingGrid::appendItems(const std::vector<MusicItem>& newItems) {
     m_renderedCount = m_items.size();
     m_loading = false;
 
-    // Newly added rows default to VISIBLE. Invalidate the caches so the next
-    // draw re-evaluates every row (otherwise, if the scroll position is
+    // Newly added rows default to VISIBLE. Invalidate the culling cache so the
+    // next draw re-evaluates every row (otherwise, if the scroll position is
     // unchanged, the new off-screen rows would never get culled).
     m_cachedFirstVisible = -1;
     m_cachedLastVisible = -1;
-    m_lastVisibleStart = -1;
-    m_lastVisibleEnd = -1;
     m_scrollLoadCooldown = 0;
+    // Resume the progressive loader so the appended cells get their covers.
+    // m_nextCoverLoadIdx already points at the first new cell.
+    m_allCoversQueued = false;
 }
 
 void RecyclingGrid::setOnItemSelected(std::function<void(const MusicItem&)> callback) {
@@ -172,6 +175,7 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
     }
 
     currentRow->addView(cell);
+    m_cells.push_back(cell);
 
     itemsInRow++;
     if (itemsInRow >= m_columns) {
@@ -187,10 +191,60 @@ void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float he
 
     brls::ScrollingFrame::draw(vg, x, y, width, height, style, ctx);
 
-    // After drawing: pause/resume uploads based on scroll speed, then refresh the
-    // loaded-texture window (covers touch scrolling, which never moves focus).
+    // After drawing: pause/resume brls::Image uploads based on scroll speed.
     updateScrollGating();
-    updateVisibleTextures();
+
+    // Prioritise covers in/near the viewport while scrolling (focus-driven
+    // navigation moves focus; touch scrolling does not, so this drives loading
+    // during drags). No unloading — covers are loaded once and kept.
+    if (m_scrollLoadCooldown > 0) {
+        m_scrollLoadCooldown--;
+    }
+    if (!m_cells.empty() && m_scrollLoadCooldown == 0) {
+        float scrollY = this->getContentOffsetY();
+        if (std::abs(scrollY - m_lastScrollLoadY) > ROW_PITCH) {
+            m_lastScrollLoadY = scrollY;
+            m_scrollLoadCooldown = 6;
+            loadCoversForScrollPosition();
+        }
+    }
+
+    // Progressive cover loader: queue a few not-yet-loaded cells each frame until
+    // every cover is loaded, so the whole library fills in without scrolling and
+    // scrolling never has to re-load a texture (the Vita_Suwayomi behaviour).
+    if (!m_allCoversQueued && !m_cells.empty()) {
+        int total = static_cast<int>(m_cells.size());
+        int budget = 6;
+        while (budget > 0 && m_nextCoverLoadIdx < total) {
+            MediaItemCell* cell = m_cells[m_nextCoverLoadIdx];
+            if (cell && !cell->isThumbnailLoaded()) {
+                cell->loadThumbnailIfNeeded();
+                budget--;
+            }
+            m_nextCoverLoadIdx++;
+        }
+        if (m_nextCoverLoadIdx >= total) {
+            m_allCoversQueued = true;
+        }
+    }
+}
+
+void RecyclingGrid::loadCoversForScrollPosition() {
+    if (m_cells.empty() || m_columns <= 0) return;
+
+    float scrollY = this->getContentOffsetY();  // positive = scrolled down
+    float viewportH = this->getHeight();
+    int totalRows = (static_cast<int>(m_cells.size()) + m_columns - 1) / m_columns;
+
+    int firstRow = std::max(0, static_cast<int>(scrollY / ROW_PITCH) - 1);
+    int lastRow = std::min(totalRows,
+                           static_cast<int>((scrollY + viewportH) / ROW_PITCH) + TEXTURE_BUFFER_ROWS);
+
+    int startCell = firstRow * m_columns;
+    int endCell = std::min(lastRow * m_columns, static_cast<int>(m_cells.size()));
+    for (int i = startCell; i < endCell; i++) {
+        if (m_cells[i]) m_cells[i]->loadThumbnailIfNeeded();
+    }
 }
 
 void RecyclingGrid::updateRowVisibility() {
@@ -249,53 +303,9 @@ void RecyclingGrid::updateScrollGating() {
     }
 }
 
-void RecyclingGrid::updateVisibleTextures() {
-    if (!m_contentBox) return;
-    auto& rows = m_contentBox->getChildren();
-    if (rows.empty()) return;
-
-    // Throttle window churn: each refresh below can queue a row of loads, so
-    // recompute at most once every few frames to avoid flooding the loader
-    // during fast scrolls (which tanks FPS on the Vita).
-    if (m_scrollLoadCooldown > 0) {
-        m_scrollLoadCooldown--;
-        return;
-    }
-
-    float scrollY = this->getContentOffsetY();  // positive = scrolled down
-    float viewportH = this->getHeight();
-    int rowCount = static_cast<int>(rows.size());
-
-    int firstVisible = std::max(0, static_cast<int>(scrollY / ROW_PITCH) - TEXTURE_BUFFER_ROWS);
-    int lastVisible = std::min(rowCount - 1,
-                               static_cast<int>((scrollY + viewportH) / ROW_PITCH) + TEXTURE_BUFFER_ROWS);
-
-    // Window unchanged since the last refresh — nothing to load or unload.
-    if (firstVisible == m_lastVisibleStart && lastVisible == m_lastVisibleEnd) return;
-
-    m_lastVisibleStart = firstVisible;
-    m_lastVisibleEnd = lastVisible;
-    m_scrollLoadCooldown = 4;
-
-    // Load covers for rows in the window; unload the rest to bound GPU memory.
-    for (int r = 0; r < rowCount; r++) {
-        brls::Box* row = dynamic_cast<brls::Box*>(rows[r]);
-        if (!row) continue;
-
-        bool shouldLoad = (r >= firstVisible && r <= lastVisible);
-        auto& cells = row->getChildren();
-        for (auto* child : cells) {
-            MediaItemCell* cell = dynamic_cast<MediaItemCell*>(child);
-            if (!cell) continue;
-
-            if (shouldLoad) cell->loadThumbnailIfNeeded();
-            else cell->unloadThumbnail();
-        }
-    }
-}
-
 void RecyclingGrid::rebuildGrid() {
     m_contentBox->clearViews();
+    m_cells.clear();
     m_renderedCount = 0;
 
     if (m_items.empty()) return;

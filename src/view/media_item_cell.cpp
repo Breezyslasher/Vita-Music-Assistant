@@ -172,21 +172,22 @@ void MediaItemCell::setItem(const MusicItem& item) {
         }
     }
 
-    // Don't load thumbnail eagerly - RecyclingGrid::updateVisibleTextures()
-    // will call reloadThumbnail() for cells in the visible viewport.
-    // This prevents loading 500+ textures at once on large datasets.
+    // Don't load the cover eagerly here. RecyclingGrid's progressive loader and
+    // draw() drive loadThumbnailIfNeeded(), so covers load a few per frame
+    // instead of all at once on a large dataset.
 }
 
 void MediaItemCell::loadThumbnail() {
+    // Mark as loaded up front: the grid (and draw()) call this every frame, so we
+    // must not re-enqueue while a load is in flight — and cells with no art must
+    // not rebuild their URL every frame either.
+    m_thumbLoaded = true;
+
     if (m_item.imageUrl.empty()) return;
 
     // Convert relative image paths to full URLs via the server
     std::string fullUrl = MAClient::instance().getThumbnailUrl(m_item.imageUrl, 300, 300, m_item.imageProvider);
     if (fullUrl.empty()) return;
-
-    // Mark as loaded up front: the grid (and draw()) may call this every frame,
-    // so we must not enqueue the same request repeatedly while it's in flight.
-    m_thumbLoaded = true;
 
     MediaItemCell* self = this;
     std::shared_ptr<std::atomic<bool>> alive = m_alive;
