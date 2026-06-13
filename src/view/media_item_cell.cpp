@@ -130,11 +130,20 @@ void MediaItemCell::loadThumbnail() {
     std::string fullUrl = MAClient::instance().getThumbnailUrl(m_item.imageUrl, 300, 300, m_item.imageProvider);
     if (fullUrl.empty()) return;
 
+    // Mark as loaded up front: the grid (and draw()) may call this every frame,
+    // and the upload itself is deferred/batched, so we must not enqueue the same
+    // request repeatedly while it's in flight.
+    m_thumbLoaded = true;
+
     ImageLoader::loadAsync(fullUrl, [this](brls::Image* image) {
-        // Show thumbnail once texture is loaded successfully
+        // Show thumbnail once the texture is actually uploaded
         image->setVisibility(brls::Visibility::VISIBLE);
-        m_thumbLoaded = true;
     }, m_thumbnailImage, m_alive);
+}
+
+void MediaItemCell::loadThumbnailIfNeeded() {
+    if (m_thumbLoaded) return;
+    loadThumbnail();
 }
 
 void MediaItemCell::unloadThumbnail() {
@@ -145,9 +154,7 @@ void MediaItemCell::unloadThumbnail() {
 }
 
 void MediaItemCell::reloadThumbnail() {
-    if (!m_thumbnailImage || m_thumbLoaded) return;
-    if (m_item.imageUrl.empty()) return;
-    loadThumbnail();
+    loadThumbnailIfNeeded();
 }
 
 brls::View* MediaItemCell::create() {
@@ -156,6 +163,12 @@ brls::View* MediaItemCell::create() {
 
 void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float height,
                           brls::Style style, brls::FrameContext* ctx) {
+    // A cell only reaches draw() when its row is VISIBLE (borealis skips drawing
+    // INVISIBLE views), so this lazily loads covers exactly when they come on
+    // screen. Cheap once loaded (guarded inside). Covers cells used outside the
+    // grid too (home/search/music/detail rows), which have no preloader.
+    loadThumbnailIfNeeded();
+
     brls::Box::draw(vg, x, y, width, height, style, ctx);
 
     // Touch press feedback overlay

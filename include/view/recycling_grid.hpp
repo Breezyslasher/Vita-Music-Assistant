@@ -15,6 +15,7 @@ namespace vita_ma {
 class RecyclingGrid : public brls::ScrollingFrame {
 public:
     RecyclingGrid();
+    ~RecyclingGrid() override;
 
     void setDataSource(const std::vector<MusicItem>& items);
     // Append additional items (called when next page arrives from server)
@@ -43,6 +44,12 @@ private:
     void onItemClicked(int index);
     void addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index);
     void updateVisibleTextures();
+    // Hide off-screen rows (Visibility::INVISIBLE) so ScrollingFrame::draw skips
+    // their entire subtree — the single biggest scroll-time CPU saving.
+    void updateRowVisibility();
+    // Pause/resume ImageLoader GPU uploads based on scroll velocity so a 15-20ms
+    // texture upload never lands inside a scroll frame.
+    void updateScrollGating();
 
     std::vector<MusicItem> m_items;
     std::function<void(const MusicItem&)> m_onItemSelected;
@@ -61,6 +68,23 @@ private:
     int m_lastVisibleStart = -1;
     int m_lastVisibleEnd = -1;
     static constexpr int TEXTURE_BUFFER_ROWS = 3;  // Extra rows above/below viewport to keep loaded
+
+    // Approx vertical pitch of one row (cell height 150 + 10 row margin).
+    static constexpr float ROW_PITCH = 160.0f;
+
+    // Visibility-culling cache: the currently-shown row range, so we only touch
+    // rows at the boundaries when the range changes instead of every frame.
+    int m_cachedFirstVisible = -1;
+    int m_cachedLastVisible = -1;
+
+    // Scroll-velocity tracking for gating texture uploads.
+    float m_prevScrollY = 0.0f;
+    int m_scrollSettledFrames = 0;   // frames since the last noticeable scroll delta
+    bool m_uploadsDeferred = false;  // whether we currently have uploads paused
+
+    // Throttle for scroll-driven texture window updates: limits how often the
+    // load/unload window is recomputed during touch scrolling.
+    int m_scrollLoadCooldown = 0;
 };
 
 } // namespace vita_ma

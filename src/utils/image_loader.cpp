@@ -7,6 +7,7 @@
 #include "utils/http_client.hpp"
 #include <fstream>
 #include <vector>
+#include <chrono>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
@@ -19,6 +20,11 @@ std::list<std::string> ImageLoader::s_lruOrder;
 std::mutex ImageLoader::s_cacheMutex;
 std::atomic<uint64_t> ImageLoader::s_generation{0};
 std::atomic<bool> ImageLoader::s_paused{false};
+
+std::queue<ImageLoader::PendingTextureUpdate> ImageLoader::s_pendingTextures;
+std::mutex ImageLoader::s_pendingMutex;
+std::atomic<bool> ImageLoader::s_pendingScheduled{false};
+std::atomic<bool> ImageLoader::s_deferTextureUploads{false};
 
 void ImageLoader::setPaused(bool paused) {
     s_paused.store(paused);
@@ -58,9 +64,11 @@ void ImageLoader::loadAsync(const std::string& url, LoadCallback callback,
             s_lruOrder.push_front(url);
             it->second.lruIt = s_lruOrder.begin();
 
-            // Load from cache (we're on the main thread, target is valid right now)
-            target->setImageFromMem(it->second.data.data(), it->second.data.size());
-            if (callback) callback(target);
+            // Even on a cache hit the GPU upload (setImageFromMem) costs ~15-20ms,
+            // so queue it for the batched/deferred uploader instead of stalling
+            // the current frame.
+            std::vector<uint8_t> dataCopy = it->second.data;
+            queueTextureUpdate(std::move(dataCopy), target, callback, alive, gen);
             return;
         }
     }
@@ -95,16 +103,106 @@ void ImageLoader::loadAsync(const std::string& url, LoadCallback callback,
                 s_cache[url] = std::move(entry);
             }
 
-            // Update UI on main thread - check alive flag AND generation to prevent
-            // use-after-free when the target view has been destroyed
-            brls::sync([imageData, callback, target, alive, gen]() {
-                if (!alive->load()) return;        // Target was destroyed
-                if (gen != s_generation.load()) return;  // cancelAll() was called
-                target->setImageFromMem(imageData.data(), imageData.size());
-                if (callback) callback(target);
-            });
+            // Hand the decoded bytes to the batched uploader. It performs the
+            // GPU upload on the main thread (a few per frame), and skips the
+            // upload if the target was destroyed or cancelAll() bumped the
+            // generation in the meantime.
+            queueTextureUpdate(std::move(imageData), target, callback, alive, gen);
         }
     });
+}
+
+void ImageLoader::setDeferTextureUploads(bool defer) {
+    bool wasDeferred = s_deferTextureUploads.exchange(defer);
+    // Transitioning from deferred -> allowed: wake the processor so the queued
+    // uploads start draining immediately instead of waiting for the next event.
+    if (wasDeferred && !defer) {
+        bool expected = false;
+        if (s_pendingScheduled.compare_exchange_strong(expected, true)) {
+            brls::sync([]() { processPendingTextures(); });
+        }
+    }
+}
+
+void ImageLoader::queueTextureUpdate(std::vector<uint8_t> data, brls::Image* target,
+                                     LoadCallback callback,
+                                     std::shared_ptr<std::atomic<bool>> alive, uint64_t gen) {
+    {
+        std::lock_guard<std::mutex> lock(s_pendingMutex);
+        s_pendingTextures.push({std::move(data), target, std::move(callback), std::move(alive), gen});
+    }
+    // Schedule a drain on the main thread if one isn't already pending.
+    bool expected = false;
+    if (s_pendingScheduled.compare_exchange_strong(expected, true)) {
+        brls::sync([]() { processPendingTextures(); });
+    }
+}
+
+void ImageLoader::processPendingTextures() {
+    s_pendingScheduled.store(false);
+
+    // While scrolling, hold everything and re-check next frame so no upload
+    // stalls the scroll frame.
+    if (s_deferTextureUploads.load()) {
+        bool morePending;
+        {
+            std::lock_guard<std::mutex> lock(s_pendingMutex);
+            morePending = !s_pendingTextures.empty();
+        }
+        if (morePending) {
+            bool expected = false;
+            if (s_pendingScheduled.compare_exchange_strong(expected, true)) {
+                brls::sync([]() { processPendingTextures(); });
+            }
+        }
+        return;
+    }
+
+    // Upload at most MAX_TEXTURES_PER_FRAME this frame, bounded by an 8ms budget
+    // so we don't blow the 16.7ms frame even if an upload runs long.
+    auto frameStart = std::chrono::steady_clock::now();
+    static constexpr int64_t MAX_UPLOAD_TIME_US = 8000;
+
+    int processed = 0;
+    while (processed < MAX_TEXTURES_PER_FRAME) {
+        if (processed > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - frameStart).count();
+            if (elapsed >= MAX_UPLOAD_TIME_US) break;
+        }
+
+        PendingTextureUpdate update;
+        {
+            std::lock_guard<std::mutex> lock(s_pendingMutex);
+            if (s_pendingTextures.empty()) return;
+            update = std::move(s_pendingTextures.front());
+            s_pendingTextures.pop();
+        }
+
+        // Drop the upload if the target view was destroyed, cancelAll() bumped
+        // the generation, or there's nothing to upload.
+        if (!update.target) continue;
+        if (update.alive && !update.alive->load()) continue;
+        if (update.gen != s_generation.load()) continue;
+        if (update.data.empty()) continue;
+
+        update.target->setImageFromMem(update.data.data(), update.data.size());
+        if (update.callback) update.callback(update.target);
+        processed++;
+    }
+
+    // Re-schedule if more remain.
+    bool morePending;
+    {
+        std::lock_guard<std::mutex> lock(s_pendingMutex);
+        morePending = !s_pendingTextures.empty();
+    }
+    if (morePending) {
+        bool expected = false;
+        if (s_pendingScheduled.compare_exchange_strong(expected, true)) {
+            brls::sync([]() { processPendingTextures(); });
+        }
+    }
 }
 
 bool ImageLoader::loadFromFile(const std::string& path, brls::Image* target) {
@@ -153,8 +251,14 @@ void ImageLoader::clearCache() {
 
 void ImageLoader::cancelAll() {
     // Increment generation counter - all in-flight downloads will see a stale
-    // generation and skip their brls::sync callbacks, preventing use-after-free
+    // generation and skip their texture uploads, preventing use-after-free
     s_generation.fetch_add(1);
+
+    // Navigation/playback transitions call this; make sure a grid that was
+    // scrolling when it went away didn't leave uploads globally deferred. This
+    // also drains any now-stale queued uploads (they're skipped on generation
+    // mismatch).
+    setDeferTextureUploads(false);
 }
 
 } // namespace vita_ma

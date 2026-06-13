@@ -7,6 +7,8 @@
 #include "view/recycling_grid.hpp"
 #include "view/media_item_cell.hpp"
 #include "view/media_detail_view.hpp"
+#include "utils/image_loader.hpp"
+#include <cmath>
 
 namespace vita_ma {
 
@@ -24,11 +26,23 @@ RecyclingGrid::RecyclingGrid() {
     m_visibleRows = 3;
 }
 
+RecyclingGrid::~RecyclingGrid() {
+    // If this grid was torn down mid-scroll it may have left ImageLoader's
+    // uploads paused; release them so other screens can upload textures.
+    if (m_uploadsDeferred) {
+        ImageLoader::setDeferTextureUploads(false);
+    }
+}
+
 void RecyclingGrid::setDataSource(const std::vector<MusicItem>& items) {
     m_items = items;
     m_loading = false;
     m_lastVisibleStart = -1;
     m_lastVisibleEnd = -1;
+    // Rows are rebuilt below, so the cached visibility/scroll state is stale.
+    m_cachedFirstVisible = -1;
+    m_cachedLastVisible = -1;
+    m_scrollLoadCooldown = 0;
     rebuildGrid();
 }
 
@@ -58,6 +72,15 @@ void RecyclingGrid::appendItems(const std::vector<MusicItem>& newItems) {
 
     m_renderedCount = m_items.size();
     m_loading = false;
+
+    // Newly added rows default to VISIBLE. Invalidate the caches so the next
+    // draw re-evaluates every row (otherwise, if the scroll position is
+    // unchanged, the new off-screen rows would never get culled).
+    m_cachedFirstVisible = -1;
+    m_cachedLastVisible = -1;
+    m_lastVisibleStart = -1;
+    m_lastVisibleEnd = -1;
+    m_scrollLoadCooldown = 0;
 }
 
 void RecyclingGrid::setOnItemSelected(std::function<void(const MusicItem&)> callback) {
@@ -158,37 +181,104 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
 
 void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float height,
                           brls::Style style, brls::FrameContext* ctx) {
-    // Manage textures before drawing
-    updateVisibleTextures();
+    // Cull off-screen rows BEFORE drawing so ScrollingFrame::draw() skips their
+    // entire subtree (borealis short-circuits non-VISIBLE views in View::frame).
+    updateRowVisibility();
 
     brls::ScrollingFrame::draw(vg, x, y, width, height, style, ctx);
+
+    // After drawing: pause/resume uploads based on scroll speed, then refresh the
+    // loaded-texture window (covers touch scrolling, which never moves focus).
+    updateScrollGating();
+    updateVisibleTextures();
+}
+
+void RecyclingGrid::updateRowVisibility() {
+    if (!m_contentBox) return;
+    auto& rows = m_contentBox->getChildren();
+    if (rows.empty()) return;
+
+    float scrollY = this->getContentOffsetY();  // positive = scrolled down
+    float viewH = this->getHeight();
+    int rowCount = static_cast<int>(rows.size());
+
+    // Keep one row of slack above and two below so D-pad focus can always move
+    // onto an adjacent (and therefore still-focusable) VISIBLE cell.
+    int firstVisible = std::max(0, static_cast<int>(scrollY / ROW_PITCH) - 1);
+    int lastVisible = std::min(rowCount, static_cast<int>((scrollY + viewH) / ROW_PITCH) + 2);
+
+    // Nothing moved across a row boundary — leave visibility as-is.
+    if (firstVisible == m_cachedFirstVisible && lastVisible == m_cachedLastVisible) return;
+
+    if (m_cachedFirstVisible < 0) {
+        // First evaluation (or after a rebuild): set every row in one pass.
+        for (int i = 0; i < rowCount; i++) {
+            brls::Visibility v = (i >= firstVisible && i < lastVisible)
+                ? brls::Visibility::VISIBLE : brls::Visibility::INVISIBLE;
+            rows[i]->setVisibility(v);
+        }
+    } else {
+        // Incremental: hide rows that left the window, show rows that entered it.
+        for (int i = m_cachedFirstVisible; i < firstVisible; i++)
+            if (i >= 0 && i < rowCount) rows[i]->setVisibility(brls::Visibility::INVISIBLE);
+        for (int i = lastVisible; i < m_cachedLastVisible; i++)
+            if (i >= 0 && i < rowCount) rows[i]->setVisibility(brls::Visibility::INVISIBLE);
+        for (int i = firstVisible; i < lastVisible; i++)
+            if (i >= 0 && i < rowCount) rows[i]->setVisibility(brls::Visibility::VISIBLE);
+    }
+
+    m_cachedFirstVisible = firstVisible;
+    m_cachedLastVisible = lastVisible;
+}
+
+void RecyclingGrid::updateScrollGating() {
+    float curY = this->getContentOffsetY();
+    float frameDelta = std::abs(curY - m_prevScrollY);
+    m_prevScrollY = curY;
+
+    bool scrolling = frameDelta > 0.5f;
+    if (scrolling) m_scrollSettledFrames = 0;
+    else m_scrollSettledFrames++;
+
+    // Defer while moving and for a few frames after stopping, so the flush of a
+    // 15-20ms upload lands well clear of the motion.
+    bool wantDefer = scrolling || m_scrollSettledFrames < 6;
+    if (wantDefer != m_uploadsDeferred) {
+        m_uploadsDeferred = wantDefer;
+        ImageLoader::setDeferTextureUploads(wantDefer);
+    }
 }
 
 void RecyclingGrid::updateVisibleTextures() {
     if (!m_contentBox) return;
-
     auto& rows = m_contentBox->getChildren();
     if (rows.empty()) return;
 
-    // Determine which rows are visible based on scroll offset
-    float scrollY = -getContentOffsetY();  // Positive = scrolled down
-    float viewportH = getHeight();
+    // Throttle window churn: each refresh below can queue a row of loads, so
+    // recompute at most once every few frames to avoid flooding the loader
+    // during fast scrolls (which tanks FPS on the Vita).
+    if (m_scrollLoadCooldown > 0) {
+        m_scrollLoadCooldown--;
+        return;
+    }
 
-    // Each row is roughly 160px (150 cell height + 10 margin)
-    static constexpr float ROW_HEIGHT = 160.0f;
+    float scrollY = this->getContentOffsetY();  // positive = scrolled down
+    float viewportH = this->getHeight();
+    int rowCount = static_cast<int>(rows.size());
 
-    int firstVisible = std::max(0, (int)(scrollY / ROW_HEIGHT) - TEXTURE_BUFFER_ROWS);
-    int lastVisible = std::min((int)rows.size() - 1,
-                               (int)((scrollY + viewportH) / ROW_HEIGHT) + TEXTURE_BUFFER_ROWS);
+    int firstVisible = std::max(0, static_cast<int>(scrollY / ROW_PITCH) - TEXTURE_BUFFER_ROWS);
+    int lastVisible = std::min(rowCount - 1,
+                               static_cast<int>((scrollY + viewportH) / ROW_PITCH) + TEXTURE_BUFFER_ROWS);
 
-    // Skip if nothing changed
+    // Window unchanged since the last refresh — nothing to load or unload.
     if (firstVisible == m_lastVisibleStart && lastVisible == m_lastVisibleEnd) return;
 
     m_lastVisibleStart = firstVisible;
     m_lastVisibleEnd = lastVisible;
+    m_scrollLoadCooldown = 4;
 
-    // Unload textures for rows outside the visible range, load for visible rows
-    for (int r = 0; r < (int)rows.size(); r++) {
+    // Load covers for rows in the window; unload the rest to bound GPU memory.
+    for (int r = 0; r < rowCount; r++) {
         brls::Box* row = dynamic_cast<brls::Box*>(rows[r]);
         if (!row) continue;
 
@@ -198,11 +288,8 @@ void RecyclingGrid::updateVisibleTextures() {
             MediaItemCell* cell = dynamic_cast<MediaItemCell*>(child);
             if (!cell) continue;
 
-            if (shouldLoad) {
-                cell->reloadThumbnail();
-            } else {
-                cell->unloadThumbnail();
-            }
+            if (shouldLoad) cell->loadThumbnailIfNeeded();
+            else cell->unloadThumbnail();
         }
     }
 }

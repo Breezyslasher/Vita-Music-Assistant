@@ -54,6 +54,30 @@ else()
     message(FATAL_ERROR "Patch file not found: ${PSV_PLATFORM_PATCH}")
 endif()
 
+# Borealis fontstash patch (all platforms): caches per-glyph kerning advances
+# so text layout doesn't re-query FreeType for every character every frame.
+# Speeds up all label/title rendering. Purely additive to the bundled copy.
+set(FONTSTASH_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/fontstash.h)
+set(FONTSTASH_TARGET ${BOREALIS_LIBRARY}/include/borealis/extern/nanovg/fontstash.h)
+if(EXISTS ${FONTSTASH_PATCH})
+    message(STATUS "Applying patch: fontstash.h")
+    configure_file(${FONTSTASH_PATCH} ${FONTSTASH_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${FONTSTASH_PATCH}")
+endif()
+
+# Borealis nanovg patch (all platforms): adds nvgTextBatchBegin/End so a run of
+# nvgText calls sharing identical state flush as a single render call. Purely
+# additive to the bundled copy.
+set(NANOVG_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/nanovg.c)
+set(NANOVG_TARGET ${BOREALIS_LIBRARY}/lib/extern/nanovg/nanovg.c)
+if(EXISTS ${NANOVG_PATCH})
+    message(STATUS "Applying patch: nanovg.c")
+    configure_file(${NANOVG_PATCH} ${NANOVG_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${NANOVG_PATCH}")
+endif()
+
 # Add Borealis library subdirectory
 add_subdirectory(${BOREALIS_LIBRARY})
 

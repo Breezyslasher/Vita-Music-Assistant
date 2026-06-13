@@ -31,6 +31,10 @@ public:
     void unloadThumbnail();
     // Reload thumbnail from cache/network (when cell scrolls back into view)
     void reloadThumbnail();
+    // Load the thumbnail once if it hasn't been requested yet. Cheap to call
+    // every frame (guarded by m_thumbLoaded). Used by RecyclingGrid to preload
+    // cells near the viewport and by draw() so standalone cells load lazily.
+    void loadThumbnailIfNeeded();
     bool isThumbnailLoaded() const { return m_thumbLoaded; }
 
 private:
