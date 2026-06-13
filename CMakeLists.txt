@@ -78,6 +78,19 @@ else()
     message(FATAL_ERROR "Patch file not found: ${NANOVG_PATCH}")
 endif()
 
+# Borealis GXM nanovg utils patch (PS Vita): drops the
+# SCE_GXM_ERROR_INVALID_AUXILIARY_SURFACE case from gxmnvg__easy_strerror(). That
+# enum value is not declared in current vitasdk, so the bundled header fails to
+# compile (psv_video.cpp). The switch has a default case, so removing it is safe.
+set(GXM_UTILS_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/nanovg_gxm_utils.h)
+set(GXM_UTILS_TARGET ${BOREALIS_LIBRARY}/include/borealis/extern/nanovg/nanovg_gxm_utils.h)
+if(EXISTS ${GXM_UTILS_PATCH})
+    message(STATUS "Applying patch: nanovg_gxm_utils.h")
+    configure_file(${GXM_UTILS_PATCH} ${GXM_UTILS_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${GXM_UTILS_PATCH}")
+endif()
+
 # Add Borealis library subdirectory
 add_subdirectory(${BOREALIS_LIBRARY})
 
