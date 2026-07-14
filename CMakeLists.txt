@@ -134,6 +134,24 @@ if(TARGET datachannel-static)
         -include ${VITA_RTC_COMPAT}/vita_datachannel_compat.h)
 endif()
 
+# vitasdk links libpthread whole-archive via the toolchain already; the deps'
+# find_package(Threads) adds -pthread, which vitasdk's gcc ALSO expands to
+# whole-archive libpthread at link -> every pthread symbol defined twice.
+# Scrub the Threads usage from the vendored targets (pthread still resolves
+# through the toolchain, exactly as the rest of the app does).
+foreach(_rtc_t IN ITEMS datachannel-static juice-static usrsctp)
+    if(TARGET ${_rtc_t})
+        foreach(_prop IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+            get_target_property(_libs ${_rtc_t} ${_prop})
+            if(_libs)
+                list(REMOVE_ITEM _libs Threads::Threads -pthread pthread)
+                string(REPLACE "$<LINK_ONLY:Threads::Threads>" "" _libs "${_libs}")
+                set_target_properties(${_rtc_t} PROPERTIES ${_prop} "${_libs}")
+            endif()
+        endforeach()
+    endif()
+endforeach()
+
 # usrsctp patch: its RNG selection #errors on unknown platforms; add a Vita
 # branch backed by sceKernelGetRandomNumber (exported by SceLibKernel).
 set(USRSCTP_ENV_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/usrsctp_user_environment.c)
@@ -221,6 +239,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${APP_INCLUDES})
 # Vita's default pthread stack is only 32KB, which can be too small for
 # audio decoder threads.
 target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--wrap=pthread_create")
+
+# Safety net for the -pthread/whole-archive duplication described above: any
+# residual duplicate libpthread members are identical, first-wins is correct.
+target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--allow-multiple-definition")
 
 # Link libraries - borealis + app platform libs from toolchain
 # Order matters: libraries that PROVIDE symbols must come AFTER libraries that NEED them
