@@ -1,4 +1,5 @@
 #include "app/sendspin_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_client.hpp"
 #include "player/mpv_player.hpp"
 #include "app.h"
@@ -29,6 +30,7 @@ bool SendspinClient::connectUrl(const std::string& wsUrl,
                                  const std::string& clientId, const std::string& clientName) {
     disconnect();
 
+    m_remoteMode = false;
     m_clientId = clientId;
     m_clientName = clientName;
 
@@ -70,11 +72,64 @@ bool SendspinClient::connectUrl(const std::string& wsUrl,
     return true;
 }
 
+bool SendspinClient::connectRemote(const std::string& clientId, const std::string& clientName) {
+    disconnect();
+
+    m_remoteMode = true;
+    m_clientId = clientId;
+    m_clientName = clientName;
+
+    setState(SendspinState::CONNECTING);
+    brls::Logger::info("Sendspin: connecting via remote-access data channel");
+
+    // Start the local HTTP audio stream server before connecting
+    if (!m_audioServer.isRunning()) {
+        if (!m_audioServer.start()) {
+            brls::Logger::error("Sendspin: failed to start audio stream server");
+            setState(SendspinState::ERROR);
+            return false;
+        }
+    }
+
+    WebRTCClient& rtc = WebRTCClient::instance();
+    rtc.setSendspinTextCallback([this](const std::string& msg) {
+        onTextMessage(msg);
+    });
+    rtc.setSendspinBinaryCallback([this](const uint8_t* data, size_t size) {
+        onBinaryData(data, size);
+    });
+    // Handshake when the channel is open (fires immediately if it already is)
+    rtc.setSendspinOpenCallback([this]() {
+        brls::Logger::info("Sendspin: remote channel open, sending hello");
+        setState(SendspinState::HANDSHAKING);
+        sendClientHello();
+    });
+
+    return true;
+}
+
+bool SendspinClient::sendRaw(const std::string& text) {
+    if (m_remoteMode) {
+        return WebRTCClient::instance().sendSendspinText(text);
+    }
+    return m_ws.send(text);
+}
+
 void SendspinClient::disconnect() {
     if (m_state.load() == SendspinState::DISCONNECTED) return;
 
     brls::Logger::info("Sendspin: disconnecting");
-    m_ws.disconnect();
+    if (m_remoteMode) {
+        // The data channel belongs to the shared remote-access session
+        // (owned by MAClient); just stop listening on it.
+        WebRTCClient& rtc = WebRTCClient::instance();
+        rtc.setSendspinTextCallback(nullptr);
+        rtc.setSendspinBinaryCallback(nullptr);
+        rtc.setSendspinOpenCallback(nullptr);
+        m_remoteMode = false;
+    } else {
+        m_ws.disconnect();
+    }
     m_audioServer.signalStreamEnd();
     setState(SendspinState::DISCONNECTED);
 }
@@ -135,7 +190,7 @@ void SendspinClient::sendClientHello() {
     msg["payload"] = payload;
 
     brls::Logger::info("Sendspin: sending client/hello as '{}'", m_clientName);
-    m_ws.send(msg.dump());
+    sendRaw(msg.dump());
 }
 
 void SendspinClient::onTextMessage(const std::string& message) {
@@ -162,7 +217,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         playerState["muted"] = Json(false);
         statePayload["player"] = playerState;
         stateMsg["payload"] = statePayload;
-        m_ws.send(stateMsg.dump());
+        sendRaw(stateMsg.dump());
 
         setState(SendspinState::CONNECTED);
 
@@ -263,7 +318,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
             now.time_since_epoch()).count();
         timePayload["client_transmitted"] = Json(static_cast<int>(us & 0x7FFFFFFF));
         timeMsg["payload"] = timePayload;
-        m_ws.send(timeMsg.dump());
+        sendRaw(timeMsg.dump());
     }
     else if (type == "server/command") {
         // Server command (e.g., volume change)

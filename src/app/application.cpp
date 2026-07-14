@@ -90,6 +90,16 @@ void Application::shutdown() {
 void Application::connectSendspin() {
     if (m_serverUrl.empty()) return;
 
+    // Remote access (server is a Remote ID): audio flows over the WebRTC
+    // 'sendspin' data channel instead of a direct WebSocket.
+    if (MAClient::isRemoteId(m_serverUrl)) {
+        std::string clientId = "vita_ma_player";
+        std::string clientName = m_settings.sendspinPlayerName;
+        if (clientName.empty()) clientName = "PS Vita";
+        SendspinClient::instance().connectRemote(clientId, clientName);
+        return;
+    }
+
     // Parse scheme + authority from the server URL.
     // e.g. "http://192.168.1.28:8095" or "https://music.example.com"
     std::string scheme;

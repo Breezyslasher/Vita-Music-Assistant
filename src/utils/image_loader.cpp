@@ -5,6 +5,7 @@
 
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
+#include "app/webrtc_client.hpp"
 #include <fstream>
 #include <vector>
 #include <chrono>
@@ -30,6 +31,26 @@
 #include "stb_image.h"
 
 namespace vita_ma {
+
+// Fetch image bytes either directly over HTTP(S) or - when the URL is a
+// server-relative path like "/imageproxy?..." (remote-access mode) - through
+// the WebRTC http-proxy tunnel. Called from background threads only.
+static HttpResponse fetchImageBytes(const std::string& url) {
+    if (!url.empty() && url[0] == '/') {
+        HttpResponse resp;
+        int status = 0;
+        std::string body;
+        if (WebRTCClient::instance().httpProxyFetch("GET", url, 20000, status, body) &&
+            status >= 200 && status < 300) {
+            resp.success = true;
+            resp.statusCode = status;
+            resp.body = std::move(body);
+        }
+        return resp;
+    }
+    HttpClient client;
+    return client.get(url);
+}
 
 std::map<std::string, ImageLoader::CacheEntry> ImageLoader::s_cache;
 std::list<std::string> ImageLoader::s_lruOrder;
@@ -98,8 +119,7 @@ void ImageLoader::loadAsync(const std::string& url, LoadCallback callback,
         // Check if cancelled before making the HTTP request.
         if (!alive->load() || gen != s_generation.load()) return;
 
-        HttpClient client;
-        HttpResponse resp = client.get(url);
+        HttpResponse resp = fetchImageBytes(url);
 
         if (resp.success && !resp.body.empty()) {
             // Cache the image data
@@ -265,8 +285,7 @@ void ImageLoader::loadCoverAsync(const std::string& url, CoverReadyCallback call
         // Get the raw encoded bytes: cache first, otherwise download and cache.
         std::vector<uint8_t> bytes;
         if (!cacheGetBytes(url, bytes)) {
-            HttpClient client;
-            HttpResponse resp = client.get(url);
+            HttpResponse resp = fetchImageBytes(url);
             if (!resp.success || resp.body.empty()) return;
             bytes.assign(resp.body.begin(), resp.body.end());
             cachePutBytes(url, bytes);
