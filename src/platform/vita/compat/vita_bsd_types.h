@@ -28,4 +28,16 @@
 #include <netinet/in.h>
 #include <errno.h>
 
+/* Constants newlib doesn't provide. usrsctp only compares against ERESTART
+ * (never a case label), so any distinct value works; 85 matches Linux. */
+#ifndef UIO_MAXIOV
+#define UIO_MAXIOV 1024
+#endif
+#ifndef ERESTART
+#define ERESTART 85
+#endif
+#ifndef SOMAXCONN
+#define SOMAXCONN 128
+#endif
+
 #endif /* VITA_BSD_TYPES_H */
