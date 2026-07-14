@@ -145,6 +145,18 @@ else()
     message(FATAL_ERROR "Patch file not found: ${USRSCTP_ENV_PATCH}")
 endif()
 
+# libdatachannel patch: its mbedTLS DTLS code sets SRTP protection profiles
+# unconditionally, but vitasdk's mbedTLS is built without MBEDTLS_SSL_DTLS_SRTP.
+# SRTP is only needed for media (we build NO_MEDIA); guard those two spots.
+set(DC_DTLS_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_dtlstransport.cpp)
+set(DC_DTLS_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/dtlstransport.cpp)
+if(EXISTS ${DC_DTLS_PATCH})
+    message(STATUS "Applying patch: libdatachannel dtlstransport.cpp (no DTLS-SRTP)")
+    configure_file(${DC_DTLS_PATCH} ${DC_DTLS_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${DC_DTLS_PATCH}")
+endif()
+
 # Application source files
 set(APP_SOURCES
     # Main entry
