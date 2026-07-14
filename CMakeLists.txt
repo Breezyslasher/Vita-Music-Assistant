@@ -149,6 +149,10 @@ foreach(_rtc_t IN ITEMS datachannel-static juice-static usrsctp)
                 set_target_properties(${_rtc_t} PROPERTIES ${_prop} "${_libs}")
             endif()
         endforeach()
+        # The deps force PIC on, but -fPIC emits GOT-relative relocations
+        # (R_ARM_BASE_PREL) that vita-elf-create cannot convert. Vita homebrew
+        # is always non-PIC.
+        set_target_properties(${_rtc_t} PROPERTIES POSITION_INDEPENDENT_CODE OFF)
     endif()
 endforeach()
 
