@@ -39,5 +39,23 @@
 #ifndef SOMAXCONN
 #define SOMAXCONN 128
 #endif
+#ifndef IPPORT_RESERVED
+#define IPPORT_RESERVED 1024
+#endif
+
+/* Ancillary (control) message support: vitasdk defines struct msghdr with
+ * msg_control/msg_controllen but not struct cmsghdr or the CMSG_* macros.
+ * usrsctp iterates control data manually with CMSG_ALIGN. */
+#ifndef CMSG_ALIGN
+struct cmsghdr {
+    socklen_t cmsg_len;   /* data byte count, including header */
+    int       cmsg_level; /* originating protocol */
+    int       cmsg_type;  /* protocol-specific type */
+};
+#define CMSG_ALIGN(len) (((len) + sizeof(long) - 1) & ~(sizeof(long) - 1))
+#define CMSG_LEN(len)   (CMSG_ALIGN(sizeof(struct cmsghdr)) + (len))
+#define CMSG_SPACE(len) (CMSG_ALIGN(sizeof(struct cmsghdr)) + CMSG_ALIGN(len))
+#define CMSG_DATA(cmsg) ((unsigned char *)((struct cmsghdr *)(cmsg) + 1))
+#endif
 
 #endif /* VITA_BSD_TYPES_H */
