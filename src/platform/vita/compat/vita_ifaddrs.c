@@ -8,9 +8,13 @@
 
 #include "ifaddrs.h"
 #include "net/if.h"
+#include "sys/ioctl.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
@@ -108,4 +112,27 @@ unsigned int if_nametoindex(const char *ifname) {
     if (strcmp(ifname, "lo0") == 0) return 1;
     if (strcmp(ifname, "wlan0") == 0) return 2;
     return 0;
+}
+
+/* Minimal ioctl(): vitasdk newlib has none. libjuice/usrsctp only use
+ * FIONBIO on sockets, which maps to fcntl(F_SETFL, O_NONBLOCK) - newlib's
+ * fcntl forwards that to sceNetSetsockopt(SO_NONBLOCK). */
+int ioctl(int fd, unsigned long request, ...) {
+    if (request == FIONBIO) {
+        va_list args;
+        va_start(args, request);
+        int *val = va_arg(args, int *);
+        va_end(args);
+
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags < 0) flags = 0;
+        if (val && *val) {
+            flags |= O_NONBLOCK;
+        } else {
+            flags &= ~O_NONBLOCK;
+        }
+        return fcntl(fd, F_SETFL, flags);
+    }
+    errno = ENOSYS;
+    return -1;
 }

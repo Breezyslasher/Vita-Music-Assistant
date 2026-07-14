@@ -115,13 +115,27 @@ add_subdirectory(lib/libdatachannel EXCLUDE_FROM_ALL)
 # Vita compatibility shims for the vendored deps (see files for details)
 set(VITA_RTC_COMPAT ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/vita/compat)
 if(TARGET juice-static)
-    # Provides <ifaddrs.h> and <net/if.h>, which vitasdk newlib lacks
+    # Compat headers (<ifaddrs.h>, <net/if.h>, <sys/ioctl.h>) + endianness and
+    # IPv6 constants that vitasdk newlib lacks
     target_include_directories(juice-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
+    target_compile_options(juice-static PRIVATE
+        -include ${VITA_RTC_COMPAT}/vita_juice_compat.h)
 endif()
 if(TARGET usrsctp)
     # newlib needs BSD visibility + base headers force-included first
     target_compile_options(usrsctp PRIVATE -include ${VITA_RTC_COMPAT}/vita_bsd_types.h)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
+endif()
+
+# usrsctp patch: its RNG selection #errors on unknown platforms; add a Vita
+# branch backed by sceKernelGetRandomNumber (exported by SceLibKernel).
+set(USRSCTP_ENV_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/usrsctp_user_environment.c)
+set(USRSCTP_ENV_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/usrsctp/usrsctplib/user_environment.c)
+if(EXISTS ${USRSCTP_ENV_PATCH})
+    message(STATUS "Applying patch: usrsctp user_environment.c (Vita RNG)")
+    configure_file(${USRSCTP_ENV_PATCH} ${USRSCTP_ENV_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${USRSCTP_ENV_PATCH}")
 endif()
 
 # Application source files
