@@ -94,6 +94,36 @@ endif()
 # Add Borealis library subdirectory
 add_subdirectory(${BOREALIS_LIBRARY})
 
+# ---------------------------------------------------------------------------
+# libdatachannel: WebRTC data channels (ICE via libjuice, SCTP via usrsctp,
+# DTLS via the mbedTLS already shipped with this app). Used for Music
+# Assistant remote access (signaling.music-assistant.io + P2P data channels).
+set(NO_MEDIA ON CACHE BOOL "" FORCE)       # no RTP/SRTP audio-video transport
+set(NO_WEBSOCKET ON CACHE BOOL "" FORCE)   # we have our own WebSocket client
+set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+set(NO_TESTS ON CACHE BOOL "" FORCE)
+set(USE_MBEDTLS ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# usrsctp: userspace AF_CONN mode only (no kernel INET sockets on Vita)
+set(sctp_inet OFF CACHE BOOL "" FORCE)
+set(sctp_inet6 OFF CACHE BOOL "" FORCE)
+set(sctp_build_programs OFF CACHE BOOL "" FORCE)
+set(sctp_build_shared_lib OFF CACHE BOOL "" FORCE)
+set(sctp_werror OFF CACHE BOOL "" FORCE)
+add_subdirectory(lib/libdatachannel EXCLUDE_FROM_ALL)
+
+# Vita compatibility shims for the vendored deps (see files for details)
+set(VITA_RTC_COMPAT ${CMAKE_CURRENT_SOURCE_DIR}/src/platform/vita/compat)
+if(TARGET juice-static)
+    # Provides <ifaddrs.h> and <net/if.h>, which vitasdk newlib lacks
+    target_include_directories(juice-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
+endif()
+if(TARGET usrsctp)
+    # newlib needs BSD visibility + base headers force-included first
+    target_compile_options(usrsctp PRIVATE -include ${VITA_RTC_COMPAT}/vita_bsd_types.h)
+    target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
+endif()
+
 # Application source files
 set(APP_SOURCES
     # Main entry
@@ -137,6 +167,9 @@ set(APP_SOURCES
     src/utils/image_loader.cpp
     src/utils/audio_stream_server.cpp
     src/utils/vita_stubs.c
+
+    # Vita platform shims for libdatachannel deps
+    src/platform/vita/compat/vita_ifaddrs.c
 )
 
 # Include directories
@@ -161,6 +194,10 @@ target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--wrap=pthread_create")
 target_link_libraries(${PROJECT_NAME}
     borealis
     ${APP_PLATFORM_LIB}
+
+    # WebRTC data channels (pulls in juice-static + usrsctp transitively;
+    # mbedTLS symbols resolve from the mbedtls libs listed further down)
+    datachannel-static
 
     # External libraries
     curl
