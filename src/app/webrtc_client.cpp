@@ -1,9 +1,6 @@
 #include "app/webrtc_client.hpp"
+#include "utils/http_client.hpp"
 #include <borealis.hpp>
-#include <cstring>
-#include <sstream>
-#include <thread>
-#include <chrono>
 
 namespace vita_ma {
 
@@ -12,230 +9,115 @@ WebRTCClient& WebRTCClient::instance() {
     return inst;
 }
 
-bool WebRTCClient::connectRemote(const std::string& remoteId, const std::string& authToken) {
+bool WebRTCClient::connectRemote(const std::string& remoteId) {
     if (m_state.load() != WebRTCState::DISCONNECTED) {
         disconnect();
     }
 
     m_remoteId = remoteId;
-    m_authToken = authToken;
-    m_shouldReconnect.store(true);
-
     setState(WebRTCState::CONNECTING_SIGNALING);
-    brls::Logger::info("WebRTC: connecting to remote {}", remoteId);
+    brls::Logger::info("RemoteAccess: connecting to signaling for {}", remoteId);
 
-    // Set up signaling WebSocket callbacks
     m_signalingWs.setOnMessage([this](const std::string& msg) {
         onSignalingMessage(msg);
     });
     m_signalingWs.setOnClose([this](int code, const std::string& reason) {
-        onSignalingClose(code, reason);
+        brls::Logger::info("RemoteAccess: signaling closed ({}: {})", code, reason);
+        if (m_state.load() != WebRTCState::ERROR) {
+            setState(WebRTCState::DISCONNECTED);
+        }
     });
     m_signalingWs.setOnError([this](const std::string& error) {
-        onSignalingError(error);
+        brls::Logger::error("RemoteAccess: signaling error: {}", error);
+        setState(WebRTCState::ERROR, "Signaling connection failed");
     });
 
-    // Connect to signaling server
     if (!m_signalingWs.connect(m_signalingUrl)) {
-        brls::Logger::error("WebRTC: failed to connect to signaling server");
-        setState(WebRTCState::ERROR);
+        setState(WebRTCState::ERROR, "Could not reach signaling server");
         return false;
     }
 
+    // Ask the signaling server to pair us with the registered MA instance.
+    Json msg;
+    msg["type"] = Json(std::string("connect-request"));
+    msg["remoteId"] = Json(m_remoteId);
+    if (!m_signalingWs.send(msg.dump())) {
+        setState(WebRTCState::ERROR, "Failed to send connect-request");
+        return false;
+    }
+    setState(WebRTCState::SIGNALING_CONNECTED);
     return true;
 }
 
 void WebRTCClient::disconnect() {
-    m_shouldReconnect.store(false);
     m_signalingWs.disconnect();
-    m_relayMode = false;
     m_sessionId.clear();
-    m_localSdp.clear();
-    m_remoteSdp.clear();
-    m_localCandidates.clear();
-    m_remoteCandidates.clear();
     setState(WebRTCState::DISCONNECTED);
-}
-
-bool WebRTCClient::sendMessage(const std::string& message) {
-    if (m_state.load() != WebRTCState::CONNECTED) {
-        brls::Logger::error("WebRTC: not connected, cannot send message");
-        return false;
-    }
-
-    if (m_relayMode) {
-        sendViaRelay(message);
-        return true;
-    }
-
-    // In true P2P mode, send through data channel
-    // On Vita, we always use relay mode since we don't have native WebRTC
-    sendViaRelay(message);
-    return true;
 }
 
 void WebRTCClient::onSignalingMessage(const std::string& message) {
     Json msg = Json::parse(message);
+    if (!msg.has("type")) return;
+    std::string type = msg["type"].str();
 
-    if (msg.has("type")) {
-        std::string type = msg["type"].str();
-
-        if (type == "welcome") {
-            // Signaling server accepted our connection
-            setState(WebRTCState::SIGNALING_CONNECTED);
-            brls::Logger::info("WebRTC: signaling connected, session: {}",
-                msg.has("session_id") ? msg["session_id"].str() : "unknown");
-
-            if (msg.has("session_id")) {
-                m_sessionId = msg["session_id"].str();
-            }
-
-            // Register ourselves and request connection to remote peer
-            Json connectMsg;
-            connectMsg["type"] = Json("connect_to_peer");
-            connectMsg["remote_id"] = Json(m_remoteId);
-            connectMsg["client_type"] = Json("vita_music_assistant");
-            connectMsg["auth_token"] = Json(m_authToken);
-            m_signalingWs.send(connectMsg.dump());
-
-            setState(WebRTCState::NEGOTIATING);
-        }
-        else if (type == "peer_connected") {
-            // The MA server peer is available
-            brls::Logger::info("WebRTC: peer connected, sending offer");
-            sendOffer();
-        }
-        else if (type == "answer") {
-            // SDP answer from the MA server
-            handleAnswer(msg);
-        }
-        else if (type == "ice_candidate") {
-            // ICE candidate from the MA server
-            handleIceCandidate(msg);
-        }
-        else if (type == "data_channel_open") {
-            // Data channel is established (or relay mode activated)
-            m_relayMode = true;
-            setState(WebRTCState::CONNECTED);
-            brls::Logger::info("WebRTC: data channel open (relay mode)");
-
-            // Authenticate over the data channel
-            Json authMsg;
-            authMsg["message_id"] = Json("webrtc-auth");
-            authMsg["command"] = Json("auth");
-            Json args;
-            args["token"] = Json(m_authToken);
-            authMsg["args"] = args;
-            sendViaRelay(authMsg.dump());
-        }
-        else if (type == "relay_message") {
-            // Message relayed from the MA server through signaling
-            if (msg.has("data")) {
-                std::string data = msg["data"].str();
-                handleDataChannelMessage(data);
-            }
-        }
-        else if (type == "error") {
-            std::string error = msg.has("message") ? msg["message"].str() : "Unknown signaling error";
-            brls::Logger::error("WebRTC: signaling error: {}", error);
-
-            if (msg.has("code") && msg["code"].str() == "peer_not_found") {
-                brls::Logger::error("WebRTC: remote server {} not available", m_remoteId);
-            }
-            setState(WebRTCState::ERROR);
-        }
-        else if (type == "peer_disconnected") {
-            brls::Logger::info("WebRTC: remote peer disconnected");
-            if (m_shouldReconnect.load()) {
-                attemptReconnect();
-            } else {
-                setState(WebRTCState::DISCONNECTED);
-            }
-        }
+    if (type == "connected") {
+        // Signaling accepted the connect-request and the server is registered.
+        if (msg.has("sessionId")) m_sessionId = msg["sessionId"].str();
+        brls::Logger::info("RemoteAccess: paired with {} (session {})",
+                           m_remoteId, m_sessionId);
+    }
+    else if (type == "session-ready") {
+        // The gateway is ready for WebRTC negotiation. A real client would now
+        // create an RTCPeerConnection with the provided iceServers and send an
+        // SDP offer. The Vita has no ICE/DTLS/SCTP stack, so this is where the
+        // connection honestly ends.
+        if (msg.has("sessionId")) m_sessionId = msg["sessionId"].str();
+        setState(WebRTCState::SESSION_READY);
+        brls::Logger::error(
+            "RemoteAccess: server {} is reachable, but completing the connection "
+            "requires a WebRTC P2P transport (ICE/DTLS/SCTP), which is not yet "
+            "available on PS Vita. Use a publicly reachable server URL (https://...) "
+            "for remote playback instead.", m_remoteId);
+        setState(WebRTCState::ERROR,
+                 "Server online, but P2P transport is not supported on Vita yet");
+        m_signalingWs.disconnect();
+    }
+    else if (type == "error") {
+        std::string detail = msg.has("message") ? msg["message"].str()
+                                                 : "Unknown signaling error";
+        brls::Logger::error("RemoteAccess: signaling error: {}", detail);
+        setState(WebRTCState::ERROR, detail);
     }
 }
 
-void WebRTCClient::onSignalingClose(int code, const std::string& reason) {
-    brls::Logger::info("WebRTC: signaling closed ({}: {})", code, reason);
-
-    if (m_state.load() == WebRTCState::CONNECTED && m_shouldReconnect.load()) {
-        setState(WebRTCState::RECONNECTING);
-        attemptReconnect();
-    } else {
-        setState(WebRTCState::DISCONNECTED);
-    }
-}
-
-void WebRTCClient::onSignalingError(const std::string& error) {
-    brls::Logger::error("WebRTC: signaling error: {}", error);
-}
-
-void WebRTCClient::sendOffer() {
-    // On PS Vita, we don't have native WebRTC.
-    // Request the signaling server to set up relay mode instead.
-    Json msg;
-    msg["type"] = Json("request_relay");
-    msg["remote_id"] = Json(m_remoteId);
-    msg["client_id"] = Json(m_sessionId);
-    m_signalingWs.send(msg.dump());
-
-    brls::Logger::info("WebRTC: requested relay mode (no native WebRTC on Vita)");
-}
-
-void WebRTCClient::handleAnswer(const Json& data) {
-    if (data.has("sdp")) {
-        m_remoteSdp = data["sdp"].str();
-        brls::Logger::info("WebRTC: received SDP answer");
-    }
-}
-
-void WebRTCClient::handleIceCandidate(const Json& data) {
-    IceCandidate candidate;
-    if (data.has("candidate")) candidate.candidate = data["candidate"].str();
-    if (data.has("sdpMid")) candidate.sdpMid = data["sdpMid"].str();
-    if (data.has("sdpMLineIndex")) candidate.sdpMLineIndex = data["sdpMLineIndex"].intVal();
-    m_remoteCandidates.push_back(candidate);
-    brls::Logger::info("WebRTC: received ICE candidate");
-}
-
-void WebRTCClient::handleDataChannelMessage(const std::string& message) {
-    // Forward received messages to the message callback
-    // These are standard MA WebSocket API messages
-    if (m_messageCallback) {
-        brls::sync([this, message]() {
-            m_messageCallback(message);
-        });
-    }
-}
-
-void WebRTCClient::setState(WebRTCState state) {
+void WebRTCClient::setState(WebRTCState state, const std::string& detail) {
     m_state.store(state);
     if (m_stateCallback) {
-        brls::sync([this, state]() {
-            m_stateCallback(state);
-        });
+        auto cb = m_stateCallback;
+        brls::sync([cb, state, detail]() { cb(state, detail); });
     }
 }
 
-void WebRTCClient::sendViaRelay(const std::string& message) {
-    Json relayMsg;
-    relayMsg["type"] = Json("relay_message");
-    relayMsg["remote_id"] = Json(m_remoteId);
-    relayMsg["data"] = Json(message);
-    m_signalingWs.send(relayMsg.dump());
-}
-
-void WebRTCClient::attemptReconnect() {
-    setState(WebRTCState::RECONNECTING);
-    brls::Logger::info("WebRTC: scheduling reconnect in 5s...");
-
-    std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        if (m_shouldReconnect.load()) {
-            brls::Logger::info("WebRTC: attempting reconnect to {}", m_remoteId);
-            connectRemote(m_remoteId, m_authToken);
+void WebRTCClient::checkRemoteOnline(const std::string& remoteId,
+                                     std::function<void(bool reachable, bool online)> cb) {
+    if (remoteId.empty()) {
+        if (cb) cb(false, false);
+        return;
+    }
+    std::string url = "https://signaling.music-assistant.io/api/check/" + remoteId;
+    brls::async([url, cb]() {
+        HttpClient client;
+        HttpResponse resp = client.get(url);
+        bool reachable = resp.success;
+        bool online = false;
+        if (resp.success && !resp.body.empty()) {
+            Json result = Json::parse(resp.body);
+            online = result.has("online") && result["online"].boolVal();
         }
-    }).detach();
+        if (cb) {
+            brls::sync([cb, reachable, online]() { cb(reachable, online); });
+        }
+    });
 }
 
 void WebRTCClient::fetchRemoteAccessInfo(MAClient& client,

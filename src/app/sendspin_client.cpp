@@ -20,13 +20,20 @@ SendspinClient& SendspinClient::instance() {
 
 bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
                               const std::string& clientId, const std::string& clientName) {
+    // Plain local connection on the dedicated Sendspin port.
+    std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort) + "/sendspin";
+    return connectUrl(url, clientId, clientName);
+}
+
+bool SendspinClient::connectUrl(const std::string& wsUrl,
+                                 const std::string& clientId, const std::string& clientName) {
     disconnect();
 
     m_clientId = clientId;
     m_clientName = clientName;
 
     setState(SendspinState::CONNECTING);
-    brls::Logger::info("Sendspin: connecting to {}:{}/sendspin", serverIp, sendspinPort);
+    brls::Logger::info("Sendspin: connecting to {}", wsUrl);
 
     // Start the local HTTP audio stream server before connecting
     if (!m_audioServer.isRunning()) {
@@ -48,11 +55,10 @@ bool SendspinClient::connect(const std::string& serverIp, int sendspinPort,
         onClose(code, reason);
     });
 
-    // Connect to the MA server's Sendspin WebSocket port
+    // Connect to the Sendspin WebSocket endpoint.
     // No subprotocol - the Sendspin server doesn't use WebSocket subprotocols
-    std::string url = "ws://" + serverIp + ":" + std::to_string(sendspinPort) + "/sendspin";
-    if (!m_ws.connect(url)) {
-        brls::Logger::error("Sendspin: connection failed to {}", url);
+    if (!m_ws.connect(wsUrl)) {
+        brls::Logger::error("Sendspin: connection failed to {}", wsUrl);
         setState(SendspinState::ERROR);
         return false;
     }

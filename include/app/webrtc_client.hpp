@@ -1,38 +1,67 @@
 #pragma once
 
 /**
- * Vita Music Assistant - WebRTC Remote Access Client
+ * Vita Music Assistant - Music Assistant Remote Access client
  *
- * Implements WebRTC-based remote access to Music Assistant servers.
- * Uses the signaling server at wss://signaling.music-assistant.io/ws
- * to establish a peer-to-peer data channel connection through NAT/firewalls.
+ * How MA remote access actually works (verified against
+ * music-assistant/signaling-server and the server's
+ * controllers/webserver/remote_access/gateway.py):
  *
- * Once connected, the data channel transports the same WebSocket API messages
- * as a local connection, so the rest of the app works identically.
+ *  1. The MA server registers at wss://signaling.music-assistant.io/ws with
+ *     {"type":"register-server","remoteId":"MA-XXXX-XXXX","iceServers":[...]}.
+ *  2. A client connects to the same signaling server and sends
+ *     {"type":"connect-request","remoteId":"MA-XXXX-XXXX"}; the server replies
+ *     {"type":"connected","remoteId","sessionId"} and the gateway follows with
+ *     {"type":"session-ready","sessionId","iceServers":[...]}.
+ *  3. The client then opens a REAL WebRTC peer connection (ICE via the given
+ *     STUN servers -> DTLS -> SCTP) and exchanges {"type":"offer"/"answer"/
+ *     "ice-candidate","sessionId","data":{...}} through the signaling socket.
+ *  4. Over the established connection the client creates two data channels:
+ *       "ma-api"   -> bridged by the gateway to the local WS API (/ws)
+ *       "sendspin" -> bridged to the local Sendspin server (:8927)
+ *     HTTP assets (imageproxy etc.) are tunneled as
+ *     {"type":"http-proxy-request",...} / {"type":"http-proxy-response",...}
+ *     messages over the ma-api channel.
+ *
+ * The signaling server offers NO relay/fallback data path - after signaling,
+ * all traffic is peer-to-peer. That means a client without a genuine WebRTC
+ * stack (ICE + DTLS + SCTP data channels) cannot transport any data.
+ *
+ * Status on PS Vita: no native WebRTC stack is available. A port of
+ * libdatachannel (libjuice + usrsctp + mbedTLS backend) is believed feasible -
+ * usrsctp has previously been built for the Vita in this repo's history - but
+ * it is a substantial effort that needs on-device iteration. Until that
+ * exists, this class implements what IS possible today:
+ *   - fetchRemoteAccessInfo(): read remote-access status/Remote ID from a
+ *     locally connected server.
+ *   - checkRemoteOnline(): ask the signaling server whether a Remote ID is
+ *     currently registered (GET /api/check/:remoteId).
+ *   - connectRemote(): performs the real signaling handshake, then fails with
+ *     a clear error at the point where the P2P transport would be needed.
+ *
+ * For remote playback today, use a publicly reachable server URL instead
+ * (https:// server URL -> API over wss://, Sendspin over wss://host/sendspin,
+ * cover art over https - all already supported by this app).
  */
 
 #include "app/websocket_client.hpp"
 #include "app/ma_client.hpp"
 #include <string>
 #include <functional>
-#include <mutex>
 #include <atomic>
-#include <vector>
 
 namespace vita_ma {
 
-// WebRTC connection states
+// Remote access connection states
 enum class WebRTCState {
     DISCONNECTED,
     CONNECTING_SIGNALING,  // Connecting to signaling server
-    SIGNALING_CONNECTED,   // Connected to signaling, waiting for peer
-    NEGOTIATING,           // ICE/SDP exchange in progress
-    CONNECTED,             // Data channel open, ready for API calls
-    RECONNECTING,
+    SIGNALING_CONNECTED,   // connect-request sent, waiting for session
+    SESSION_READY,         // Gateway answered; P2P negotiation would start here
     ERROR
 };
 
-// Remote access info from the MA server
+// Remote access info from the MA server (remote_access/info command)
 struct RemoteAccessInfo {
     bool enabled = false;
     bool connected = false;
@@ -40,55 +69,31 @@ struct RemoteAccessInfo {
     std::string signalingUrl;   // wss://signaling.music-assistant.io/ws
 };
 
-// ICE candidate
-struct IceCandidate {
-    std::string candidate;
-    std::string sdpMid;
-    int sdpMLineIndex = 0;
-};
+using WebRTCStateCallback = std::function<void(WebRTCState state, const std::string& detail)>;
 
-// Callback types
-using WebRTCStateCallback = std::function<void(WebRTCState state)>;
-using WebRTCMessageCallback = std::function<void(const std::string& message)>;
-
-/**
- * WebRTC Remote Access Client
- *
- * On PS Vita, we implement a simplified WebRTC-like connection:
- * 1. Connect to signaling server via WebSocket
- * 2. Exchange SDP offer/answer with the MA server peer
- * 3. Exchange ICE candidates
- * 4. Establish a data channel for API messages
- *
- * Since PS Vita lacks native WebRTC, we use the signaling server as a relay
- * when direct P2P fails, with the data channel messages tunneled through
- * the signaling WebSocket as a fallback.
- */
 class WebRTCClient {
 public:
     static WebRTCClient& instance();
 
-    // Connect to a remote MA server using its Remote ID
-    // remoteId format: "MA-XXXX-XXXX"
-    bool connectRemote(const std::string& remoteId, const std::string& authToken);
+    // Perform the real signaling handshake against the MA signaling server.
+    // On Vita this cannot complete (no P2P transport); it will reach
+    // SESSION_READY at best and then fail with a descriptive error. Kept so the
+    // signaling layer is correct and testable for a future native transport.
+    bool connectRemote(const std::string& remoteId);
 
-    // Disconnect from the remote server
     void disconnect();
 
-    // Send a message through the data channel (same format as WebSocket API)
-    bool sendMessage(const std::string& message);
-
-    // State
     WebRTCState getState() const { return m_state.load(); }
-    bool isConnected() const { return m_state.load() == WebRTCState::CONNECTED; }
-    const std::string& getRemoteId() const { return m_remoteId; }
 
-    // Callbacks
     void setStateCallback(WebRTCStateCallback cb) { m_stateCallback = std::move(cb); }
-    void setMessageCallback(WebRTCMessageCallback cb) { m_messageCallback = std::move(cb); }
+
+    // Ask the signaling server whether a Remote ID is currently registered.
+    // Uses GET https://signaling.music-assistant.io/api/check/<remoteId>,
+    // returning the "online" field. Runs asynchronously; cb on the UI thread.
+    static void checkRemoteOnline(const std::string& remoteId,
+                                  std::function<void(bool reachable, bool online)> cb);
 
     // Get remote access info from a locally-connected MA server
-    // (used to discover the Remote ID before connecting remotely)
     static void fetchRemoteAccessInfo(MAClient& client,
         std::function<void(bool success, const RemoteAccessInfo& info)> cb);
 
@@ -96,45 +101,16 @@ private:
     WebRTCClient() = default;
     ~WebRTCClient() = default;
 
-    // Signaling WebSocket connection
     WebSocketClient m_signalingWs;
     std::string m_remoteId;
-    std::string m_authToken;
+    std::string m_sessionId;
     std::string m_signalingUrl = "wss://signaling.music-assistant.io/ws";
 
-    // State
     std::atomic<WebRTCState> m_state{WebRTCState::DISCONNECTED};
     WebRTCStateCallback m_stateCallback;
-    WebRTCMessageCallback m_messageCallback;
 
-    // Session
-    std::string m_sessionId;
-    std::string m_localSdp;
-    std::string m_remoteSdp;
-    std::vector<IceCandidate> m_localCandidates;
-    std::vector<IceCandidate> m_remoteCandidates;
-
-    // Signaling message handlers
     void onSignalingMessage(const std::string& message);
-    void onSignalingClose(int code, const std::string& reason);
-    void onSignalingError(const std::string& error);
-
-    // WebRTC negotiation
-    void sendOffer();
-    void handleAnswer(const Json& data);
-    void handleIceCandidate(const Json& data);
-    void handleDataChannelMessage(const std::string& message);
-
-    // State management
-    void setState(WebRTCState state);
-
-    // Reconnection
-    std::atomic<bool> m_shouldReconnect{false};
-    void attemptReconnect();
-
-    // Relay mode: when P2P fails, tunnel messages through signaling server
-    bool m_relayMode = false;
-    void sendViaRelay(const std::string& message);
+    void setState(WebRTCState state, const std::string& detail = "");
 };
 
 } // namespace vita_ma

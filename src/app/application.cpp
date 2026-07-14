@@ -13,6 +13,7 @@
 #include <borealis.hpp>
 #include <fstream>
 #include <cstring>
+#include <cctype>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
@@ -89,31 +90,33 @@ void Application::shutdown() {
 void Application::connectSendspin() {
     if (m_serverUrl.empty()) return;
 
-    // Extract host from server URL (e.g., "http://192.168.1.28:8095" -> "192.168.1.28")
-    std::string host;
-    std::string url = m_serverUrl;
+    // Parse scheme + authority from the server URL.
+    // e.g. "http://192.168.1.28:8095" or "https://music.example.com"
+    std::string scheme;
+    std::string authority = m_serverUrl;  // host[:port]
 
-    // Strip protocol
-    size_t protoEnd = url.find("://");
+    size_t protoEnd = authority.find("://");
     if (protoEnd != std::string::npos) {
-        url = url.substr(protoEnd + 3);
+        scheme = authority.substr(0, protoEnd);
+        for (auto& c : scheme) c = (char)tolower((unsigned char)c);
+        authority = authority.substr(protoEnd + 3);
     }
     // Strip path
-    size_t pathStart = url.find('/');
+    size_t pathStart = authority.find('/');
     if (pathStart != std::string::npos) {
-        url = url.substr(0, pathStart);
-    }
-    // Strip port
-    size_t portStart = url.find(':');
-    if (portStart != std::string::npos) {
-        host = url.substr(0, portStart);
-    } else {
-        host = url;
+        authority = authority.substr(0, pathStart);
     }
 
-    if (host.empty()) {
+    if (authority.empty()) {
         brls::Logger::error("Sendspin: cannot extract host from server URL");
         return;
+    }
+
+    // Host without the port (for the plain local case).
+    std::string host = authority;
+    size_t portStart = host.find(':');
+    if (portStart != std::string::npos) {
+        host = host.substr(0, portStart);
     }
 
     // Use configured player name, falling back to default
@@ -121,8 +124,17 @@ void Application::connectSendspin() {
     std::string clientName = m_settings.sendspinPlayerName;
     if (clientName.empty()) clientName = "PS Vita";
 
-    brls::Logger::info("Sendspin: connecting to {} port 8927", host);
-    SendspinClient::instance().connect(host, 8927, clientId, clientName);
+    if (scheme == "https" || scheme == "wss") {
+        // TLS server URL (remote / reverse-proxied setup): reach Sendspin
+        // through the same proxy on the same authority at /sendspin, so audio
+        // works away from home. Requires the proxy to route /sendspin to the
+        // MA host's port 8927 (plain 8927 is normally not reachable remotely).
+        std::string url = "wss://" + authority + "/sendspin";
+        SendspinClient::instance().connectUrl(url, clientId, clientName);
+    } else {
+        // Plain local setup: connect directly to the Sendspin port.
+        SendspinClient::instance().connect(host, 8927, clientId, clientName);
+    }
 }
 
 void Application::pushLoginActivity() {

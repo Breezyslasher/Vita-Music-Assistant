@@ -73,6 +73,13 @@ public:
     bool connect(const std::string& serverIp, int sendspinPort,
                  const std::string& clientId, const std::string& clientName);
 
+    // Connect to Sendspin at an explicit ws:// or wss:// URL and register as a
+    // player. Used for remote setups where the sendspin endpoint is reached
+    // through a TLS reverse proxy (e.g. wss://host/sendspin) instead of the
+    // plain local port 8927.
+    bool connectUrl(const std::string& wsUrl,
+                    const std::string& clientId, const std::string& clientName);
+
     // Disconnect from Sendspin
     void disconnect();
 
