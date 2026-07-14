@@ -127,7 +127,9 @@ if(TARGET usrsctp)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
 endif()
 if(TARGET datachannel-static)
-    # Socket flags (MSG_NOSIGNAL) newlib doesn't define
+    # Compat headers (<net/if.h>, <ifaddrs.h>, <sys/ioctl.h>) + socket flags
+    # (MSG_NOSIGNAL) that newlib doesn't provide
+    target_include_directories(datachannel-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
     target_compile_options(datachannel-static PRIVATE
         -include ${VITA_RTC_COMPAT}/vita_datachannel_compat.h)
 endif()
