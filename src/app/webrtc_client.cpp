@@ -323,6 +323,11 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
     }
 
     std::lock_guard<std::mutex> lock(m_rtcMutex);
+    auto t0 = std::chrono::steady_clock::now();
+    auto msSince = [&t0]() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - t0).count();
+    };
     try {
         m_pc = std::make_shared<rtc::PeerConnection>(config);
     } catch (const std::exception& e) {
@@ -330,6 +335,7 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
         setState(WebRTCState::ERROR, "Failed to create peer connection");
         return;
     }
+    brls::Logger::info("RemoteAccess: peer connection created (+{}ms)", msSince());
 
     m_pc->onLocalDescription([this](rtc::Description desc) {
         Json msg;
@@ -407,7 +413,9 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
     // triggers automatic offer generation (-> onLocalDescription above).
     try {
         m_apiChannel = m_pc->createDataChannel("ma-api");
+        brls::Logger::info("RemoteAccess: ma-api channel created (+{}ms)", msSince());
         m_sendspinChannel = m_pc->createDataChannel("sendspin");
+        brls::Logger::info("RemoteAccess: sendspin channel created (+{}ms)", msSince());
     } catch (const std::exception& e) {
         brls::Logger::error("RemoteAccess: failed to create data channels: {}", e.what());
         setState(WebRTCState::ERROR, "Failed to create data channels");

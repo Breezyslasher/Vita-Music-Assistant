@@ -397,7 +397,9 @@ DtlsTransport::DtlsTransport(shared_ptr<IceTransport> lower, certificate_ptr cer
 	mbedtls_ctr_drbg_init(&mDrbg);
 	mbedtls_ssl_init(&mSsl);
 	mbedtls_ssl_config_init(&mConf);
-	mbedtls_ctr_drbg_set_prediction_resistance(&mDrbg, MBEDTLS_CTR_DRBG_PR_ON);
+	// Vita: prediction resistance reseeds from the slow platform entropy
+	// source on every DRBG call, crippling the DTLS handshake (ECDHE keygen,
+	// signing, records). PR off is the mbedTLS default.
 
 	try {
 		mbedtls::check(mbedtls_ctr_drbg_seed(&mDrbg, mbedtls_entropy_func, &mEntropy, NULL, 0));

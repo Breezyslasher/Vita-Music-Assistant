@@ -366,6 +366,10 @@ bool Application::loadSettings() {
     if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
     m_settings.selectedPlayerId = extractString("selectedPlayerId");
 
+    // Remote access
+    m_settings.remoteId = extractString("remoteId");
+    m_settings.remoteAccessEnabled = extractBool("remoteAccessEnabled", false);
+
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
 #else
@@ -420,7 +424,9 @@ bool Application::saveSettings() {
     // Player settings
     json += "  \"localPlayback\": " + std::string(m_settings.localPlayback ? "true" : "false") + ",\n";
     json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
-    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\"\n";
+    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
+    json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";
+    json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + "\n";
 
     json += "}\n";
 

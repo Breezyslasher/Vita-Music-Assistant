@@ -1,7 +1,7 @@
 name: Symbolicate crash dump
 
-# Debug helper: symbolicates debug/crash-222.psp2dmp against the unstripped
-# ELF artifact of build #222 (run 29386408455). Temporary - remove with the
+# Debug helper: symbolicates debug/crash-230.psp2dmp against the unstripped
+# ELF artifact of build #230 (run 29391848462). Temporary - remove with the
 # debug/ directory once the crash is fixed.
 
 on:
@@ -22,11 +22,11 @@ jobs:
       - name: Checkout (for the crash dump)
         uses: actions/checkout@v4
 
-      - name: Download unstripped ELF from build 222
+      - name: Download unstripped ELF from build 230
         uses: actions/download-artifact@v4
         with:
-          name: VitaMusicAssistant-ELF-222
-          run-id: 29386408455
+          name: VitaMusicAssistant-ELF-230
+          run-id: 29391848462
           github-token: ${{ github.token }}
           path: elf
 
@@ -70,7 +70,7 @@ jobs:
       - name: Symbolicate
         run: |
           ls -la elf/
-          zcat debug/crash-222.psp2dmp > core.elf
+          zcat debug/crash-230.psp2dmp > core.elf
           cd vita-parse-core
           python3 main.py ../core.elf ../elf/VitaMusicAssistant.elf || true
 
@@ -81,12 +81,7 @@ jobs:
           # text section start to translate runtime addresses.
           TEXT=$(arm-none-eabi-readelf -S elf/VitaMusicAssistant.elf | awk '/ .text/ {print "0x"$5; exit}')
           echo "text vaddr = $TEXT"
-          for OFF in 0x9b4230 0x927f1d 0x9b6f0b 0x9d3d45 0x8a9a81 0xadfa01 0xadf310 0xb24044 \
-                     0x5a345 0x56d65 0x54d91 0x52f93 0x4d733 0x300ec1 0x300925 0x2ffe0f \
-                     0x2ff9b3 0x311289 0x17d51 0x5af5b 0x1674d 0x18cc9 0x2ed16b 0x311f65 \
-                     0x312763 0x2f101d 0x2ee4c9 0x32e72d 0x329241 0x3254d9 0x32053f \
-                     0x16919 0x2ee891 0x310271 0x52813 0x319197 0x318add 0x3181b9 \
-                     0x310453 0x31bb59 0x31b7d9 0x31b397 0x3646bb 0x364211 0x363e57 0x363749; do
+          for OFF in 0x9b6c30 0x92a91d; do
             ADDR=$(printf '0x%x' $(( $OFF + $TEXT )))
             echo "== offset $OFF (elf addr $ADDR)"
             arm-none-eabi-addr2line -e elf/VitaMusicAssistant.elf -f -C -i -p $ADDR
