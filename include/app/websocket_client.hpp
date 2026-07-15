@@ -78,6 +78,11 @@ private:
     std::thread m_receiveThread;
     std::atomic<WsState> m_state{WsState::DISCONNECTED};
     std::mutex m_sendMutex;
+    // Serializes every mbedtls_ssl_read/_write on the shared TLS context -
+    // mbedTLS contexts are not thread-safe, and the receive thread reads while
+    // other threads send. The socket has a short receive timeout so the reader
+    // releases this lock periodically instead of blocking inside TLS forever.
+    std::mutex m_sslMutex;
 
     // Callbacks
     WsMessageCallback m_onMessage;
@@ -88,6 +93,9 @@ private:
     // Low-level I/O
     int rawSend(const uint8_t* data, size_t len);
     int rawRecv(uint8_t* data, size_t len);
+    // Read exactly len bytes, retrying on receive timeouts (rawRecv() == 0)
+    // until the socket is disconnected. Returns false on error/close.
+    bool recvExact(uint8_t* data, size_t len);
     void cleanupSocket();
 };
 

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <cctype>
+#include <mutex>
 
 namespace vita_ma {
 
@@ -113,6 +114,16 @@ WebRTCClient& WebRTCClient::instance() {
 bool WebRTCClient::connectRemote(const std::string& remoteId) {
     disconnect();
 
+    // Initialize the global libdatachannel state (usrsctp stack + DTLS
+    // certificate) up front, in a clean single-threaded context, instead of
+    // lazily inside the DTLS state-change callback mid-handshake.
+    static std::once_flag preloadOnce;
+    std::call_once(preloadOnce, []() {
+        brls::Logger::info("RemoteAccess: initializing WebRTC stack");
+        rtc::Preload();
+        brls::Logger::info("RemoteAccess: WebRTC stack ready");
+    });
+
     m_remoteId = normalizeRemoteId(remoteId);
     setState(WebRTCState::CONNECTING_SIGNALING);
     brls::Logger::info("RemoteAccess: connecting to signaling for {}", m_remoteId);
@@ -151,9 +162,11 @@ bool WebRTCClient::connectRemote(const std::string& remoteId) {
     // Block until the handshake resolves: signaling pairing -> SDP/ICE ->
     // DTLS -> ma-api channel open (CONNECTED), or a failure/timeout. Without
     // this, callers report success as soon as the signaling socket is up.
+    // 60s: the signaling server only answers connect-request once the remote
+    // gateway accepts the session, which has been observed to take >30s.
     {
         std::unique_lock<std::mutex> lock(m_stateMutex);
-        m_stateCv.wait_for(lock, std::chrono::seconds(30), [this]() {
+        m_stateCv.wait_for(lock, std::chrono::seconds(60), [this]() {
             WebRTCState s = m_state.load();
             return s == WebRTCState::CONNECTED || s == WebRTCState::ERROR ||
                    s == WebRTCState::DISCONNECTED;
@@ -164,6 +177,10 @@ bool WebRTCClient::connectRemote(const std::string& remoteId) {
             setState(WebRTCState::ERROR, "Remote connection timed out");
         }
         brls::Logger::error("RemoteAccess: connect failed");
+        // Tear everything down so no zombie negotiation keeps running (and
+        // crashing) in the background after we reported failure.
+        teardownPeerConnection();
+        m_signalingWs.disconnect();
         return false;
     }
     return true;
