@@ -160,7 +160,7 @@ void LoginActivity::onRemoteLoginPressed() {
     app.getSettings().remoteId = m_remoteId;
     app.saveSettings();
 
-    if (statusLabel) statusLabel->setText("Connecting remotely (may take ~15s)...");
+    if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
     std::string user = !m_username.empty() ? m_username : app.getUsername();
     std::string remoteId = m_remoteId;
     std::string token = app.getAuthToken();
@@ -245,7 +245,7 @@ void LoginActivity::onLoginPressed() {
             }
             return;
         }
-        if (statusLabel) statusLabel->setText("Connecting remotely (may take ~10s)...");
+        if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
         std::string user = !m_username.empty() ? m_username : app.getUsername();
         connectWithToken(m_serverUrl, app.getAuthToken(), user);
         return;

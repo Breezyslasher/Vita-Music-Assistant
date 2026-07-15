@@ -112,6 +112,18 @@ WebRTCClient& WebRTCClient::instance() {
 // Signaling
 
 bool WebRTCClient::connectRemote(const std::string& remoteId) {
+    // One attempt at a time: a second button press used to call disconnect()
+    // and tear down the first attempt mid-negotiation.
+    bool expected = false;
+    if (!m_connectInFlight.compare_exchange_strong(expected, true)) {
+        brls::Logger::warning("RemoteAccess: connect already in progress, ignoring");
+        return false;
+    }
+    struct InFlightGuard {
+        std::atomic<bool>& flag;
+        ~InFlightGuard() { flag.store(false); }
+    } inFlightGuard{m_connectInFlight};
+
     disconnect();
 
     // Initialize the global libdatachannel state (usrsctp stack + DTLS

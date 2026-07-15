@@ -528,7 +528,7 @@ void SettingsTab::onRemoteConnect() {
         return;
     }
 
-    brls::Application::notify("Connecting remotely (may take ~10s)...");
+    brls::Application::notify("Connecting remotely (pairing can take ~30s)...");
     std::string username = app.getUsername();
 
     std::thread([remoteId, token, username]() {

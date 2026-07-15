@@ -7,9 +7,12 @@
 #include <sstream>
 #include <algorithm>
 #include <cerrno>
+#include <thread>
+#include <chrono>
 #include <sys/time.h>
 
 #include <sys/socket.h>
+#include <fcntl.h>
 
 #ifdef __vita__
 #include <psp2/net/net.h>
@@ -19,7 +22,6 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <fcntl.h>
 #endif
 
 #include <mbedtls/ssl.h>
@@ -31,11 +33,11 @@
 
 namespace vita_ma {
 
-// TLS receive BIO. Unlike mbedtls_net_recv, this maps a receive timeout on a
-// BLOCKING socket (errno EAGAIN/EWOULDBLOCK, from SO_RCVTIMEO) to
-// MBEDTLS_ERR_SSL_WANT_READ so mbedtls_ssl_read() returns to the caller
-// periodically - required so the receive thread can release the SSL lock and
-// let senders in (the context is not thread-safe).
+// TLS receive BIO. Unlike mbedtls_net_recv, this maps EAGAIN/EWOULDBLOCK on
+// the non-blocking socket to MBEDTLS_ERR_SSL_WANT_READ so mbedtls_ssl_read()
+// returns immediately when no data is pending - required so the receive
+// thread never blocks inside TLS holding the SSL lock (the context is shared
+// with sender threads and is not thread-safe).
 static int wsTlsRecv(void* ctx, unsigned char* buf, size_t len) {
     auto* net = static_cast<mbedtls_net_context*>(ctx);
     int ret = static_cast<int>(::recv(net->fd, buf, len, 0));
@@ -258,14 +260,15 @@ bool WebSocketClient::connect(const std::string& url, const std::string& subprot
     brls::Logger::info("WS connected successfully");
 
     if (m_useSsl) {
-        // Short receive timeout: wsTlsRecv maps it to WANT_READ, so the
-        // receive thread wakes ~4x/second to release the SSL lock (senders
-        // share the TLS context) and to notice disconnect() promptly.
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 250 * 1000;
-        setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO,
-                   reinterpret_cast<const char*>(&tv), sizeof(tv));
+        // Make the socket non-blocking: wsTlsRecv maps EAGAIN to WANT_READ,
+        // so the receive thread never sits inside mbedtls_ssl_read holding
+        // the SSL lock (senders share the TLS context) - recvExact() polls
+        // with a short sleep instead. SO_RCVTIMEO is NOT used because it is
+        // silently ignored on Vita sockets; O_NONBLOCK via fcntl works.
+        int flags = fcntl(m_socket, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(m_socket, F_SETFL, flags | O_NONBLOCK);
+        }
     }
 
     // Start receive thread
@@ -331,7 +334,13 @@ int WebSocketClient::rawSend(const uint8_t* data, size_t len) {
         while (sent < len) {
             int ret = mbedtls_ssl_write(ssl, data + sent, len - sent);
             if (ret < 0) {
-                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE ||
+                    ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                    // Non-blocking socket busy - brief pause, then retry with
+                    // the same arguments as mbedTLS requires.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    continue;
+                }
                 return -1;
             }
             sent += ret;
@@ -374,7 +383,12 @@ bool WebSocketClient::recvExact(uint8_t* data, size_t len) {
         if (m_state.load() == WsState::DISCONNECTED) return false;
         int n = rawRecv(data + got, len - got);
         if (n < 0) return false;
-        if (n == 0) continue;  // receive timeout - poll state and retry
+        if (n == 0) {
+            // No data yet (non-blocking socket) - sleep briefly so senders
+            // can take the SSL lock, then poll again.
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            continue;
+        }
         got += static_cast<size_t>(n);
     }
     return true;

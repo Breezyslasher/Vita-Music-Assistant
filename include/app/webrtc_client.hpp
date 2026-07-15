@@ -140,6 +140,9 @@ private:
     void onSignalingMessage(const std::string& message);
     bool sendSignaling(const Json& msg);
 
+    // True while a connectRemote() attempt is running (guards double-press)
+    std::atomic<bool> m_connectInFlight{false};
+
     // connectRemote() blocks on this until the handshake reaches a terminal
     // state (CONNECTED / ERROR / DISCONNECTED); setState() notifies.
     std::mutex m_stateMutex;
