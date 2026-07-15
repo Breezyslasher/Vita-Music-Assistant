@@ -20,6 +20,7 @@
 
 #include <memory>
 #include <cctype>
+#include <thread>
 
 namespace vita_ma {
 
@@ -159,9 +160,35 @@ void LoginActivity::onRemoteLoginPressed() {
     app.getSettings().remoteId = m_remoteId;
     app.saveSettings();
 
-    if (statusLabel) statusLabel->setText("Connecting remotely (may take ~10s)...");
+    if (statusLabel) statusLabel->setText("Connecting remotely (may take ~15s)...");
     std::string user = !m_username.empty() ? m_username : app.getUsername();
-    connectWithToken(m_remoteId, app.getAuthToken(), user);
+    std::string remoteId = m_remoteId;
+    std::string token = app.getAuthToken();
+
+    // connect() blocks until the WebRTC handshake completes (or fails), so it
+    // must not run on the UI thread.
+    std::thread([this, remoteId, token, user]() {
+        bool ok = MAClient::instance().connect(remoteId, token);
+
+        brls::sync([this, remoteId, token, user, ok]() {
+            if (ok) {
+                auto& a = Application::getInstance();
+                a.setServerUrl(remoteId);
+                a.setAuthToken(token);
+                a.setUsername(user);
+                a.saveSettings();
+                if (statusLabel) statusLabel->setText("Connected!");
+                a.connectSendspin();
+                a.pushMainActivity();
+            } else {
+                std::string err = WebRTCClient::instance().getLastError();
+                if (statusLabel) {
+                    statusLabel->setText("Remote connection failed: " +
+                                         (err.empty() ? "unknown error" : err));
+                }
+            }
+        });
+    }).detach();
 }
 
 void LoginActivity::updateUIForMode() {

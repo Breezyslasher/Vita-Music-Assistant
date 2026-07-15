@@ -545,7 +545,9 @@ void SettingsTab::onRemoteConnect() {
                 a.connectSendspin();
                 brls::Application::notify("Connected remotely");
             } else {
-                brls::Application::notify("Remote connection failed. Check the Remote ID and that the server is online.");
+                std::string err = WebRTCClient::instance().getLastError();
+                brls::Application::notify("Remote connection failed: " +
+                                          (err.empty() ? "check the Remote ID and that the server is online" : err));
             }
         });
     }).detach();

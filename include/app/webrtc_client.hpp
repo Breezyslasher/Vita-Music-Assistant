@@ -75,6 +75,12 @@ public:
 
     WebRTCState getState() const { return m_state.load(); }
     bool isConnected() const { return m_state.load() == WebRTCState::CONNECTED; }
+    // Human-readable detail of the most recent failure (e.g. the signaling
+    // server's error text), for surfacing in the UI.
+    std::string getLastError() {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        return m_lastError;
+    }
 
     // --- ma-api channel (MA WebSocket API messages) ---
     bool sendApi(const std::string& message);
@@ -133,6 +139,12 @@ private:
     std::string m_signalingUrl = "wss://signaling.music-assistant.io/ws";
     void onSignalingMessage(const std::string& message);
     bool sendSignaling(const Json& msg);
+
+    // connectRemote() blocks on this until the handshake reaches a terminal
+    // state (CONNECTED / ERROR / DISCONNECTED); setState() notifies.
+    std::mutex m_stateMutex;
+    std::condition_variable m_stateCv;
+    std::string m_lastError;  // guarded by m_stateMutex
 
     // Peer connection / channels (guarded by m_rtcMutex)
     std::mutex m_rtcMutex;

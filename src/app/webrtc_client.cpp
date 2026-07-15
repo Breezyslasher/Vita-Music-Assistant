@@ -59,6 +59,15 @@ std::string WebRTCClient::normalizeRemoteId(const std::string& input) {
         bool base32 = true;
         for (char& c : compact) {
             c = static_cast<char>(::toupper((unsigned char)c));
+            // The id alphabet is base32 (A-Z, 2-7) with '2' replaced by '9',
+            // so 0/1/2/8 can never appear. When typed, they are lookalike
+            // mistakes - map them to the letters they were misread from.
+            switch (c) {
+                case '0': c = 'O'; break;
+                case '1': c = 'I'; break;
+                case '2': c = 'Z'; break;
+                case '8': c = 'B'; break;
+            }
             if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) { base32 = false; break; }
         }
         if (base32) return compact;
@@ -138,6 +147,25 @@ bool WebRTCClient::connectRemote(const std::string& remoteId) {
         return false;
     }
     setState(WebRTCState::SIGNALING_CONNECTED);
+
+    // Block until the handshake resolves: signaling pairing -> SDP/ICE ->
+    // DTLS -> ma-api channel open (CONNECTED), or a failure/timeout. Without
+    // this, callers report success as soon as the signaling socket is up.
+    {
+        std::unique_lock<std::mutex> lock(m_stateMutex);
+        m_stateCv.wait_for(lock, std::chrono::seconds(30), [this]() {
+            WebRTCState s = m_state.load();
+            return s == WebRTCState::CONNECTED || s == WebRTCState::ERROR ||
+                   s == WebRTCState::DISCONNECTED;
+        });
+    }
+    if (m_state.load() != WebRTCState::CONNECTED) {
+        if (m_state.load() != WebRTCState::ERROR) {
+            setState(WebRTCState::ERROR, "Remote connection timed out");
+        }
+        brls::Logger::error("RemoteAccess: connect failed");
+        return false;
+    }
     return true;
 }
 
@@ -167,14 +195,21 @@ void WebRTCClient::onSignalingMessage(const std::string& message) {
     if (!msg.has("type")) return;
     std::string type = msg["type"].str();
 
-    if (type == "connected") {
+    // "connected" = the signaling server accepted our connect-request and the
+    // remote gateway is online: carries sessionId + the gateway's ICE servers.
+    // This is the cue to start WebRTC negotiation (we are the offerer).
+    // ("session-ready" kept as a legacy alias.)
+    if (type == "connected" || type == "session-ready") {
         if (msg.has("sessionId")) m_sessionId = msg["sessionId"].str();
-        brls::Logger::info("RemoteAccess: paired with {} (session {})",
+        {
+            std::lock_guard<std::mutex> lock(m_rtcMutex);
+            if (m_pc) {
+                brls::Logger::debug("RemoteAccess: negotiation already started, ignoring duplicate '{}'", type);
+                return;
+            }
+        }
+        brls::Logger::info("RemoteAccess: paired with {} (session {}), starting WebRTC negotiation",
                            m_remoteId, m_sessionId);
-    }
-    else if (type == "session-ready") {
-        if (msg.has("sessionId")) m_sessionId = msg["sessionId"].str();
-        brls::Logger::info("RemoteAccess: session ready, starting WebRTC negotiation");
         setState(WebRTCState::NEGOTIATING);
         startPeerConnection(msg.has("iceServers") ? msg["iceServers"] : Json(Json::ARRAY));
     }
@@ -212,9 +247,15 @@ void WebRTCClient::onSignalingMessage(const std::string& message) {
             brls::Logger::warning("RemoteAccess: bad remote candidate: {}", e.what());
         }
     }
+    else if (type == "peer-disconnected") {
+        brls::Logger::info("RemoteAccess: peer disconnected");
+        setState(WebRTCState::ERROR, "Remote server disconnected");
+    }
     else if (type == "error") {
-        std::string detail = msg.has("message") ? msg["message"].str()
-                                                 : "Unknown signaling error";
+        // The error text lives in the "error" field (see frontend signaling.ts)
+        std::string detail = msg.has("error")   ? msg["error"].str()
+                           : msg.has("message") ? msg["message"].str()
+                                                : "Unknown signaling error";
         brls::Logger::error("RemoteAccess: signaling error: {}", detail);
         setState(WebRTCState::ERROR, detail);
     }
@@ -513,7 +554,12 @@ bool WebRTCClient::httpProxyFetch(const std::string& method, const std::string& 
 // State / misc
 
 void WebRTCClient::setState(WebRTCState state, const std::string& detail) {
+    if (state == WebRTCState::ERROR) {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        m_lastError = detail.empty() ? "Connection failed" : detail;
+    }
     m_state.store(state);
+    m_stateCv.notify_all();  // wake connectRemote()'s handshake wait
     if (m_stateCallback) {
         auto cb = m_stateCallback;
         brls::sync([cb, state, detail]() { cb(state, detail); });
