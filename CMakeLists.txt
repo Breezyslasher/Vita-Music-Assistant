@@ -120,6 +120,12 @@ if(TARGET juice-static)
     target_include_directories(juice-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
     target_compile_options(juice-static PRIVATE
         -include ${VITA_RTC_COMPAT}/vita_juice_compat.h)
+    # The MA gateway (aiortc in Docker) trickles dozens of host candidates -
+    # one per virtual interface - overflowing libjuice's default arrays
+    # (ICE_MAX_CANDIDATES_COUNT 30 and everything derived from it). On-device
+    # logs showed hundreds of "maximum number of candidates" rejections, and
+    # relay candidates being dropped. ~500B per slot; 128 ~= 64KB, fine.
+    target_compile_definitions(juice-static PRIVATE ICE_MAX_CANDIDATES_COUNT=128)
 endif()
 if(TARGET usrsctp)
     # newlib needs BSD visibility + base headers force-included first
@@ -189,6 +195,17 @@ if(EXISTS ${DC_CERT_PATCH})
     configure_file(${DC_CERT_PATCH} ${DC_CERT_TARGET} COPYONLY)
 else()
     message(FATAL_ERROR "Patch file not found: ${DC_CERT_PATCH}")
+endif()
+
+# libjuice patch: its RNG has no Vita source and falls back to rand();
+# add a random_bytes() branch backed by sceKernelGetRandomNumber.
+set(JUICE_RANDOM_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_random.c)
+set(JUICE_RANDOM_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/random.c)
+if(EXISTS ${JUICE_RANDOM_PATCH})
+    message(STATUS "Applying patch: libjuice random.c (Vita kernel RNG)")
+    configure_file(${JUICE_RANDOM_PATCH} ${JUICE_RANDOM_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${JUICE_RANDOM_PATCH}")
 endif()
 
 # Application source files
