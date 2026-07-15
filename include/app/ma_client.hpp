@@ -90,7 +90,7 @@ public:
     static MAClient& instance();
 
     // Connection. serverUrl may be an http(s)/ws(s) URL for a direct
-    // connection, or a Remote ID ("MA-XXXX-XXXX") for WebRTC remote access -
+    // connection, or a Remote ID (26-char base32) for WebRTC remote access -
     // connect() dispatches automatically.
     bool connect(const std::string& serverUrl, const std::string& authToken = "");
     // Connect through MA remote access (WebRTC data channel via the signaling

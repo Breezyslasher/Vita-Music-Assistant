@@ -4,6 +4,7 @@
 #include <rtc/rtc.hpp>
 #include <chrono>
 #include <cstring>
+#include <cctype>
 
 namespace vita_ma {
 
@@ -29,13 +30,65 @@ static bool hexDecode(const std::string& hex, std::string& out) {
     return true;
 }
 
-bool WebRTCClient::isRemoteId(const std::string& s) {
-    // MA-XXXX-XXXX (alphanumeric groups)
-    if (s.size() != 12) return false;
-    if (s[0] != 'M' || s[1] != 'A' || s[2] != '-' || s[7] != '-') return false;
-    for (size_t i : {3, 4, 5, 6, 8, 9, 10, 11}) {
-        char c = s[i];
-        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+std::string WebRTCClient::normalizeRemoteId(const std::string& input) {
+    std::string s = input;
+
+    // Accept a pasted MA app URL (https://app.music-assistant.io/?remote_id=...)
+    size_t p = s.find("remote_id=");
+    if (p != std::string::npos) {
+        s = s.substr(p + 10);
+        size_t end = s.find_first_of("&#? ");
+        if (end != std::string::npos) s = s.substr(0, end);
+    }
+
+    // Trim surrounding whitespace
+    size_t b = s.find_first_not_of(" \t\r\n");
+    size_t e = s.find_last_not_of(" \t\r\n");
+    s = (b == std::string::npos) ? "" : s.substr(b, e - b + 1);
+
+    // The canonical Remote ID is 26 chars of base32 (uppercase A-Z + digits,
+    // derived from the server's certificate fingerprint). The UI may display
+    // it grouped with hyphens/spaces - strip those; if the result matches the
+    // canonical shape, use it uppercased. Anything else is left as entered.
+    std::string compact;
+    for (char c : s) {
+        if (c == '-' || c == ' ') continue;
+        compact.push_back(c);
+    }
+    if (compact.size() == 26) {
+        bool base32 = true;
+        for (char& c : compact) {
+            c = static_cast<char>(::toupper((unsigned char)c));
+            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) { base32 = false; break; }
+        }
+        if (base32) return compact;
+    }
+    return s;
+}
+
+bool WebRTCClient::isRemoteId(const std::string& input) {
+    std::string s = normalizeRemoteId(input);
+    if (s.empty()) return false;
+
+    // URLs/hostnames are not Remote IDs
+    if (s.find('.') != std::string::npos || s.find('/') != std::string::npos ||
+        s.find(':') != std::string::npos || s.find('@') != std::string::npos) {
+        return false;
+    }
+
+    // Canonical: 26-char base32 (already uppercased by normalize)
+    if (s.size() == 26) {
+        for (char c : s) {
+            if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+        }
+        return true;
+    }
+
+    // Be lenient about other id-looking strings (e.g. HA-cloud-issued ids):
+    // long enough not to be a bare hostname, alphanumeric with hyphens only.
+    if (s.size() < 16 || s.size() > 64) return false;
+    for (char c : s) {
+        if (!(std::isalnum((unsigned char)c) || c == '-')) return false;
     }
     return true;
 }
@@ -51,9 +104,9 @@ WebRTCClient& WebRTCClient::instance() {
 bool WebRTCClient::connectRemote(const std::string& remoteId) {
     disconnect();
 
-    m_remoteId = remoteId;
+    m_remoteId = normalizeRemoteId(remoteId);
     setState(WebRTCState::CONNECTING_SIGNALING);
-    brls::Logger::info("RemoteAccess: connecting to signaling for {}", remoteId);
+    brls::Logger::info("RemoteAccess: connecting to signaling for {}", m_remoteId);
 
     m_signalingWs.setOnMessage([this](const std::string& msg) {
         onSignalingMessage(msg);
@@ -473,7 +526,7 @@ void WebRTCClient::checkRemoteOnline(const std::string& remoteId,
         if (cb) cb(false, false);
         return;
     }
-    std::string url = "https://signaling.music-assistant.io/api/check/" + remoteId;
+    std::string url = "https://signaling.music-assistant.io/api/check/" + normalizeRemoteId(remoteId);
     brls::async([url, cb]() {
         HttpClient client;
         HttpResponse resp = client.get(url);

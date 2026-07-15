@@ -270,7 +270,7 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     // prior auth failure or explicit disconnect).
     m_shouldReconnect.store(true);
 
-    // Remote IDs (MA-XXXX-XXXX) go through WebRTC remote access
+    // Remote IDs go through WebRTC remote access
     if (isRemoteId(serverUrl)) {
         return connectRemote(serverUrl, authToken);
     }

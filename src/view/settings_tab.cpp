@@ -5,6 +5,7 @@
 #include "view/settings_tab.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
 #include "player/mpv_player.hpp"
 #include "activity/player_activity.hpp"
@@ -463,21 +464,18 @@ void SettingsTab::createRemoteAccessSection() {
     header->setTitle("Remote Access");
     m_contentBox->addView(header);
 
-    // Remote ID - opens the on-screen keyboard to enter an MA-XXXX-XXXX id
+    // Remote ID - opens the on-screen keyboard to enter the server's Remote ID
     m_remoteIdCell = new brls::DetailCell();
     m_remoteIdCell->setText("Remote ID");
     m_remoteIdCell->setDetailText(settings.remoteId.empty() ? "Not set" : settings.remoteId);
     m_remoteIdCell->registerClickAction([this](brls::View*) {
         std::string current = Application::getInstance().getSettings().remoteId;
         brls::Application::getImeManager()->openForText([this](std::string value) {
-            // Trim surrounding whitespace and uppercase (ids are case-insensitive)
-            size_t b = value.find_first_not_of(" \t\r\n");
-            size_t e = value.find_last_not_of(" \t\r\n");
-            std::string id = (b == std::string::npos) ? "" : value.substr(b, e - b + 1);
-            for (char& c : id) c = static_cast<char>(::toupper((unsigned char)c));
+            // Canonicalize (strips hyphen grouping / extracts from a pasted URL)
+            std::string id = WebRTCClient::normalizeRemoteId(value);
 
             if (!id.empty() && !MAClient::isRemoteId(id)) {
-                brls::Application::notify("Invalid Remote ID (expected MA-XXXX-XXXX)");
+                brls::Application::notify("Invalid Remote ID - copy it from the server's Remote Access settings");
                 return;
             }
             Application& a = Application::getInstance();
@@ -486,7 +484,7 @@ void SettingsTab::createRemoteAccessSection() {
             m_remoteIdCell->setDetailText(id.empty() ? "Not set" : id);
             brls::Application::notify(id.empty() ? "Remote ID cleared"
                                                  : "Remote ID saved");
-        }, "Remote ID", "Enter your server's Remote ID (MA-XXXX-XXXX)", 32, current);
+        }, "Remote ID", "Remote ID from server settings", 80, current);
         return true;
     });
     m_contentBox->addView(m_remoteIdCell);
@@ -522,7 +520,7 @@ void SettingsTab::onRemoteConnect() {
         return;
     }
     if (!MAClient::isRemoteId(remoteId)) {
-        brls::Application::notify("Invalid Remote ID (expected MA-XXXX-XXXX)");
+        brls::Application::notify("Invalid Remote ID - copy it from the server's Remote Access settings");
         return;
     }
     if (token.empty()) {

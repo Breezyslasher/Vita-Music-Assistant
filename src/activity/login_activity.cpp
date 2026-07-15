@@ -12,6 +12,7 @@
 #include "activity/login_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
 #include "utils/http_client.hpp"
 #include "utils/async.hpp"
@@ -96,13 +97,10 @@ void LoginActivity::onContentAvailable() {
         remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
         remoteLabel->registerClickAction([this](brls::View* view) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
-                // Trim + uppercase (Remote IDs are case-insensitive)
-                size_t b = text.find_first_not_of(" \t\r\n");
-                size_t e = text.find_last_not_of(" \t\r\n");
-                m_remoteId = (b == std::string::npos) ? "" : text.substr(b, e - b + 1);
-                for (char& c : m_remoteId) c = static_cast<char>(::toupper((unsigned char)c));
+                // Canonicalize (strips hyphen grouping / extracts from a pasted URL)
+                m_remoteId = WebRTCClient::normalizeRemoteId(text);
                 remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
-            }, "Enter Remote ID", "MA-XXXX-XXXX", 32, m_remoteId);
+            }, "Enter Remote ID", "Remote ID from server settings", 80, m_remoteId);
             return true;
         });
         remoteLabel->addGestureRecognizer(new brls::TapGestureRecognizer(remoteLabel));
@@ -136,11 +134,11 @@ void LoginActivity::onContentAvailable() {
 
 void LoginActivity::onRemoteLoginPressed() {
     if (m_remoteId.empty()) {
-        if (statusLabel) statusLabel->setText("Enter a Remote ID (MA-XXXX-XXXX) first");
+        if (statusLabel) statusLabel->setText("Enter a Remote ID first");
         return;
     }
     if (!MAClient::isRemoteId(m_remoteId)) {
-        if (statusLabel) statusLabel->setText("Invalid Remote ID (expected MA-XXXX-XXXX)");
+        if (statusLabel) statusLabel->setText("Invalid Remote ID - copy it from the server's Remote Access settings");
         return;
     }
 
@@ -207,7 +205,7 @@ void LoginActivity::onLoginPressed() {
         return;
     }
 
-    // Remote ID (MA-XXXX-XXXX): connect via MA remote access (WebRTC).
+    // Remote ID: connect via MA remote access (WebRTC).
     // Token login (POST /auth/login) needs HTTP reachability, so a remote
     // connection reuses the token from a previous direct sign-in.
     if (MAClient::isRemoteId(m_serverUrl)) {

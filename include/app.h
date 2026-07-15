@@ -171,7 +171,7 @@ struct AppSettings {
     std::string savedServerName;
 
     // Remote access
-    std::string remoteId;              // MA-XXXX-XXXX format
+    std::string remoteId;              // 26-char base32 remote access id
     bool remoteAccessEnabled = false;
 };
 

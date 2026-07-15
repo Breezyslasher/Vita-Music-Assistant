@@ -10,7 +10,7 @@
  * server's controllers/webserver/remote_access/gateway.py):
  *
  *  1. Connect to wss://signaling.music-assistant.io/ws and send
- *     {"type":"connect-request","remoteId":"MA-XXXX-XXXX"}.
+ *     {"type":"connect-request","remoteId":"<26-char base32 id>"}.
  *  2. Receive {"type":"connected","sessionId"} then
  *     {"type":"session-ready","sessionId","iceServers":[...]}.
  *  3. Open an RTCPeerConnection with those ICE servers, create the data
@@ -58,7 +58,7 @@ enum class WebRTCState {
 struct RemoteAccessInfo {
     bool enabled = false;
     bool connected = false;
-    std::string remoteId;       // Format: MA-XXXX-XXXX
+    std::string remoteId;       // 26-char base32 id (cert fingerprint derived)
     std::string signalingUrl;   // wss://signaling.music-assistant.io/ws
 };
 
@@ -104,8 +104,14 @@ public:
     bool httpProxyFetch(const std::string& method, const std::string& path,
                         int timeoutMs, int& statusOut, std::string& bodyOut);
 
-    // True if the given server string looks like a Remote ID (MA-XXXX-XXXX)
+    // True if the given server string looks like a Remote ID rather than a
+    // URL/hostname. The canonical id is a 26-char base32 string (derived from
+    // the server's certificate fingerprint); display grouping with hyphens and
+    // pasted app URLs (?remote_id=...) are accepted too.
     static bool isRemoteId(const std::string& s);
+    // Canonicalize user input: extract from a pasted URL, strip hyphen/space
+    // grouping and uppercase when the result matches the 26-char base32 shape.
+    static std::string normalizeRemoteId(const std::string& s);
 
     // Ask the signaling server whether a Remote ID is currently registered
     // (GET /api/check/:remoteId). Async; cb delivered on the UI thread.
