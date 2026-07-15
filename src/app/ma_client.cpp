@@ -307,7 +307,9 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     m_ws.setOnError([this](const std::string& err) { onError(err); });
     m_ws.setOnClose([this](int code, const std::string& reason) { onClose(code, reason); });
 
-    return m_ws.connect(wsUrl, "json");
+    // No subprotocol: the MA server doesn't advertise any, and requesting
+    // "json" makes aiohttp log a protocol-mismatch warning on every connect.
+    return m_ws.connect(wsUrl);
 }
 
 bool MAClient::connectRemote(const std::string& remoteId, const std::string& authToken) {

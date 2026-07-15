@@ -18,6 +18,7 @@
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/processmgr.h>
 #endif
 
 namespace vita_ma {
@@ -102,7 +103,18 @@ void Application::run() {
 
     // Main loop handled by Borealis
     while (brls::Application::mainLoop()) {
-        // Application keeps running
+#ifdef __vita__
+        // Keep the system (and with it, WiFi) awake. Without this the Vita
+        // auto-suspends after a couple of minutes idle, silently killing every
+        // socket (MA WebSocket, Sendspin, WebRTC) - the server then logs a
+        // 1006 close and marks the player unavailable. The screen may still
+        // dim; only auto-suspend is suppressed.
+        static int powerTickCounter = 0;
+        if (++powerTickCounter >= 300) {  // roughly every 5s at 60fps
+            powerTickCounter = 0;
+            sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+        }
+#endif
     }
 }
 
