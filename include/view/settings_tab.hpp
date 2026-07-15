@@ -38,6 +38,7 @@ private:
     void onControlsAutoHideChanged(int index);
     void onConnectionTimeoutChanged(int index);
     void onManageSidebarOrder();
+    void onRemoteConnect();
 
     brls::ScrollingFrame* m_scrollView = nullptr;
     brls::Box* m_contentBox = nullptr;
@@ -77,6 +78,10 @@ private:
     brls::DetailCell* m_playerNameCell = nullptr;
     brls::SelectorCell* m_playerSelector = nullptr;
     std::vector<PlayerInfo> m_players;  // Cached player list from MA
+
+    // Remote access section
+    brls::DetailCell* m_remoteIdCell = nullptr;
+    brls::DetailCell* m_remoteConnectCell = nullptr;
 };
 
 } // namespace vita_ma
