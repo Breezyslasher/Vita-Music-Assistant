@@ -357,13 +357,19 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
 
     m_pc->onStateChange([this](rtc::PeerConnection::State state) {
         switch (state) {
+            case rtc::PeerConnection::State::Connecting:
+                brls::Logger::info("RemoteAccess: peer connecting (ICE/DTLS)...");
+                break;
             case rtc::PeerConnection::State::Connected:
                 brls::Logger::info("RemoteAccess: peer connection established");
                 break;
             case rtc::PeerConnection::State::Disconnected:
             case rtc::PeerConnection::State::Failed:
             case rtc::PeerConnection::State::Closed: {
-                brls::Logger::info("RemoteAccess: peer connection lost");
+                brls::Logger::info("RemoteAccess: peer connection lost ({})",
+                                   state == rtc::PeerConnection::State::Failed ? "failed" :
+                                   state == rtc::PeerConnection::State::Closed ? "closed"
+                                                                               : "disconnected");
                 bool wasConnected = (m_state.load() == WebRTCState::CONNECTED);
                 if (m_state.load() != WebRTCState::DISCONNECTED) {
                     setState(WebRTCState::ERROR, "Peer connection lost");
@@ -374,6 +380,27 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
             default:
                 break;
         }
+    });
+
+    m_pc->onIceStateChange([](rtc::PeerConnection::IceState state) {
+        const char* name = "unknown";
+        switch (state) {
+            case rtc::PeerConnection::IceState::New:          name = "new"; break;
+            case rtc::PeerConnection::IceState::Checking:     name = "checking"; break;
+            case rtc::PeerConnection::IceState::Connected:    name = "connected"; break;
+            case rtc::PeerConnection::IceState::Completed:    name = "completed"; break;
+            case rtc::PeerConnection::IceState::Failed:       name = "failed"; break;
+            case rtc::PeerConnection::IceState::Disconnected: name = "disconnected"; break;
+            case rtc::PeerConnection::IceState::Closed:       name = "closed"; break;
+        }
+        brls::Logger::info("RemoteAccess: ICE state: {}", name);
+    });
+
+    m_pc->onGatheringStateChange([](rtc::PeerConnection::GatheringState state) {
+        const char* name = state == rtc::PeerConnection::GatheringState::Complete ? "complete"
+                         : state == rtc::PeerConnection::GatheringState::InProgress ? "in-progress"
+                                                                                    : "new";
+        brls::Logger::info("RemoteAccess: ICE gathering: {}", name);
     });
 
     // Create the two channels the MA gateway bridges. Creating a channel

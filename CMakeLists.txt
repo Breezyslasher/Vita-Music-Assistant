@@ -179,6 +179,18 @@ else()
     message(FATAL_ERROR "Patch file not found: ${DC_DTLS_PATCH}")
 endif()
 
+# libdatachannel patch: certificate generation enables DRBG prediction
+# resistance, which reseeds from the slow Vita entropy source on every random
+# call - measured ~30s per certificate on device. PR off (mbedTLS default).
+set(DC_CERT_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_certificate.cpp)
+set(DC_CERT_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/certificate.cpp)
+if(EXISTS ${DC_CERT_PATCH})
+    message(STATUS "Applying patch: libdatachannel certificate.cpp (no DRBG prediction resistance)")
+    configure_file(${DC_CERT_PATCH} ${DC_CERT_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${DC_CERT_PATCH}")
+endif()
+
 # Application source files
 set(APP_SOURCES
     # Main entry
