@@ -18,6 +18,7 @@
 #include "view/progress_dialog.hpp"
 
 #include <memory>
+#include <cctype>
 
 namespace vita_ma {
 
@@ -36,6 +37,11 @@ void LoginActivity::onContentAvailable() {
     auto& app = Application::getInstance();
     m_serverUrl = app.getServerUrl();
     m_username = app.getUsername();
+    m_remoteId = app.getSettings().remoteId;
+    // If the saved server is itself a Remote ID, surface it in the remote field
+    if (m_remoteId.empty() && MAClient::isRemoteId(m_serverUrl)) {
+        m_remoteId = m_serverUrl;
+    }
 
     // Set title
     if (titleLabel) {
@@ -85,6 +91,23 @@ void LoginActivity::onContentAvailable() {
         passwordLabel->addGestureRecognizer(new brls::TapGestureRecognizer(passwordLabel));
     }
 
+    // Remote ID input (WebRTC remote access)
+    if (remoteLabel) {
+        remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+        remoteLabel->registerClickAction([this](brls::View* view) {
+            brls::Application::getImeManager()->openForText([this](std::string text) {
+                // Trim + uppercase (Remote IDs are case-insensitive)
+                size_t b = text.find_first_not_of(" \t\r\n");
+                size_t e = text.find_last_not_of(" \t\r\n");
+                m_remoteId = (b == std::string::npos) ? "" : text.substr(b, e - b + 1);
+                for (char& c : m_remoteId) c = static_cast<char>(::toupper((unsigned char)c));
+                remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+            }, "Enter Remote ID", "MA-XXXX-XXXX", 32, m_remoteId);
+            return true;
+        });
+        remoteLabel->addGestureRecognizer(new brls::TapGestureRecognizer(remoteLabel));
+    }
+
     // Login button
     if (loginButton) {
         loginButton->setText("Login");
@@ -101,6 +124,46 @@ void LoginActivity::onContentAvailable() {
             return true;
         });
     }
+
+    // Remote login button
+    if (remoteButton) {
+        remoteButton->registerClickAction([this](brls::View* view) {
+            onRemoteLoginPressed();
+            return true;
+        });
+    }
+}
+
+void LoginActivity::onRemoteLoginPressed() {
+    if (m_remoteId.empty()) {
+        if (statusLabel) statusLabel->setText("Enter a Remote ID (MA-XXXX-XXXX) first");
+        return;
+    }
+    if (!MAClient::isRemoteId(m_remoteId)) {
+        if (statusLabel) statusLabel->setText("Invalid Remote ID (expected MA-XXXX-XXXX)");
+        return;
+    }
+
+    // A remote connection reuses the token from a previous direct sign-in:
+    // token login (POST /auth/login) needs HTTP reachability the remote path
+    // doesn't have.
+    auto& app = Application::getInstance();
+    if (app.getAuthToken().empty()) {
+        if (statusLabel) {
+            statusLabel->setText(
+                "Remote ID needs a saved login. Sign in once with your server "
+                "URL, then use Remote Login.");
+        }
+        return;
+    }
+
+    // Persist the Remote ID so it is remembered next launch.
+    app.getSettings().remoteId = m_remoteId;
+    app.saveSettings();
+
+    if (statusLabel) statusLabel->setText("Connecting remotely (may take ~10s)...");
+    std::string user = !m_username.empty() ? m_username : app.getUsername();
+    connectWithToken(m_remoteId, app.getAuthToken(), user);
 }
 
 void LoginActivity::updateUIForMode() {

@@ -26,6 +26,7 @@ public:
 
 private:
     void onLoginPressed();
+    void onRemoteLoginPressed();
     void switchAuthMode();
     void updateUIForMode();
 
@@ -48,14 +49,17 @@ private:
     BRLS_BIND(brls::Label, serverLabel, "login/server_label");
     BRLS_BIND(brls::Label, usernameLabel, "login/username_label");
     BRLS_BIND(brls::Label, passwordLabel, "login/password_label");
+    BRLS_BIND(brls::Label, remoteLabel, "login/remote_label");
     BRLS_BIND(brls::Button, loginButton, "login/login_button");
     BRLS_BIND(brls::Button, modeButton, "login/mode_button");
+    BRLS_BIND(brls::Button, remoteButton, "login/remote_button");
     BRLS_BIND(brls::Label, statusLabel, "login/status");
 
     AuthMode m_authMode = AuthMode::MUSIC_ASSISTANT;
     std::string m_serverUrl;
     std::string m_username;
     std::string m_password;
+    std::string m_remoteId;
 };
 
 } // namespace vita_ma

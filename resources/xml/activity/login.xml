@@ -56,6 +56,14 @@
             marginBottom="20"
             focusable="true"/>
 
+        <!-- Remote ID (WebRTC remote access) -->
+        <brls:Label
+            id="login/remote_label"
+            text="Remote ID: Not set"
+            fontSize="18"
+            marginBottom="20"
+            focusable="true"/>
+
     </brls:Box>
 
     <!-- Buttons -->
@@ -76,6 +84,13 @@
             width="180"/>
 
     </brls:Box>
+
+    <!-- Remote login button -->
+    <brls:Button
+        id="login/remote_button"
+        text="Remote Login (WebRTC)"
+        width="380"
+        marginBottom="15"/>
 
     <!-- Status message -->
     <brls:Label
