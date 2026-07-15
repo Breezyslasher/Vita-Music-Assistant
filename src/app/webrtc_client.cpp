@@ -132,6 +132,17 @@ bool WebRTCClient::connectRemote(const std::string& remoteId) {
     static std::once_flag preloadOnce;
     std::call_once(preloadOnce, []() {
         brls::Logger::info("RemoteAccess: initializing WebRTC stack");
+        // Bridge libdatachannel/libjuice internals into our log: candidate
+        // gathering, TURN allocations, DTLS steps, pair checks.
+        rtc::InitLogger(rtc::LogLevel::Info, [](rtc::LogLevel level, std::string message) {
+            if (level <= rtc::LogLevel::Error) {
+                brls::Logger::error("rtc: {}", message);
+            } else if (level == rtc::LogLevel::Warning) {
+                brls::Logger::warning("rtc: {}", message);
+            } else {
+                brls::Logger::info("rtc: {}", message);
+            }
+        });
         rtc::Preload();
         brls::Logger::info("RemoteAccess: WebRTC stack ready");
     });
@@ -272,6 +283,7 @@ void WebRTCClient::onSignalingMessage(const std::string& message) {
         if (!m_pc) return;
         try {
             m_pc->addRemoteCandidate(rtc::Candidate(cand, mid));
+            brls::Logger::info("RemoteAccess: added remote candidate: {}", cand);
         } catch (const std::exception& e) {
             brls::Logger::warning("RemoteAccess: bad remote candidate: {}", e.what());
         }
@@ -371,6 +383,7 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
         data["sdpMLineIndex"] = Json(0);
         msg["data"] = data;
         sendSignaling(msg);
+        brls::Logger::info("RemoteAccess: sent local candidate: {}", std::string(cand));
     });
 
     m_pc->onStateChange([this](rtc::PeerConnection::State state) {
