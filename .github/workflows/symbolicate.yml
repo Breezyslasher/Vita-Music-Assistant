@@ -11,6 +11,10 @@ on:
       - ".github/workflows/symbolicate.yml"
       - "debug/**"
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   symbolicate:
     runs-on: ubuntu-latest
