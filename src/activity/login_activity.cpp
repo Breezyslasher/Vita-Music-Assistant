@@ -460,6 +460,14 @@ void LoginActivity::connectWithToken(const std::string& serverUrl,
     // Connect the WebSocket with the obtained token
     MAClient& client = MAClient::instance();
 
+    // A fresh credential login yields a (possibly short-lived) token. Ask the
+    // client to upgrade it to a long-lived token once authenticated, so future
+    // connections - especially remote WebRTC ones that can't reach /auth/login
+    // - never expire. Skipped for Remote IDs, which reuse an existing token.
+    if (!MAClient::isRemoteId(serverUrl)) {
+        client.setUpgradeToLongLived(true);
+    }
+
     if (client.connect(serverUrl, token)) {
         brls::Logger::info("Login: WebSocket connected and authenticated");
 

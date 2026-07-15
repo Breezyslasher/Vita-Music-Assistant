@@ -48,6 +48,32 @@ bool Application::init() {
     applyTheme();
     applyLogLevel();
 
+    // Persist a freshly minted long-lived token (fires on the WS thread after a
+    // direct login upgrades its short-lived token).
+    MAClient::instance().setTokenUpgradedCallback([this](const std::string& newToken) {
+        brls::sync([this, newToken]() {
+            m_authToken = newToken;
+            saveSettings();
+            brls::Logger::info("App: stored long-lived token");
+        });
+    });
+
+    // The server rejected our token (expired/invalid). The reconnect loop is
+    // already stopped; prompt the user to sign in again.
+    MAClient::instance().setAuthFailedCallback([this]() {
+        brls::sync([this]() {
+            // Only prompt once until a connection succeeds again, so a boot-time
+            // expiry (main pushed, then async auth fails) or a stray retry can't
+            // stack multiple login screens.
+            if (m_reloginPrompted.exchange(true)) return;
+            bool remote = MAClient::instance().isRemoteMode();
+            brls::Application::notify(remote
+                ? "Session expired. Connect to your server directly to sign in again."
+                : "Session expired. Please sign in again.");
+            pushLoginActivity();
+        });
+    });
+
     m_initialized = true;
     return true;
 }
@@ -152,6 +178,8 @@ void Application::pushLoginActivity() {
 }
 
 void Application::pushMainActivity() {
+    // A successful connection re-arms the "session expired" prompt.
+    m_reloginPrompted.store(false);
     brls::Application::pushActivity(new MainActivity());
 }
 
