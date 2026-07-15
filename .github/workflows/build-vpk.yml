@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-vita:
     runs-on: ubuntu-latest
@@ -40,16 +43,36 @@ jobs:
           cmake --build build
 
       - name: Upload VPK
+        continue-on-error: true  # artifact quota may be exhausted; branch publish below is the fallback
         uses: actions/upload-artifact@v5
         with:
           name: VitaMusicAssistant-${{ github.run_number }}
           path: build/VitaMusicAssistant.vpk
+          retention-days: 2
 
       - name: Copy ELF for upload
         run: cp build/VitaMusicAssistant build/VitaMusicAssistant.elf
 
       - name: Upload ELF (for crash debugging)
+        continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: VitaMusicAssistant-ELF-${{ github.run_number }}
           path: build/VitaMusicAssistant.elf
+          retention-days: 2
+
+      - name: Publish VPK + ELF to build-output branch (quota-proof download)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -rf /tmp/build-output && mkdir /tmp/build-output
+          cp build/VitaMusicAssistant.vpk /tmp/build-output/
+          gzip -c build/VitaMusicAssistant.elf > /tmp/build-output/VitaMusicAssistant.elf.gz
+          echo "run ${{ github.run_number }} sha ${{ github.sha }}" > /tmp/build-output/BUILD_INFO.txt
+          cd /tmp/build-output
+          git init -q -b build-output
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git add -A
+          git commit -q -m "Build output: run ${{ github.run_number }} (${{ github.sha }})"
+          git push -f origin build-output
