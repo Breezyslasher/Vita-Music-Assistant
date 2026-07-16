@@ -240,7 +240,16 @@ void conn_poll_process_udp(juice_agent_t *agent, struct pollfd *pfd) {
 		conn_impl->state = CONN_STATE_FINISHED;
 	}
 
+#ifdef __vita__
+	// vitasdk's poll() does not reliably set POLLIN for UDP sockets once the
+	// connection goes idle (notably right after the DTLS handshake finishes),
+	// so gating the receive on POLLIN drops every incoming datagram and the
+	// SCTP association never completes. Always attempt to drain the socket -
+	// the non-blocking recvfrom simply returns EAGAIN when nothing is waiting.
+	if (!(pfd->revents & (POLLNVAL | POLLERR))) {
+#else
 	if (pfd->revents & POLLIN) {
+#endif
 		char buffer[BUFFER_SIZE];
 		addr_record_t src;
 		int ret = 0;

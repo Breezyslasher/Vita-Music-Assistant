@@ -429,7 +429,15 @@ int conn_mux_process(conn_registry_t *registry, struct pollfd *pfd) {
 		return -1;
 	}
 
+#ifdef __vita__
+	// vitasdk's poll() does not reliably set POLLIN for the muxed UDP socket
+	// once traffic goes idle (notably right after the DTLS handshake finishes),
+	// so gating the receive on POLLIN drops every incoming datagram. Always
+	// attempt to drain - non-blocking recvfrom returns EAGAIN when empty.
+	if (1) {
+#else
 	if (pfd->revents & POLLIN) {
+#endif
 		char buffer[BUFFER_SIZE];
 		addr_record_t src;
 		int left = 1000; // limit to ensure update is run and new agents are processed
