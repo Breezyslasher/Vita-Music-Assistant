@@ -137,7 +137,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_INFO << "DTLS send size=" << message->size();
 
 	ssize_t ret;
 	do {
@@ -161,7 +161,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_INFO << "DTLS incoming from network, size=" << message->size();
 	mIncomingQueue.push(message);
 	enqueueRecv();
 }
@@ -484,7 +484,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_INFO << "DTLS send size=" << message->size();
 
 	int ret;
 	do {
@@ -506,7 +506,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_INFO << "DTLS incoming from network, size=" << message->size();
 	mIncomingQueue.push(message);
 	enqueueRecv();
 }
@@ -878,7 +878,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_INFO << "DTLS send size=" << message->size();
 
 	int ret, err;
 	{
@@ -901,7 +901,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_INFO << "DTLS incoming from network, size=" << message->size();
 	if(mIncomingQueue.tryPush(message)) {
 		enqueueRecv();
 	} else {
