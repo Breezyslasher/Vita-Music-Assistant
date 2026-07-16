@@ -1,4 +1,5 @@
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include <borealis.hpp>
 #include <cstring>
 #include <sstream>
@@ -260,7 +261,17 @@ std::string MAClient::generateMessageId() {
     return std::to_string(id);
 }
 
+bool MAClient::isRemoteId(const std::string& s) {
+    return WebRTCClient::isRemoteId(s);
+}
+
 bool MAClient::connect(const std::string& serverUrl, const std::string& authToken) {
+    // Remote IDs (MA-XXXX-XXXX) go through WebRTC remote access
+    if (isRemoteId(serverUrl)) {
+        return connectRemote(serverUrl, authToken);
+    }
+    m_remoteMode.store(false);
+
     m_serverUrl = serverUrl;
     m_authToken = authToken;
 
@@ -295,14 +306,43 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     return m_ws.connect(wsUrl, "json");
 }
 
+bool MAClient::connectRemote(const std::string& remoteId, const std::string& authToken) {
+    m_serverUrl = remoteId;
+    m_authToken = authToken;
+    m_remoteMode.store(true);
+
+    brls::Logger::info("MA: connecting remotely via {}", remoteId);
+
+    WebRTCClient& rtc = WebRTCClient::instance();
+    // The bridged local WS API greets with server_info exactly like a direct
+    // connection, so the whole existing message/auth flow applies unchanged.
+    rtc.setApiMessageCallback([this](const std::string& msg) { onMessage(msg); });
+    rtc.setClosedCallback([this]() { onClose(0, "remote connection lost"); });
+
+    return rtc.connectRemote(remoteId);
+}
+
+bool MAClient::sendRaw(const std::string& json) {
+    if (m_remoteMode.load()) {
+        return WebRTCClient::instance().sendApi(json);
+    }
+    return m_ws.send(json);
+}
+
 void MAClient::disconnect() {
     m_shouldReconnect.store(false);
+    if (m_remoteMode.load()) {
+        WebRTCClient::instance().disconnect();
+    }
     m_ws.disconnect();
     m_authenticated.store(false);
 }
 
 bool MAClient::isConnected() const {
-    return m_ws.isConnected() && m_authenticated.load();
+    bool transportUp = m_remoteMode.load()
+        ? WebRTCClient::instance().isConnected()
+        : m_ws.isConnected();
+    return transportUp && m_authenticated.load();
 }
 
 void MAClient::onMessage(const std::string& message) {
@@ -451,7 +491,7 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
     }
 
     std::string json = msg.dump();
-    if (!m_ws.send(json)) {
+    if (!sendRaw(json)) {
         brls::Logger::error("MA: failed to send command: {}", command);
         if (cb) {
             std::lock_guard<std::mutex> lock(m_callbackMutex);
@@ -575,10 +615,13 @@ void MAClient::getPlaylist(const std::string& itemId, MAResponseCallback cb,
 
 void MAClient::getPlaylistTracks(const std::string& itemId, MAResponseCallback cb,
                                   int page, const std::string& provider) {
+    // MA: playlist_tracks(item_id, provider_instance_id_or_domain, ...) returns
+    // the full track list (no 'page' parameter exists). Callers paginate the
+    // returned list client-side, so we must not send a 'page' arg.
+    (void)page;
     Json args;
     args["item_id"] = Json(itemId);
     args["provider_instance_id_or_domain"] = Json(provider);
-    args["page"] = Json(page);
     sendCommand("music/playlists/playlist_tracks", args, std::move(cb));
 }
 
@@ -623,7 +666,8 @@ void MAClient::removeFromFavorites(const std::string& mediaType, const std::stri
                                     MAResponseCallback cb) {
     Json args;
     args["media_type"] = Json(mediaType);
-    args["item_id"] = Json(itemId);
+    // MA: remove_item_from_favorites(media_type, library_item_id)
+    args["library_item_id"] = Json(itemId);
     sendCommand("music/favorites/remove_item", args, std::move(cb));
 }
 
@@ -797,6 +841,18 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
 
     int size = width > 0 ? width : (height > 0 ? height : 300);
 
+    // Remote mode: no HTTP reachability - return a server-relative path that
+    // ImageLoader routes through the WebRTC http-proxy tunnel (paths starting
+    // with '/' signal proxying).
+    if (m_remoteMode.load()) {
+        std::string path = "/imageproxy?path=" + urlEncode(imageUrl);
+        path += "&size=" + std::to_string(size);
+        if (!provider.empty()) {
+            path += "&provider=" + urlEncode(provider);
+        }
+        return path;
+    }
+
     // Build server base URL
     std::string base = m_serverUrl;
     if (!base.empty() && base.back() == '/') base.pop_back();
@@ -818,9 +874,12 @@ std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, in
 }
 
 void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {
+    // There is no "music/playlists/remove" command; deleting a playlist from the
+    // library is the generic remove_item_from_library(media_type, library_item_id).
     Json args;
-    args["item_id"] = Json(itemId);
-    sendCommand("music/playlists/remove", args, std::move(cb));
+    args["media_type"] = Json(std::string("playlist"));
+    args["library_item_id"] = Json(itemId);
+    sendCommand("music/library/remove_item", args, std::move(cb));
 }
 
 // App singleton implementation (legacy, used for player ID storage)

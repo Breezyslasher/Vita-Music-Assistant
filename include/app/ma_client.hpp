@@ -88,10 +88,20 @@ class MAClient {
 public:
     static MAClient& instance();
 
-    // Connection
+    // Connection. serverUrl may be an http(s)/ws(s) URL for a direct
+    // connection, or a Remote ID ("MA-XXXX-XXXX") for WebRTC remote access -
+    // connect() dispatches automatically.
     bool connect(const std::string& serverUrl, const std::string& authToken = "");
+    // Connect through MA remote access (WebRTC data channel via the signaling
+    // server). Requires an auth token obtained from a previous direct login.
+    bool connectRemote(const std::string& remoteId, const std::string& authToken = "");
     void disconnect();
     bool isConnected() const;
+
+    // True when connected (or connecting) via WebRTC remote access
+    bool isRemoteMode() const { return m_remoteMode.load(); }
+    // True if the string looks like a Remote ID rather than a URL
+    static bool isRemoteId(const std::string& s);
 
     // Set event callback
     void setEventCallback(MAEventCallback cb) { m_eventCallback = std::move(cb); }
@@ -215,8 +225,10 @@ private:
     // Parse events
     MAEvent parseEventType(const std::string& eventStr);
 
-    // WebSocket
+    // Transport: local WebSocket, or the WebRTC remote-access data channel
     WebSocketClient m_ws;
+    std::atomic<bool> m_remoteMode{false};
+    bool sendRaw(const std::string& json);
     std::string m_serverUrl;
     std::string m_authToken;
     ServerInfo m_serverInfo;

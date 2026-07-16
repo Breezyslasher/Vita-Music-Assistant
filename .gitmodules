@@ -2,3 +2,6 @@
 	path = lib/borealis
 	url = https://github.com/dragonflylee/borealis.git
 	branch = switchfin
+[submodule "lib/libdatachannel"]
+	path = lib/libdatachannel
+	url = https://github.com/paullouisageneau/libdatachannel.git

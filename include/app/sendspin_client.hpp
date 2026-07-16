@@ -73,6 +73,18 @@ public:
     bool connect(const std::string& serverIp, int sendspinPort,
                  const std::string& clientId, const std::string& clientName);
 
+    // Connect to Sendspin at an explicit ws:// or wss:// URL and register as a
+    // player. Used for remote setups where the sendspin endpoint is reached
+    // through a TLS reverse proxy (e.g. wss://host/sendspin) instead of the
+    // plain local port 8927.
+    bool connectUrl(const std::string& wsUrl,
+                    const std::string& clientId, const std::string& clientName);
+
+    // Register as a player over the MA remote-access WebRTC 'sendspin' data
+    // channel (bridged by the server's gateway to its local Sendspin endpoint).
+    // Used when MAClient is connected via a Remote ID.
+    bool connectRemote(const std::string& clientId, const std::string& clientName);
+
     // Disconnect from Sendspin
     void disconnect();
 
@@ -103,6 +115,8 @@ private:
     SendspinClient() = default;
 
     WebSocketClient m_ws;
+    bool m_remoteMode = false;  // true when using the WebRTC 'sendspin' channel
+    bool sendRaw(const std::string& text);
     std::atomic<SendspinState> m_state{SendspinState::DISCONNECTED};
     SendspinAudioFormat m_format;
     std::string m_clientId;

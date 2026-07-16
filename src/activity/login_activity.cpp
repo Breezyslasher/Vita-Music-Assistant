@@ -144,6 +144,25 @@ void LoginActivity::onLoginPressed() {
         return;
     }
 
+    // Remote ID (MA-XXXX-XXXX): connect via MA remote access (WebRTC).
+    // Token login (POST /auth/login) needs HTTP reachability, so a remote
+    // connection reuses the token from a previous direct sign-in.
+    if (MAClient::isRemoteId(m_serverUrl)) {
+        auto& app = Application::getInstance();
+        if (app.getAuthToken().empty()) {
+            if (statusLabel) {
+                statusLabel->setText(
+                    "Remote ID needs a saved login. Sign in once with your "
+                    "server URL, then switch the server to the Remote ID.");
+            }
+            return;
+        }
+        if (statusLabel) statusLabel->setText("Connecting remotely (may take ~10s)...");
+        std::string user = !m_username.empty() ? m_username : app.getUsername();
+        connectWithToken(m_serverUrl, app.getAuthToken(), user);
+        return;
+    }
+
     if (m_username.empty()) {
         if (statusLabel) statusLabel->setText("Please enter a username");
         return;
