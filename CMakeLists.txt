@@ -243,6 +243,21 @@ else()
     message(FATAL_ERROR "Patch file not found: ${JUICE_UDP_PATCH}")
 endif()
 
+# libjuice FIX: vitasdk poll() does not wake on incoming socket data during a
+# long wait, so once ICE goes idle (poll timeout jumps from ~10ms to seconds)
+# incoming packets sit unread and the SCTP handshake stalls. Cap the poll
+# timeout in every conn backend so the socket is drained promptly.
+foreach(_j conn_poll conn_mux conn_thread)
+    set(_src ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_${_j}.c)
+    set(_dst ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/${_j}.c)
+    if(EXISTS ${_src})
+        message(STATUS "Applying patch: libjuice ${_j}.c (poll timeout cap)")
+        configure_file(${_src} ${_dst} COPYONLY)
+    else()
+        message(FATAL_ERROR "Patch file not found: ${_src}")
+    endif()
+endforeach()
+
 # libdatachannel patch: SctpTransport::doRecv() puts a 64KB receive buffer on
 # the stack. On the Vita, pthread stacks are heap-allocated, so that frame
 # overruns the SCTP worker thread's stack into adjacent heap chunks and
