@@ -110,6 +110,24 @@ set(sctp_inet6 OFF CACHE BOOL "" FORCE)
 set(sctp_build_programs OFF CACHE BOOL "" FORCE)
 set(sctp_build_shared_lib OFF CACHE BOOL "" FORCE)
 set(sctp_werror OFF CACHE BOOL "" FORCE)
+
+# usrsctp patch (must precede add_subdirectory so usrsctp's own CMake
+# check_struct_has_member sees the patched header): struct sockaddr_conn must
+# include sconn_len on the Vita. vitasdk's struct sockaddr is BSD-style (sa_len
+# at offset 0, sa_family at offset 1), so usrsctp is built HAVE_SA_LEN and reads
+# the address family at offset 1. Without sconn_len, sockaddr_conn puts
+# sconn_family at offset 0 and usrsctp_bind() reads family 0 -> EAFNOSUPPORT
+# (errno 106, seen on-device). Add __vita__ to the platform list that gives
+# sockaddr_conn an sconn_len field.
+set(USRSCTP_H_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/usrsctp_usrsctp_h.h)
+set(USRSCTP_H_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/usrsctp/usrsctplib/usrsctp.h)
+if(EXISTS ${USRSCTP_H_PATCH})
+    message(STATUS "Applying patch: usrsctp.h (sockaddr_conn sconn_len on Vita)")
+    configure_file(${USRSCTP_H_PATCH} ${USRSCTP_H_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${USRSCTP_H_PATCH}")
+endif()
+
 add_subdirectory(lib/libdatachannel EXCLUDE_FROM_ALL)
 
 # Vita compatibility shims for the vendored deps (see files for details)
@@ -131,6 +149,8 @@ if(TARGET usrsctp)
     # newlib needs BSD visibility + base headers force-included first
     target_compile_options(usrsctp PRIVATE -include ${VITA_RTC_COMPAT}/vita_bsd_types.h)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
+    # sockaddr_conn now carries sconn_len on Vita (see usrsctp.h patch above)
+    target_compile_definitions(usrsctp PRIVATE HAVE_SCONN_LEN)
 endif()
 if(TARGET datachannel-static)
     # Compat headers (<net/if.h>, <ifaddrs.h>, <sys/ioctl.h>) + socket flags
@@ -138,6 +158,10 @@ if(TARGET datachannel-static)
     target_include_directories(datachannel-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
     target_compile_options(datachannel-static PRIVATE
         -include ${VITA_RTC_COMPAT}/vita_datachannel_compat.h)
+    # sockaddr_conn carries sconn_len on Vita, so SctpTransport::getSockAddrConn
+    # must set it (its guard is #ifdef HAVE_SCONN_LEN); usrsctp's own CMake sets
+    # this for the usrsctp target but it does not propagate to this one.
+    target_compile_definitions(datachannel-static PRIVATE HAVE_SCONN_LEN)
 endif()
 
 # vitasdk links libpthread whole-archive via the toolchain already; the deps'
