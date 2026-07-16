@@ -137,7 +137,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_VERBOSE << "DTLS send size=" << message->size();
 
 	ssize_t ret;
 	do {
@@ -161,7 +161,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_VERBOSE << "DTLS incoming from network, size=" << message->size();
 	mIncomingQueue.push(message);
 	enqueueRecv();
 }
@@ -397,7 +397,9 @@ DtlsTransport::DtlsTransport(shared_ptr<IceTransport> lower, certificate_ptr cer
 	mbedtls_ctr_drbg_init(&mDrbg);
 	mbedtls_ssl_init(&mSsl);
 	mbedtls_ssl_config_init(&mConf);
-	mbedtls_ctr_drbg_set_prediction_resistance(&mDrbg, MBEDTLS_CTR_DRBG_PR_ON);
+	// Vita: prediction resistance reseeds from the slow platform entropy
+	// source on every DRBG call, crippling the DTLS handshake (ECDHE keygen,
+	// signing, records). PR off is the mbedTLS default.
 
 	try {
 		mbedtls::check(mbedtls_ctr_drbg_seed(&mDrbg, mbedtls_entropy_func, &mEntropy, NULL, 0));
@@ -482,7 +484,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_VERBOSE << "DTLS send size=" << message->size();
 
 	int ret;
 	do {
@@ -504,7 +506,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_VERBOSE << "DTLS incoming from network, size=" << message->size();
 	mIncomingQueue.push(message);
 	enqueueRecv();
 }
@@ -876,7 +878,7 @@ bool DtlsTransport::send(message_ptr message) {
 	if (!message || state() != State::Connected)
 		return false;
 
-	PLOG_VERBOSE << "Send size=" << message->size();
+	PLOG_VERBOSE << "DTLS send size=" << message->size();
 
 	int ret, err;
 	{
@@ -899,7 +901,7 @@ void DtlsTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_VERBOSE << "DTLS incoming from network, size=" << message->size();
 	if(mIncomingQueue.tryPush(message)) {
 		enqueueRecv();
 	} else {

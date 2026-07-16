@@ -57,6 +57,13 @@ public:
     void setOnError(WsErrorCallback cb) { m_onError = std::move(cb); }
     void setOnClose(WsCloseCallback cb) { m_onClose = std::move(cb); }
 
+    // By default text/close callbacks are marshalled to the UI thread via
+    // brls::sync. Disable for callbacks that don't touch the UI and must not
+    // depend on the main loop running (e.g. WebRTC signaling: session restore
+    // blocks the main thread before the first mainLoop() iteration, so a
+    // brls::sync'd pairing message would deadlock until the 60s timeout).
+    void setDispatchOnMainThread(bool enable) { m_dispatchOnMain = enable; }
+
 private:
     void receiveLoop();
     bool performHandshake(const std::string& host, const std::string& path, int port, const std::string& subprotocol);
@@ -78,16 +85,25 @@ private:
     std::thread m_receiveThread;
     std::atomic<WsState> m_state{WsState::DISCONNECTED};
     std::mutex m_sendMutex;
+    // Serializes every mbedtls_ssl_read/_write on the shared TLS context -
+    // mbedTLS contexts are not thread-safe, and the receive thread reads while
+    // other threads send. The socket has a short receive timeout so the reader
+    // releases this lock periodically instead of blocking inside TLS forever.
+    std::mutex m_sslMutex;
 
     // Callbacks
     WsMessageCallback m_onMessage;
     WsBinaryCallback m_onBinary;
     WsErrorCallback m_onError;
     WsCloseCallback m_onClose;
+    bool m_dispatchOnMain = true;
 
     // Low-level I/O
     int rawSend(const uint8_t* data, size_t len);
     int rawRecv(uint8_t* data, size_t len);
+    // Read exactly len bytes, retrying on receive timeouts (rawRecv() == 0)
+    // until the socket is disconnected. Returns false on error/close.
+    bool recvExact(uint8_t* data, size_t len);
     void cleanupSocket();
 };
 

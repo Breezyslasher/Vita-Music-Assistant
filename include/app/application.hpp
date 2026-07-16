@@ -12,6 +12,7 @@
 #include "app.h"
 #include <string>
 #include <functional>
+#include <atomic>
 
 namespace vita_ma {
 
@@ -75,6 +76,9 @@ private:
     std::string m_serverUrl;
     std::string m_username;
     AppSettings m_settings;
+    // True once a "session expired" login prompt is showing; prevents stacking
+    // duplicate login screens. Cleared when a connection succeeds.
+    std::atomic<bool> m_reloginPrompted{false};
 };
 
 } // namespace vita_ma

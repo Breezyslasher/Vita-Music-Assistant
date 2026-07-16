@@ -5,6 +5,7 @@
 #include "view/settings_tab.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
 #include "player/mpv_player.hpp"
 #include "activity/player_activity.hpp"
@@ -12,6 +13,7 @@
 #include <set>
 #include <chrono>
 #include <thread>
+#include <cctype>
 
 #ifdef __vita__
 #include <psp2/net/netctl.h>
@@ -462,25 +464,93 @@ void SettingsTab::createRemoteAccessSection() {
     header->setTitle("Remote Access");
     m_contentBox->addView(header);
 
-    // Remote access info
-    auto* remoteIdCell = new brls::DetailCell();
-    remoteIdCell->setText("Remote ID");
-    remoteIdCell->setDetailText(settings.remoteId.empty() ? "Not configured" : settings.remoteId);
-    m_contentBox->addView(remoteIdCell);
+    // Remote ID - opens the on-screen keyboard to enter the server's Remote ID
+    m_remoteIdCell = new brls::DetailCell();
+    m_remoteIdCell->setText("Remote ID");
+    m_remoteIdCell->setDetailText(settings.remoteId.empty() ? "Not set" : settings.remoteId);
+    m_remoteIdCell->registerClickAction([this](brls::View*) {
+        std::string current = Application::getInstance().getSettings().remoteId;
+        brls::Application::getImeManager()->openForText([this](std::string value) {
+            // Canonicalize (strips hyphen grouping / extracts from a pasted URL)
+            std::string id = WebRTCClient::normalizeRemoteId(value);
 
-    // Remote access status
-    auto* remoteStatusCell = new brls::DetailCell();
-    remoteStatusCell->setText("Status");
-    remoteStatusCell->setDetailText(settings.remoteAccessEnabled ? "Enabled" : "Disabled");
-    m_contentBox->addView(remoteStatusCell);
+            if (!id.empty() && !MAClient::isRemoteId(id)) {
+                brls::Application::notify("Invalid Remote ID - copy it from the server's Remote Access settings");
+                return;
+            }
+            Application& a = Application::getInstance();
+            a.getSettings().remoteId = id;
+            a.saveSettings();
+            m_remoteIdCell->setDetailText(id.empty() ? "Not set" : id);
+            brls::Application::notify(id.empty() ? "Remote ID cleared"
+                                                 : "Remote ID saved");
+        }, "Remote ID", "Remote ID from server settings", 80, current);
+        return true;
+    });
+    m_contentBox->addView(m_remoteIdCell);
+
+    // Connect Now - establishes the WebRTC connection using the saved id + token
+    m_remoteConnectCell = new brls::DetailCell();
+    m_remoteConnectCell->setText("Connect Now");
+    m_remoteConnectCell->setDetailText("Connect to your server remotely");
+    m_remoteConnectCell->registerClickAction([this](brls::View*) {
+        onRemoteConnect();
+        return true;
+    });
+    m_contentBox->addView(m_remoteConnectCell);
 
     // Info label
     auto* infoLabel = new brls::Label();
-    infoLabel->setText("Remote access uses WebRTC to connect to your Music Assistant server from anywhere.");
+    infoLabel->setText("Remote access uses WebRTC to reach your Music Assistant server from "
+                       "anywhere. Enable Remote Access on the server, sign in once with your "
+                       "server URL, then set the Remote ID here and press Connect Now.");
     infoLabel->setFontSize(14);
     infoLabel->setMarginLeft(16);
     infoLabel->setMarginTop(8);
     m_contentBox->addView(infoLabel);
+}
+
+void SettingsTab::onRemoteConnect() {
+    Application& app = Application::getInstance();
+    const std::string remoteId = app.getSettings().remoteId;
+    const std::string token = app.getAuthToken();
+
+    if (remoteId.empty()) {
+        brls::Application::notify("Set a Remote ID first");
+        return;
+    }
+    if (!MAClient::isRemoteId(remoteId)) {
+        brls::Application::notify("Invalid Remote ID - copy it from the server's Remote Access settings");
+        return;
+    }
+    if (token.empty()) {
+        brls::Application::notify("Sign in with your server URL once before connecting remotely");
+        return;
+    }
+
+    brls::Application::notify("Connecting remotely (pairing can take ~30s)...");
+    std::string username = app.getUsername();
+
+    std::thread([remoteId, token, username]() {
+        bool ok = MAClient::instance().connect(remoteId, token);
+
+        brls::sync([remoteId, token, username, ok]() {
+            if (ok) {
+                Application& a = Application::getInstance();
+                a.setServerUrl(remoteId);
+                a.setAuthToken(token);
+                a.setUsername(username);
+                a.getSettings().remoteAccessEnabled = true;
+                a.saveSettings();
+                a.connectSendspin();
+                brls::Application::notify("Connected remotely");
+            } else {
+                std::string err = WebRTCClient::instance().getLastError();
+                brls::Application::notify("Remote connection failed: " +
+                                          (err.empty() ? "check the Remote ID and that the server is online" : err));
+            }
+        });
+    }).detach();
 }
 
 void SettingsTab::createDebugSection() {

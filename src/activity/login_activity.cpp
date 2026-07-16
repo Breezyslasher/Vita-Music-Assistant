@@ -12,12 +12,15 @@
 #include "activity/login_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
+#include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
 #include "utils/http_client.hpp"
 #include "utils/async.hpp"
 #include "view/progress_dialog.hpp"
 
 #include <memory>
+#include <cctype>
+#include <thread>
 
 namespace vita_ma {
 
@@ -36,6 +39,11 @@ void LoginActivity::onContentAvailable() {
     auto& app = Application::getInstance();
     m_serverUrl = app.getServerUrl();
     m_username = app.getUsername();
+    m_remoteId = app.getSettings().remoteId;
+    // If the saved server is itself a Remote ID, surface it in the remote field
+    if (m_remoteId.empty() && MAClient::isRemoteId(m_serverUrl)) {
+        m_remoteId = m_serverUrl;
+    }
 
     // Set title
     if (titleLabel) {
@@ -85,6 +93,20 @@ void LoginActivity::onContentAvailable() {
         passwordLabel->addGestureRecognizer(new brls::TapGestureRecognizer(passwordLabel));
     }
 
+    // Remote ID input (WebRTC remote access)
+    if (remoteLabel) {
+        remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+        remoteLabel->registerClickAction([this](brls::View* view) {
+            brls::Application::getImeManager()->openForText([this](std::string text) {
+                // Canonicalize (strips hyphen grouping / extracts from a pasted URL)
+                m_remoteId = WebRTCClient::normalizeRemoteId(text);
+                remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+            }, "Enter Remote ID", "Remote ID from server settings", 80, m_remoteId);
+            return true;
+        });
+        remoteLabel->addGestureRecognizer(new brls::TapGestureRecognizer(remoteLabel));
+    }
+
     // Login button
     if (loginButton) {
         loginButton->setText("Login");
@@ -101,6 +123,72 @@ void LoginActivity::onContentAvailable() {
             return true;
         });
     }
+
+    // Remote login button
+    if (remoteButton) {
+        remoteButton->registerClickAction([this](brls::View* view) {
+            onRemoteLoginPressed();
+            return true;
+        });
+    }
+}
+
+void LoginActivity::onRemoteLoginPressed() {
+    if (m_remoteId.empty()) {
+        if (statusLabel) statusLabel->setText("Enter a Remote ID first");
+        return;
+    }
+    if (!MAClient::isRemoteId(m_remoteId)) {
+        if (statusLabel) statusLabel->setText("Invalid Remote ID - copy it from the server's Remote Access settings");
+        return;
+    }
+
+    // A remote connection reuses the token from a previous direct sign-in:
+    // token login (POST /auth/login) needs HTTP reachability the remote path
+    // doesn't have.
+    auto& app = Application::getInstance();
+    if (app.getAuthToken().empty()) {
+        if (statusLabel) {
+            statusLabel->setText(
+                "Remote ID needs a saved login. Sign in once with your server "
+                "URL, then use Remote Login.");
+        }
+        return;
+    }
+
+    // Persist the Remote ID so it is remembered next launch.
+    app.getSettings().remoteId = m_remoteId;
+    app.saveSettings();
+
+    if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
+    std::string user = !m_username.empty() ? m_username : app.getUsername();
+    std::string remoteId = m_remoteId;
+    std::string token = app.getAuthToken();
+
+    // connect() blocks until the WebRTC handshake completes (or fails), so it
+    // must not run on the UI thread.
+    std::thread([this, remoteId, token, user]() {
+        bool ok = MAClient::instance().connect(remoteId, token);
+
+        brls::sync([this, remoteId, token, user, ok]() {
+            if (ok) {
+                auto& a = Application::getInstance();
+                a.setServerUrl(remoteId);
+                a.setAuthToken(token);
+                a.setUsername(user);
+                a.saveSettings();
+                if (statusLabel) statusLabel->setText("Connected!");
+                a.connectSendspin();
+                a.pushMainActivity();
+            } else {
+                std::string err = WebRTCClient::instance().getLastError();
+                if (statusLabel) {
+                    statusLabel->setText("Remote connection failed: " +
+                                         (err.empty() ? "unknown error" : err));
+                }
+            }
+        });
+    }).detach();
 }
 
 void LoginActivity::updateUIForMode() {
@@ -144,7 +232,7 @@ void LoginActivity::onLoginPressed() {
         return;
     }
 
-    // Remote ID (MA-XXXX-XXXX): connect via MA remote access (WebRTC).
+    // Remote ID: connect via MA remote access (WebRTC).
     // Token login (POST /auth/login) needs HTTP reachability, so a remote
     // connection reuses the token from a previous direct sign-in.
     if (MAClient::isRemoteId(m_serverUrl)) {
@@ -157,7 +245,7 @@ void LoginActivity::onLoginPressed() {
             }
             return;
         }
-        if (statusLabel) statusLabel->setText("Connecting remotely (may take ~10s)...");
+        if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
         std::string user = !m_username.empty() ? m_username : app.getUsername();
         connectWithToken(m_serverUrl, app.getAuthToken(), user);
         return;
@@ -396,6 +484,14 @@ void LoginActivity::connectWithToken(const std::string& serverUrl,
                                       const std::string& username) {
     // Connect the WebSocket with the obtained token
     MAClient& client = MAClient::instance();
+
+    // A fresh credential login yields a (possibly short-lived) token. Ask the
+    // client to upgrade it to a long-lived token once authenticated, so future
+    // connections - especially remote WebRTC ones that can't reach /auth/login
+    // - never expire. Skipped for Remote IDs, which reuse an existing token.
+    if (!MAClient::isRemoteId(serverUrl)) {
+        client.setUpgradeToLongLived(true);
+    }
 
     if (client.connect(serverUrl, token)) {
         brls::Logger::info("Login: WebSocket connected and authenticated");

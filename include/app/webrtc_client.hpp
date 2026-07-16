@@ -10,7 +10,7 @@
  * server's controllers/webserver/remote_access/gateway.py):
  *
  *  1. Connect to wss://signaling.music-assistant.io/ws and send
- *     {"type":"connect-request","remoteId":"MA-XXXX-XXXX"}.
+ *     {"type":"connect-request","remoteId":"<26-char base32 id>"}.
  *  2. Receive {"type":"connected","sessionId"} then
  *     {"type":"session-ready","sessionId","iceServers":[...]}.
  *  3. Open an RTCPeerConnection with those ICE servers, create the data
@@ -58,7 +58,7 @@ enum class WebRTCState {
 struct RemoteAccessInfo {
     bool enabled = false;
     bool connected = false;
-    std::string remoteId;       // Format: MA-XXXX-XXXX
+    std::string remoteId;       // 26-char base32 id (cert fingerprint derived)
     std::string signalingUrl;   // wss://signaling.music-assistant.io/ws
 };
 
@@ -75,6 +75,12 @@ public:
 
     WebRTCState getState() const { return m_state.load(); }
     bool isConnected() const { return m_state.load() == WebRTCState::CONNECTED; }
+    // Human-readable detail of the most recent failure (e.g. the signaling
+    // server's error text), for surfacing in the UI.
+    std::string getLastError() {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        return m_lastError;
+    }
 
     // --- ma-api channel (MA WebSocket API messages) ---
     bool sendApi(const std::string& message);
@@ -104,8 +110,14 @@ public:
     bool httpProxyFetch(const std::string& method, const std::string& path,
                         int timeoutMs, int& statusOut, std::string& bodyOut);
 
-    // True if the given server string looks like a Remote ID (MA-XXXX-XXXX)
+    // True if the given server string looks like a Remote ID rather than a
+    // URL/hostname. The canonical id is a 26-char base32 string (derived from
+    // the server's certificate fingerprint); display grouping with hyphens and
+    // pasted app URLs (?remote_id=...) are accepted too.
     static bool isRemoteId(const std::string& s);
+    // Canonicalize user input: extract from a pasted URL, strip hyphen/space
+    // grouping and uppercase when the result matches the 26-char base32 shape.
+    static std::string normalizeRemoteId(const std::string& s);
 
     // Ask the signaling server whether a Remote ID is currently registered
     // (GET /api/check/:remoteId). Async; cb delivered on the UI thread.
@@ -127,6 +139,15 @@ private:
     std::string m_signalingUrl = "wss://signaling.music-assistant.io/ws";
     void onSignalingMessage(const std::string& message);
     bool sendSignaling(const Json& msg);
+
+    // True while a connectRemote() attempt is running (guards double-press)
+    std::atomic<bool> m_connectInFlight{false};
+
+    // connectRemote() blocks on this until the handshake reaches a terminal
+    // state (CONNECTED / ERROR / DISCONNECTED); setState() notifies.
+    std::mutex m_stateMutex;
+    std::condition_variable m_stateCv;
+    std::string m_lastError;  // guarded by m_stateMutex
 
     // Peer connection / channels (guarded by m_rtcMutex)
     std::mutex m_rtcMutex;

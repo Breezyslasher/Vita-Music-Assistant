@@ -266,7 +266,11 @@ bool MAClient::isRemoteId(const std::string& s) {
 }
 
 bool MAClient::connect(const std::string& serverUrl, const std::string& authToken) {
-    // Remote IDs (MA-XXXX-XXXX) go through WebRTC remote access
+    // A fresh connect re-enables auto-reconnect (it may have been disabled by a
+    // prior auth failure or explicit disconnect).
+    m_shouldReconnect.store(true);
+
+    // Remote IDs go through WebRTC remote access
     if (isRemoteId(serverUrl)) {
         return connectRemote(serverUrl, authToken);
     }
@@ -303,7 +307,9 @@ bool MAClient::connect(const std::string& serverUrl, const std::string& authToke
     m_ws.setOnError([this](const std::string& err) { onError(err); });
     m_ws.setOnClose([this](int code, const std::string& reason) { onClose(code, reason); });
 
-    return m_ws.connect(wsUrl, "json");
+    // No subprotocol: the MA server doesn't advertise any, and requesting
+    // "json" makes aiohttp log a protocol-mismatch warning on every connect.
+    return m_ws.connect(wsUrl);
 }
 
 bool MAClient::connectRemote(const std::string& remoteId, const std::string& authToken) {
@@ -373,10 +379,25 @@ void MAClient::onMessage(const std::string& message) {
                     if (m_eventCallback) {
                         m_eventCallback(MAEvent::CONNECTED, Json());
                     }
+                    // On a fresh direct login, upgrade the short-lived token to
+                    // a long-lived one so remote (WebRTC) connections - which
+                    // cannot reach /auth/login to re-authenticate - never expire.
+                    if (m_upgradeToLongLived.load() && !m_remoteMode.load()) {
+                        m_upgradeToLongLived.store(false);
+                        upgradeToLongLivedToken();
+                    }
                 } else {
-                    brls::Logger::error("MA: authentication failed");
+                    // The token was rejected (expired/invalid) - distinct from a
+                    // network drop. Stop the reconnect loop so we don't spin
+                    // forever replaying a dead token, and ask the app to re-login.
+                    brls::Logger::error("MA: authentication failed (token rejected)");
+                    m_shouldReconnect.store(false);
+                    m_authenticated.store(false);
+                    if (m_onAuthFailed) {
+                        m_onAuthFailed();
+                    }
                     if (m_eventCallback) {
-                        m_eventCallback(MAEvent::DISCONNECTED, Json());
+                        m_eventCallback(MAEvent::AUTH_FAILED, Json());
                     }
                 }
             });
@@ -441,6 +462,31 @@ void MAClient::onClose(int code, const std::string& reason) {
     if (m_shouldReconnect.load()) {
         attemptReconnect();
     }
+}
+
+void MAClient::upgradeToLongLivedToken() {
+    // auth/token/create -> returns a new long-lived token string (expires_at
+    // null). We swap our in-memory token to it (so the reconnect loop uses the
+    // durable one) and hand it to the app to persist.
+    Json kwargs;
+    kwargs["name"] = Json("Vita Music Assistant");
+    brls::Logger::info("MA: requesting long-lived token");
+    sendCommand("auth/token/create", kwargs, [this](bool success, const Json& result) {
+        if (!success || result.type() != Json::STRING) {
+            brls::Logger::warning("MA: long-lived token upgrade failed; keeping current token");
+            return;
+        }
+        std::string newToken = result.str();
+        if (newToken.empty()) {
+            brls::Logger::warning("MA: long-lived token upgrade returned empty token");
+            return;
+        }
+        m_authToken = newToken;
+        brls::Logger::info("MA: upgraded to long-lived token");
+        if (m_onTokenUpgraded) {
+            m_onTokenUpgraded(newToken);
+        }
+    });
 }
 
 void MAClient::attemptReconnect() {

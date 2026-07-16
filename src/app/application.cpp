@@ -18,6 +18,7 @@
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/processmgr.h>
 #endif
 
 namespace vita_ma {
@@ -48,6 +49,32 @@ bool Application::init() {
     applyTheme();
     applyLogLevel();
 
+    // Persist a freshly minted long-lived token (fires on the WS thread after a
+    // direct login upgrades its short-lived token).
+    MAClient::instance().setTokenUpgradedCallback([this](const std::string& newToken) {
+        brls::sync([this, newToken]() {
+            m_authToken = newToken;
+            saveSettings();
+            brls::Logger::info("App: stored long-lived token");
+        });
+    });
+
+    // The server rejected our token (expired/invalid). The reconnect loop is
+    // already stopped; prompt the user to sign in again.
+    MAClient::instance().setAuthFailedCallback([this]() {
+        brls::sync([this]() {
+            // Only prompt once until a connection succeeds again, so a boot-time
+            // expiry (main pushed, then async auth fails) or a stray retry can't
+            // stack multiple login screens.
+            if (m_reloginPrompted.exchange(true)) return;
+            bool remote = MAClient::instance().isRemoteMode();
+            brls::Application::notify(remote
+                ? "Session expired. Connect to your server directly to sign in again."
+                : "Session expired. Please sign in again.");
+            pushLoginActivity();
+        });
+    });
+
     m_initialized = true;
     return true;
 }
@@ -76,7 +103,18 @@ void Application::run() {
 
     // Main loop handled by Borealis
     while (brls::Application::mainLoop()) {
-        // Application keeps running
+#ifdef __vita__
+        // Keep the system (and with it, WiFi) awake. Without this the Vita
+        // auto-suspends after a couple of minutes idle, silently killing every
+        // socket (MA WebSocket, Sendspin, WebRTC) - the server then logs a
+        // 1006 close and marks the player unavailable. The screen may still
+        // dim; only auto-suspend is suppressed.
+        static int powerTickCounter = 0;
+        if (++powerTickCounter >= 300) {  // roughly every 5s at 60fps
+            powerTickCounter = 0;
+            sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+        }
+#endif
     }
 }
 
@@ -152,6 +190,8 @@ void Application::pushLoginActivity() {
 }
 
 void Application::pushMainActivity() {
+    // A successful connection re-arms the "session expired" prompt.
+    m_reloginPrompted.store(false);
     brls::Application::pushActivity(new MainActivity());
 }
 
@@ -326,6 +366,10 @@ bool Application::loadSettings() {
     if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
     m_settings.selectedPlayerId = extractString("selectedPlayerId");
 
+    // Remote access
+    m_settings.remoteId = extractString("remoteId");
+    m_settings.remoteAccessEnabled = extractBool("remoteAccessEnabled", false);
+
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
 #else
@@ -380,7 +424,9 @@ bool Application::saveSettings() {
     // Player settings
     json += "  \"localPlayback\": " + std::string(m_settings.localPlayback ? "true" : "false") + ",\n";
     json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
-    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\"\n";
+    json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
+    json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";
+    json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + "\n";
 
     json += "}\n";
 

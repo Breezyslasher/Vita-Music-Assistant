@@ -6,17 +6,22 @@
 #include <ctime>
 #include <sstream>
 #include <algorithm>
+#include <cerrno>
+#include <thread>
+#include <chrono>
+#include <sys/time.h>
+
+#include <sys/socket.h>
+#include <fcntl.h>
 
 #ifdef __vita__
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
 #else
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <fcntl.h>
 #endif
 
 #include <mbedtls/ssl.h>
@@ -27,6 +32,23 @@
 #include <mbedtls/base64.h>
 
 namespace vita_ma {
+
+// TLS receive BIO. Unlike mbedtls_net_recv, this maps EAGAIN/EWOULDBLOCK on
+// the non-blocking socket to MBEDTLS_ERR_SSL_WANT_READ so mbedtls_ssl_read()
+// returns immediately when no data is pending - required so the receive
+// thread never blocks inside TLS holding the SSL lock (the context is shared
+// with sender threads and is not thread-safe).
+static int wsTlsRecv(void* ctx, unsigned char* buf, size_t len) {
+    auto* net = static_cast<mbedtls_net_context*>(ctx);
+    int ret = static_cast<int>(::recv(net->fd, buf, len, 0));
+    if (ret < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            return MBEDTLS_ERR_SSL_WANT_READ;
+        }
+        return MBEDTLS_ERR_NET_RECV_FAILED;
+    }
+    return ret;
+}
 
 WebSocketClient::WebSocketClient() {
     std::srand(static_cast<unsigned>(std::time(nullptr)));
@@ -132,7 +154,7 @@ bool WebSocketClient::connect(const std::string& url, const std::string& subprot
         mbedtls_ssl_conf_rng(conf, mbedtls_ctr_drbg_random, ctrDrbg);
         mbedtls_ssl_setup(ssl, conf);
         mbedtls_ssl_set_hostname(ssl, host.c_str());
-        mbedtls_ssl_set_bio(ssl, net, mbedtls_net_send, mbedtls_net_recv, nullptr);
+        mbedtls_ssl_set_bio(ssl, net, mbedtls_net_send, wsTlsRecv, nullptr);
 
         int ret;
         while ((ret = mbedtls_ssl_handshake(ssl)) != 0) {
@@ -237,6 +259,18 @@ bool WebSocketClient::connect(const std::string& url, const std::string& subprot
     m_state.store(WsState::CONNECTED);
     brls::Logger::info("WS connected successfully");
 
+    if (m_useSsl) {
+        // Make the socket non-blocking: wsTlsRecv maps EAGAIN to WANT_READ,
+        // so the receive thread never sits inside mbedtls_ssl_read holding
+        // the SSL lock (senders share the TLS context) - recvExact() polls
+        // with a short sleep instead. SO_RCVTIMEO is NOT used because it is
+        // silently ignored on Vita sockets; O_NONBLOCK via fcntl works.
+        int flags = fcntl(m_socket, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(m_socket, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
     // Start receive thread
     m_receiveThread = std::thread(&WebSocketClient::receiveLoop, this);
 
@@ -292,12 +326,21 @@ bool WebSocketClient::performHandshake(const std::string& host, const std::strin
 
 int WebSocketClient::rawSend(const uint8_t* data, size_t len) {
     if (m_useSsl && m_sslCtx) {
+        // The receive thread shares this TLS context; ssl_read/ssl_write must
+        // never run concurrently (mbedTLS contexts are not thread-safe).
+        std::lock_guard<std::mutex> sslLock(m_sslMutex);
         auto* ssl = static_cast<mbedtls_ssl_context*>(m_sslCtx);
         size_t sent = 0;
         while (sent < len) {
             int ret = mbedtls_ssl_write(ssl, data + sent, len - sent);
             if (ret < 0) {
-                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE ||
+                    ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                    // Non-blocking socket busy - brief pause, then retry with
+                    // the same arguments as mbedTLS requires.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    continue;
+                }
                 return -1;
             }
             sent += ret;
@@ -312,19 +355,43 @@ int WebSocketClient::rawSend(const uint8_t* data, size_t len) {
     }
 }
 
+// Returns >0 bytes read, 0 for "no data yet, try again" (receive timeout),
+// or <0 on error/connection closed.
 int WebSocketClient::rawRecv(uint8_t* data, size_t len) {
     if (m_useSsl && m_sslCtx) {
+        std::lock_guard<std::mutex> sslLock(m_sslMutex);
         auto* ssl = static_cast<mbedtls_ssl_context*>(m_sslCtx);
         int ret = mbedtls_ssl_read(ssl, data, len);
-        if (ret == MBEDTLS_ERR_SSL_WANT_READ) return 0;
-        return ret;
+        if (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+            ret == MBEDTLS_ERR_SSL_WANT_WRITE) return 0;
+        if (ret == 0) return -1;  // clean TLS close
+        return ret;               // >0 data, <0 error (incl. close notify)
     } else {
 #ifdef __vita__
-        return sceNetRecv(m_socket, data, len, 0);
+        int ret = sceNetRecv(m_socket, data, len, 0);
 #else
-        return ::recv(m_socket, data, len, 0);
+        int ret = static_cast<int>(::recv(m_socket, data, len, 0));
 #endif
+        if (ret == 0) return -1;  // peer closed
+        return ret;
     }
+}
+
+bool WebSocketClient::recvExact(uint8_t* data, size_t len) {
+    size_t got = 0;
+    while (got < len) {
+        if (m_state.load() == WsState::DISCONNECTED) return false;
+        int n = rawRecv(data + got, len - got);
+        if (n < 0) return false;
+        if (n == 0) {
+            // No data yet (non-blocking socket) - sleep briefly so senders
+            // can take the SSL lock, then poll again.
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            continue;
+        }
+        got += static_cast<size_t>(n);
+    }
+    return true;
 }
 
 bool WebSocketClient::sendFrame(WsOpcode opcode, const uint8_t* data, size_t len) {
@@ -365,7 +432,7 @@ bool WebSocketClient::sendFrame(WsOpcode opcode, const uint8_t* data, size_t len
 
 bool WebSocketClient::readFrame(std::string& payload, WsOpcode& opcode) {
     uint8_t header[2];
-    if (rawRecv(header, 2) < 2) return false;
+    if (!recvExact(header, 2)) return false;
 
     opcode = static_cast<WsOpcode>(header[0] & 0x0F);
     bool masked = (header[1] & 0x80) != 0;
@@ -373,11 +440,11 @@ bool WebSocketClient::readFrame(std::string& payload, WsOpcode& opcode) {
 
     if (payloadLen == 126) {
         uint8_t ext[2];
-        if (rawRecv(ext, 2) < 2) return false;
+        if (!recvExact(ext, 2)) return false;
         payloadLen = (static_cast<uint64_t>(ext[0]) << 8) | ext[1];
     } else if (payloadLen == 127) {
         uint8_t ext[8];
-        if (rawRecv(ext, 8) < 8) return false;
+        if (!recvExact(ext, 8)) return false;
         payloadLen = 0;
         for (int i = 0; i < 8; i++) {
             payloadLen = (payloadLen << 8) | ext[i];
@@ -393,16 +460,14 @@ bool WebSocketClient::readFrame(std::string& payload, WsOpcode& opcode) {
 
     uint8_t mask[4] = {0};
     if (masked) {
-        if (rawRecv(mask, 4) < 4) return false;
+        if (!recvExact(mask, 4)) return false;
     }
 
     payload.resize(static_cast<size_t>(payloadLen));
-    size_t received = 0;
-    while (received < payloadLen) {
-        int n = rawRecv(reinterpret_cast<uint8_t*>(&payload[received]),
-                       static_cast<size_t>(payloadLen - received));
-        if (n <= 0) return false;
-        received += n;
+    if (payloadLen > 0 &&
+        !recvExact(reinterpret_cast<uint8_t*>(&payload[0]),
+                   static_cast<size_t>(payloadLen))) {
+        return false;
     }
 
     if (masked) {
@@ -431,9 +496,13 @@ void WebSocketClient::receiveLoop() {
             if (m_state.load() == WsState::CONNECTED) {
                 m_state.store(WsState::DISCONNECTED);
                 if (m_onClose) {
-                    brls::sync([this]() {
+                    if (m_dispatchOnMain) {
+                        brls::sync([this]() {
+                            m_onClose(1006, "Connection lost");
+                        });
+                    } else {
                         m_onClose(1006, "Connection lost");
-                    });
+                    }
                 }
             }
             break;
@@ -442,10 +511,14 @@ void WebSocketClient::receiveLoop() {
         switch (opcode) {
             case WsOpcode::TEXT:
                 if (m_onMessage) {
-                    std::string msg = payload;
-                    brls::sync([this, msg]() {
-                        m_onMessage(msg);
-                    });
+                    if (m_dispatchOnMain) {
+                        std::string msg = payload;
+                        brls::sync([this, msg]() {
+                            m_onMessage(msg);
+                        });
+                    } else {
+                        m_onMessage(payload);
+                    }
                 }
                 break;
 
@@ -476,9 +549,13 @@ void WebSocketClient::receiveLoop() {
                             reason = payload.substr(2);
                         }
                     }
-                    brls::sync([this, code, reason]() {
+                    if (m_dispatchOnMain) {
+                        brls::sync([this, code, reason]() {
+                            m_onClose(code, reason);
+                        });
+                    } else {
                         m_onClose(code, reason);
-                    });
+                    }
                 }
                 // Send close frame back
                 sendFrame(WsOpcode::CLOSE,

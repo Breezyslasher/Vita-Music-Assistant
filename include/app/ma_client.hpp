@@ -70,6 +70,7 @@ private:
 enum class MAEvent {
     CONNECTED,
     DISCONNECTED,
+    AUTH_FAILED,        // token rejected by the server (expired/invalid)
     QUEUE_UPDATED,
     QUEUE_ITEMS_UPDATED,
     QUEUE_TIME_UPDATED,
@@ -89,7 +90,7 @@ public:
     static MAClient& instance();
 
     // Connection. serverUrl may be an http(s)/ws(s) URL for a direct
-    // connection, or a Remote ID ("MA-XXXX-XXXX") for WebRTC remote access -
+    // connection, or a Remote ID (26-char base32) for WebRTC remote access -
     // connect() dispatches automatically.
     bool connect(const std::string& serverUrl, const std::string& authToken = "");
     // Connect through MA remote access (WebRTC data channel via the signaling
@@ -105,6 +106,23 @@ public:
 
     // Set event callback
     void setEventCallback(MAEventCallback cb) { m_eventCallback = std::move(cb); }
+
+    // After the next successful *direct* authentication, mint a long-lived
+    // token (auth/token/create) so future connections - including remote
+    // WebRTC ones, which can't reach /auth/login - never expire. Set this
+    // before a fresh username/password login.
+    void setUpgradeToLongLived(bool v) { m_upgradeToLongLived.store(v); }
+    // Invoked (on the WS thread) with the freshly minted long-lived token so
+    // the app can persist it. m_authToken is already updated when this fires.
+    void setTokenUpgradedCallback(std::function<void(const std::string&)> cb) {
+        m_onTokenUpgraded = std::move(cb);
+    }
+    // Invoked (on the WS thread) when the server rejects our token. The
+    // reconnect loop is stopped before this fires - the app should surface a
+    // re-login prompt. Registered once at startup, never cleared.
+    void setAuthFailedCallback(std::function<void()> cb) {
+        m_onAuthFailed = std::move(cb);
+    }
 
     // === Music Library Commands ===
 
@@ -257,7 +275,13 @@ private:
 
     // Reconnect
     std::atomic<bool> m_shouldReconnect{true};
+
+    // Long-lived token upgrade / auth-failure handling
+    std::atomic<bool> m_upgradeToLongLived{false};
+    std::function<void(const std::string&)> m_onTokenUpgraded;
+    std::function<void()> m_onAuthFailed;
     void attemptReconnect();
+    void upgradeToLongLivedToken();
 };
 
 } // namespace vita_ma

@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-vita:
     runs-on: ubuntu-latest
@@ -34,22 +37,65 @@ jobs:
           vdpm zstd freetype libpng $PWD/*-arm.tar.xz
           git config --system --add safe.directory "$GITHUB_WORKSPACE"
 
+      # aiortc-based gateways (Music Assistant remote access) refuse the DTLS
+      # connection unless a DTLS-SRTP profile is negotiated, even for
+      # datachannel-only sessions. vitasdk's prebuilt mbedTLS lacks
+      # MBEDTLS_SSL_DTLS_SRTP, so rebuild it with the option enabled using the
+      # same recipe as vitasdk/packages (source + vita patch + threading).
+      - name: Rebuild mbedTLS with DTLS-SRTP support
+        run: |
+          apk add python3 patch bzip2
+          cd /tmp
+          wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
+          tar xf mbedtls-3.6.5.tar.bz2
+          cd mbedtls-3.6.5
+          patch -p1 < "$GITHUB_WORKSPACE/patches/mbedtls_vitasdk.patch"
+          python3 scripts/config.py set MBEDTLS_THREADING_C
+          python3 scripts/config.py set MBEDTLS_THREADING_PTHREAD
+          python3 scripts/config.py set MBEDTLS_SSL_DTLS_SRTP
+          mkdir build && cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
+            -DCMAKE_INSTALL_PREFIX=$VITASDK/arm-vita-eabi -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DMBEDTLS_FATAL_WARNINGS=OFF
+          make -j$(nproc) mbedtls
+          make install
+
       - name: Build
         run: |
           cmake -B build -G Ninja
           cmake --build build
 
       - name: Upload VPK
+        continue-on-error: true  # artifact quota may be exhausted; branch publish below is the fallback
         uses: actions/upload-artifact@v5
         with:
           name: VitaMusicAssistant-${{ github.run_number }}
           path: build/VitaMusicAssistant.vpk
+          retention-days: 2
 
       - name: Copy ELF for upload
         run: cp build/VitaMusicAssistant build/VitaMusicAssistant.elf
 
       - name: Upload ELF (for crash debugging)
+        continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: VitaMusicAssistant-ELF-${{ github.run_number }}
           path: build/VitaMusicAssistant.elf
+          retention-days: 2
+
+      - name: Publish VPK + ELF to build-output branch (quota-proof download)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          rm -rf /tmp/build-output && mkdir /tmp/build-output
+          cp build/VitaMusicAssistant.vpk /tmp/build-output/
+          gzip -c build/VitaMusicAssistant.elf > /tmp/build-output/VitaMusicAssistant.elf.gz
+          echo "run ${{ github.run_number }} sha ${{ github.sha }}" > /tmp/build-output/BUILD_INFO.txt
+          cd /tmp/build-output
+          git init -q -b build-output
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git add -A
+          git commit -q -m "Build output: run ${{ github.run_number }} (${{ github.sha }})"
+          git push -f origin build-output

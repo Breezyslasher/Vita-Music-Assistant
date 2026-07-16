@@ -110,6 +110,24 @@ set(sctp_inet6 OFF CACHE BOOL "" FORCE)
 set(sctp_build_programs OFF CACHE BOOL "" FORCE)
 set(sctp_build_shared_lib OFF CACHE BOOL "" FORCE)
 set(sctp_werror OFF CACHE BOOL "" FORCE)
+
+# usrsctp patch (must precede add_subdirectory so usrsctp's own CMake
+# check_struct_has_member sees the patched header): struct sockaddr_conn must
+# include sconn_len on the Vita. vitasdk's struct sockaddr is BSD-style (sa_len
+# at offset 0, sa_family at offset 1), so usrsctp is built HAVE_SA_LEN and reads
+# the address family at offset 1. Without sconn_len, sockaddr_conn puts
+# sconn_family at offset 0 and usrsctp_bind() reads family 0 -> EAFNOSUPPORT
+# (errno 106, seen on-device). Add __vita__ to the platform list that gives
+# sockaddr_conn an sconn_len field.
+set(USRSCTP_H_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/usrsctp_usrsctp_h.h)
+set(USRSCTP_H_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/usrsctp/usrsctplib/usrsctp.h)
+if(EXISTS ${USRSCTP_H_PATCH})
+    message(STATUS "Applying patch: usrsctp.h (sockaddr_conn sconn_len on Vita)")
+    configure_file(${USRSCTP_H_PATCH} ${USRSCTP_H_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${USRSCTP_H_PATCH}")
+endif()
+
 add_subdirectory(lib/libdatachannel EXCLUDE_FROM_ALL)
 
 # Vita compatibility shims for the vendored deps (see files for details)
@@ -120,11 +138,19 @@ if(TARGET juice-static)
     target_include_directories(juice-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
     target_compile_options(juice-static PRIVATE
         -include ${VITA_RTC_COMPAT}/vita_juice_compat.h)
+    # The MA gateway (aiortc in Docker) trickles dozens of host candidates -
+    # one per virtual interface - overflowing libjuice's default arrays
+    # (ICE_MAX_CANDIDATES_COUNT 30 and everything derived from it). On-device
+    # logs showed hundreds of "maximum number of candidates" rejections, and
+    # relay candidates being dropped. ~500B per slot; 128 ~= 64KB, fine.
+    target_compile_definitions(juice-static PRIVATE ICE_MAX_CANDIDATES_COUNT=128)
 endif()
 if(TARGET usrsctp)
     # newlib needs BSD visibility + base headers force-included first
     target_compile_options(usrsctp PRIVATE -include ${VITA_RTC_COMPAT}/vita_bsd_types.h)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
+    # sockaddr_conn now carries sconn_len on Vita (see usrsctp.h patch above)
+    target_compile_definitions(usrsctp PRIVATE HAVE_SCONN_LEN)
 endif()
 if(TARGET datachannel-static)
     # Compat headers (<net/if.h>, <ifaddrs.h>, <sys/ioctl.h>) + socket flags
@@ -132,6 +158,10 @@ if(TARGET datachannel-static)
     target_include_directories(datachannel-static BEFORE PRIVATE ${VITA_RTC_COMPAT})
     target_compile_options(datachannel-static PRIVATE
         -include ${VITA_RTC_COMPAT}/vita_datachannel_compat.h)
+    # sockaddr_conn carries sconn_len on Vita, so SctpTransport::getSockAddrConn
+    # must set it (its guard is #ifdef HAVE_SCONN_LEN); usrsctp's own CMake sets
+    # this for the usrsctp target but it does not propagate to this one.
+    target_compile_definitions(datachannel-static PRIVATE HAVE_SCONN_LEN)
 endif()
 
 # vitasdk links libpthread whole-archive via the toolchain already; the deps'
@@ -168,8 +198,12 @@ else()
 endif()
 
 # libdatachannel patch: its mbedTLS DTLS code sets SRTP protection profiles
-# unconditionally, but vitasdk's mbedTLS is built without MBEDTLS_SSL_DTLS_SRTP.
-# SRTP is only needed for media (we build NO_MEDIA); guard those two spots.
+# unconditionally, which requires MBEDTLS_SSL_DTLS_SRTP; the patch guards those
+# spots so either mbedTLS build compiles. NOTE: negotiating a DTLS-SRTP profile
+# is REQUIRED in practice even though we build NO_MEDIA - aiortc-based peers
+# (the MA remote-access gateway) fail the transport right after the DTLS
+# handshake if no profile was negotiated. CI therefore rebuilds mbedTLS with
+# MBEDTLS_SSL_DTLS_SRTP enabled (see .github/workflows/build-vpk.yml).
 set(DC_DTLS_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_dtlstransport.cpp)
 set(DC_DTLS_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/dtlstransport.cpp)
 if(EXISTS ${DC_DTLS_PATCH})
@@ -177,6 +211,69 @@ if(EXISTS ${DC_DTLS_PATCH})
     configure_file(${DC_DTLS_PATCH} ${DC_DTLS_TARGET} COPYONLY)
 else()
     message(FATAL_ERROR "Patch file not found: ${DC_DTLS_PATCH}")
+endif()
+
+# libdatachannel patch: certificate generation enables DRBG prediction
+# resistance, which reseeds from the slow Vita entropy source on every random
+# call - measured ~30s per certificate on device. PR off (mbedTLS default).
+set(DC_CERT_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_certificate.cpp)
+set(DC_CERT_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/certificate.cpp)
+if(EXISTS ${DC_CERT_PATCH})
+    message(STATUS "Applying patch: libdatachannel certificate.cpp (no DRBG prediction resistance)")
+    configure_file(${DC_CERT_PATCH} ${DC_CERT_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${DC_CERT_PATCH}")
+endif()
+
+# libjuice patch: its RNG has no Vita source and falls back to rand();
+# add a random_bytes() branch backed by sceKernelGetRandomNumber.
+set(JUICE_RANDOM_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_random.c)
+set(JUICE_RANDOM_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/random.c)
+if(EXISTS ${JUICE_RANDOM_PATCH})
+    message(STATUS "Applying patch: libjuice random.c (Vita kernel RNG)")
+    configure_file(${JUICE_RANDOM_PATCH} ${JUICE_RANDOM_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${JUICE_RANDOM_PATCH}")
+endif()
+
+# libjuice DIAGNOSTIC patch (temporary): log every received UDP datagram to
+# localize why juice stops receiving after the DTLS handshake completes.
+set(JUICE_UDP_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_udp.c)
+set(JUICE_UDP_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/udp.c)
+if(EXISTS ${JUICE_UDP_PATCH})
+    message(STATUS "Applying patch: libjuice udp.c (recv logging)")
+    configure_file(${JUICE_UDP_PATCH} ${JUICE_UDP_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${JUICE_UDP_PATCH}")
+endif()
+
+# libjuice FIX: vitasdk poll() does not wake on incoming socket data during a
+# long wait, so once ICE goes idle (poll timeout jumps from ~10ms to seconds)
+# incoming packets sit unread and the SCTP handshake stalls. Cap the poll
+# timeout in every conn backend so the socket is drained promptly.
+foreach(_j conn_poll conn_mux conn_thread)
+    set(_src ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_${_j}.c)
+    set(_dst ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/${_j}.c)
+    if(EXISTS ${_src})
+        message(STATUS "Applying patch: libjuice ${_j}.c (poll timeout cap)")
+        configure_file(${_src} ${_dst} COPYONLY)
+    else()
+        message(FATAL_ERROR "Patch file not found: ${_src}")
+    endif()
+endforeach()
+
+# libdatachannel patch: SctpTransport::doRecv() puts a 64KB receive buffer on
+# the stack. On the Vita, pthread stacks are heap-allocated, so that frame
+# overruns the SCTP worker thread's stack into adjacent heap chunks and
+# corrupts the global heap (crash: main thread aborts in free() right after the
+# SCTP handshake). Move the buffer to a thread_local heap allocation.
+set(DC_SCTP_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_sctptransport.cpp)
+set(DC_SCTP_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/sctptransport.cpp)
+if(EXISTS ${DC_SCTP_PATCH})
+    message(STATUS "Applying patch: libdatachannel sctptransport.cpp (off-stack recv buffer)")
+    configure_file(${DC_SCTP_PATCH} ${DC_SCTP_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${DC_SCTP_PATCH}")
 endif()
 
 # Application source files
