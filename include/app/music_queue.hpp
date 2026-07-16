@@ -49,6 +49,9 @@ public:
     void insertTrackAfterCurrent(const MusicItem& item);  // Insert after current track (play next)
     void removeTrack(int index);
     void moveTrack(int fromIndex, int toIndex);
+    // Move by PLAY-order position: reorders the shuffle order when shuffling
+    // (m_queue untouched), falls back to moveTrack otherwise.
+    void moveInPlayOrder(int fromPlayPos, int toPlayPos);
 
     // Set queue from album/playlist (clears existing queue)
     void setQueue(const std::vector<MusicItem>& items, int startIndex = 0);

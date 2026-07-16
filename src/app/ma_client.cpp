@@ -809,6 +809,12 @@ void MAClient::getQueueItems(const std::string& queueId, MAResponseCallback cb,
     sendCommand("player_queues/items", args, std::move(cb));
 }
 
+void MAClient::getQueue(const std::string& queueId, MAResponseCallback cb) {
+    Json args;
+    args["queue_id"] = Json(queueId);
+    sendCommand("player_queues/get", args, std::move(cb));
+}
+
 void MAClient::queueMoveItem(const std::string& queueId, const std::string& itemId,
                               int posShift, MAResponseCallback cb) {
     Json args;
@@ -816,6 +822,21 @@ void MAClient::queueMoveItem(const std::string& queueId, const std::string& item
     args["queue_item_id"] = Json(itemId);
     args["pos_shift"] = Json(posShift);
     sendCommand("player_queues/move_item", args, std::move(cb));
+}
+
+void MAClient::queueDeleteItem(const std::string& queueId, const std::string& itemId,
+                                MAResponseCallback cb) {
+    Json args;
+    args["queue_id"] = Json(queueId);
+    args["item_id_or_index"] = Json(itemId);
+    sendCommand("player_queues/delete_item", args, std::move(cb));
+}
+
+void MAClient::playQueueIndex(const std::string& queueId, int index, MAResponseCallback cb) {
+    Json args;
+    args["queue_id"] = Json(queueId);
+    args["index"] = Json(index);
+    sendCommand("player_queues/play_index", args, std::move(cb));
 }
 
 // ============================================================================
