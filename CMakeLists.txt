@@ -151,6 +151,9 @@ if(TARGET usrsctp)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
     # sockaddr_conn now carries sconn_len on Vita (see usrsctp.h patch above)
     target_compile_definitions(usrsctp PRIVATE HAVE_SCONN_LEN)
+    # DIAGNOSTIC (temporary): trace the SCTP handshake (INIT/INIT-ACK/cookie,
+    # checksum errors) to localize why the association stalls after DTLS.
+    target_compile_definitions(usrsctp PRIVATE SCTP_DEBUG)
 endif()
 if(TARGET datachannel-static)
     # Compat headers (<net/if.h>, <ifaddrs.h>, <sys/ioctl.h>) + socket flags
@@ -162,6 +165,9 @@ if(TARGET datachannel-static)
     # must set it (its guard is #ifdef HAVE_SCONN_LEN); usrsctp's own CMake sets
     # this for the usrsctp target but it does not propagate to this one.
     target_compile_definitions(datachannel-static PRIVATE HAVE_SCONN_LEN)
+    # DIAGNOSTIC (temporary): matches the usrsctp SCTP_DEBUG build so
+    # SctpTransport::Init() turns on usrsctp debug tracing.
+    target_compile_definitions(datachannel-static PRIVATE SCTP_DEBUG)
 endif()
 
 # vitasdk links libpthread whole-archive via the toolchain already; the deps'

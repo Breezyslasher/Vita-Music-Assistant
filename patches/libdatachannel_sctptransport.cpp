@@ -462,7 +462,7 @@ void SctpTransport::incoming(message_ptr message) {
 		return;
 	}
 
-	PLOG_VERBOSE << "Incoming size=" << message->size();
+	PLOG_INFO << "Incoming size=" << message->size();
 
 	usrsctp_conninput(this, message->data(), message->size(), 0);
 }
@@ -771,7 +771,7 @@ int SctpTransport::handleWrite(byte *data, size_t len, uint8_t /*tos*/,
                                uint8_t /*set_df*/) noexcept {
 	try {
 		std::unique_lock lock(mWriteMutex);
-		PLOG_VERBOSE << "Handle write, len=" << len;
+		PLOG_INFO << "Handle write, len=" << len;
 
 		if (!outgoing(make_message(data, data + len)))
 			return -1;
@@ -1008,7 +1008,7 @@ void SctpTransport::DebugCallback(const char *format, ...) {
 	len = std::min(len, int(bufferSize - 1));
 	buffer[len - 1] = '\0'; // remove newline
 
-	PLOG_VERBOSE << "usrsctp: " << buffer; // usrsctp debug as verbose
+	PLOG_INFO << "usrsctp: " << buffer; // Vita diagnostic: usrsctp debug at info level
 }
 
 } // namespace rtc::impl
