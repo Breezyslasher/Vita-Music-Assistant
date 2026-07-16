@@ -351,10 +351,12 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
         config.iceServers.emplace_back("stun:stun.l.google.com:19302");
     }
 
-    // MA api responses (library listings etc.) arrive as single data-channel
-    // messages that can exceed libdatachannel's 256 KiB default, which then
-    // logs "SCTP message is too large" and truncates the JSON.
-    config.maxMessageSize = 1024 * 1024;
+    // MA api responses arrive as single data-channel messages that can far
+    // exceed libdatachannel's 256 KiB default: library listings run to
+    // hundreds of KB and artwork payloads to several MB. Truncation
+    // ("SCTP message is too large") corrupts the JSON / image data. The cap
+    // only bounds buffering, nothing is preallocated.
+    config.maxMessageSize = 8 * 1024 * 1024;
 
     std::lock_guard<std::mutex> lock(m_rtcMutex);
     auto t0 = std::chrono::steady_clock::now();
