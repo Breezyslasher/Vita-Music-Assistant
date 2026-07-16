@@ -151,9 +151,6 @@ if(TARGET usrsctp)
     target_include_directories(usrsctp BEFORE PRIVATE ${VITA_RTC_COMPAT})
     # sockaddr_conn now carries sconn_len on Vita (see usrsctp.h patch above)
     target_compile_definitions(usrsctp PRIVATE HAVE_SCONN_LEN)
-    # DIAGNOSTIC (temporary): trace the SCTP handshake (INIT/INIT-ACK/cookie,
-    # checksum errors) to localize why the association stalls after DTLS.
-    target_compile_definitions(usrsctp PRIVATE SCTP_DEBUG)
 endif()
 if(TARGET datachannel-static)
     # Compat headers (<net/if.h>, <ifaddrs.h>, <sys/ioctl.h>) + socket flags
@@ -165,9 +162,6 @@ if(TARGET datachannel-static)
     # must set it (its guard is #ifdef HAVE_SCONN_LEN); usrsctp's own CMake sets
     # this for the usrsctp target but it does not propagate to this one.
     target_compile_definitions(datachannel-static PRIVATE HAVE_SCONN_LEN)
-    # DIAGNOSTIC (temporary): matches the usrsctp SCTP_DEBUG build so
-    # SctpTransport::Init() turns on usrsctp debug tracing.
-    target_compile_definitions(datachannel-static PRIVATE SCTP_DEBUG)
 endif()
 
 # vitasdk links libpthread whole-archive via the toolchain already; the deps'
@@ -236,6 +230,17 @@ if(EXISTS ${JUICE_RANDOM_PATCH})
     configure_file(${JUICE_RANDOM_PATCH} ${JUICE_RANDOM_TARGET} COPYONLY)
 else()
     message(FATAL_ERROR "Patch file not found: ${JUICE_RANDOM_PATCH}")
+endif()
+
+# libjuice DIAGNOSTIC patch (temporary): log every received UDP datagram to
+# localize why juice stops receiving after the DTLS handshake completes.
+set(JUICE_UDP_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libjuice_udp.c)
+set(JUICE_UDP_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/deps/libjuice/src/udp.c)
+if(EXISTS ${JUICE_UDP_PATCH})
+    message(STATUS "Applying patch: libjuice udp.c (recv logging)")
+    configure_file(${JUICE_UDP_PATCH} ${JUICE_UDP_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${JUICE_UDP_PATCH}")
 endif()
 
 # libdatachannel patch: SctpTransport::doRecv() puts a 64KB receive buffer on
