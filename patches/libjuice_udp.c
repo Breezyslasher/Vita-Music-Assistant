@@ -184,8 +184,11 @@ int udp_recvfrom(socket_t sock, char *buffer, size_t size, addr_record_t *src) {
 		    recvfrom(sock, buffer, (socklen_t)size, 0, (struct sockaddr *)&src->addr, &src->len);
 		if (len >= 0) {
 			addr_unmap_inet6_v4mapped((struct sockaddr *)&src->addr, &src->len);
-			if (len > 0)
-				JLOG_INFO("udp_recvfrom: got %d bytes", len); /* Vita diagnostic */
+			if (len > 0) { /* Vita diagnostic */
+				char src_str[ADDR_MAX_STRING_LEN];
+				addr_record_to_string(src, src_str, ADDR_MAX_STRING_LEN);
+				JLOG_INFO("udp_recvfrom: got %d bytes from %s", len, src_str);
+			}
 
 		} else if (sockerrno == SECONNRESET || sockerrno == SENETRESET ||
 		           sockerrno == SECONNREFUSED) {
@@ -215,7 +218,17 @@ int udp_sendto(socket_t sock, const char *data, size_t size, const addr_record_t
 	} else {
 		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
 	}
-	return sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
+	{ /* Vita diagnostic */
+		int ret =
+		    sendto(sock, data, (socklen_t)size, 0, (const struct sockaddr *)&tmp.addr, tmp.len);
+		char dst_str[ADDR_MAX_STRING_LEN];
+		addr_record_to_string(&tmp, dst_str, ADDR_MAX_STRING_LEN);
+		if (ret < 0)
+			JLOG_INFO("udp_sendto: %d bytes to %s FAILED errno=%d", (int)size, dst_str, sockerrno);
+		else
+			JLOG_INFO("udp_sendto: sent %d bytes to %s", ret, dst_str);
+		return ret;
+	}
 #else
 	return sendto(sock, data, size, 0, (const struct sockaddr *)&dst->addr, dst->len);
 #endif
