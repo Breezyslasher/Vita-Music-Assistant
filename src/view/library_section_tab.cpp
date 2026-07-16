@@ -532,18 +532,13 @@ void LibrarySectionTab::performPlaylistTrackAction(size_t trackIndex) {
     };
 
     if (action == TrackDefaultAction::ASK_EACH_TIME) {
-        auto* dialog = new brls::Dialog("Choose Action");
-        auto* optionsBox = new brls::Box();
-        optionsBox->setAxis(brls::Axis::COLUMN);
-        optionsBox->setPadding(20);
+        brls::View* anchor = brls::Application::getCurrentFocus();
+        std::vector<OptionRow> rows;
 
-        auto addBtn = [this, trackIndex, dialog, &optionsBox](const std::string& text, TrackDefaultAction act) {
-            auto* btn = new brls::Button();
-            btn->setText(text);
-            btn->setHeight(44);
-            btn->setMarginBottom(10);
-            btn->registerClickAction([this, dialog, trackIndex, act](brls::View*) {
-                dialog->dismiss();
+        auto addRow = [this, trackIndex, &rows](const std::string& icon, const std::string& text,
+                                                bool primary, TrackDefaultAction act) {
+            rows.push_back({ icon, text, "", primary, false,
+                [this, trackIndex, act](brls::View*) {
                 if (trackIndex >= m_playlistTracks.size()) return true;
                 const MusicItem& t = m_playlistTracks[trackIndex];
                 if (act == TrackDefaultAction::PLAY_NOW_CLEAR) {
@@ -580,18 +575,18 @@ void LibrarySectionTab::performPlaylistTrackAction(size_t trackIndex) {
                     }
                 }
                 return true;
-            });
-            btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-            optionsBox->addView(btn);
+            }});
         };
 
-        addBtn("Play Playlist from Here", TrackDefaultAction::PLAY_NOW_CLEAR);
-        addBtn("Play Next", TrackDefaultAction::PLAY_NEXT);
-        addBtn("Add to Bottom of Queue", TrackDefaultAction::ADD_TO_BOTTOM);
-        addBtn("Play Now (Replace Current)", TrackDefaultAction::PLAY_NOW_REPLACE);
+        addRow("play.png", "Play Playlist from Here", true, TrackDefaultAction::PLAY_NOW_CLEAR);
+        addRow("skip-next.png", "Play Next", false, TrackDefaultAction::PLAY_NEXT);
+        addRow("format-list-group.png", "Add to Bottom of Queue", false, TrackDefaultAction::ADD_TO_BOTTOM);
+        addRow("play.png", "Play Now (Replace Current)", false, TrackDefaultAction::PLAY_NOW_REPLACE);
+        rows.push_back({ "cross.png", "Cancel", "", false, true, [](brls::View*) { return true; }});
 
-        dialog->addView(optionsBox);
-        dialog->open();
+        std::string trackName = (trackIndex < m_playlistTracks.size())
+            ? m_playlistTracks[trackIndex].name : "Track";
+        MediaDetailView::showOptionsPopover(anchor, "TRACK", trackName, std::move(rows));
     } else {
         executeAction(action);
     }
@@ -600,70 +595,42 @@ void LibrarySectionTab::performPlaylistTrackAction(size_t trackIndex) {
 void LibrarySectionTab::showPlaylistContextMenu(const MusicItem& playlist) {
     brls::Logger::debug("LibrarySectionTab: Context menu for playlist '{}' (id={})", playlist.name, playlist.itemId);
 
-    auto* dialog = new brls::Dialog(playlist.name);
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    // Show track count if available
-    if (playlist.itemCount > 0) {
-        auto* infoLabel = new brls::Label();
-        infoLabel->setText(std::to_string(playlist.itemCount) + " tracks");
-        infoLabel->setFontSize(14);
-        infoLabel->setTextColor(nvgRGBA(180, 180, 180, 255));
-        infoLabel->setMarginBottom(15);
-        optionsBox->addView(infoLabel);
-    }
-
-    // "View Tracks" button
+    brls::View* anchor = brls::Application::getCurrentFocus();
     std::string playlistId = playlist.itemId;
     std::string playlistName = playlist.name;
-    auto* viewBtn = new brls::Button();
-    viewBtn->setText("View Tracks");
-    viewBtn->setHeight(44);
-    viewBtn->setMarginBottom(10);
-    viewBtn->registerClickAction([this, dialog, playlistId, playlistName](brls::View*) {
-        dialog->dismiss();
+    std::string countSub = playlist.itemCount > 0
+        ? std::to_string(playlist.itemCount) + " tracks" : "";
+
+    std::vector<OptionRow> rows;
+
+    rows.push_back({ "play.png", "Play All", countSub, true, false,
+        [this, playlistId](brls::View*) {
+        playPlaylistWithQueue(playlistId, 0);
+        return true;
+    }});
+
+    rows.push_back({ "format-list-group.png", "View Tracks", "", false, false,
+        [this, playlistId, playlistName](brls::View*) {
         MusicItem pl;
         pl.itemId = playlistId;
         pl.name = playlistName;
         pl.mediaType = MediaType::PLAYLIST;
         onPlaylistSelected(pl);
         return true;
-    });
-    viewBtn->addGestureRecognizer(new brls::TapGestureRecognizer(viewBtn));
-    optionsBox->addView(viewBtn);
+    }});
 
-    // "Play All" button
-    auto* playBtn = new brls::Button();
-    playBtn->setText("Play All");
-    playBtn->setHeight(44);
-    playBtn->setMarginBottom(10);
-    playBtn->registerClickAction([this, dialog, playlistId](brls::View*) {
-        dialog->dismiss();
-        playPlaylistWithQueue(playlistId, 0);
-        return true;
-    });
-    playBtn->addGestureRecognizer(new brls::TapGestureRecognizer(playBtn));
-    optionsBox->addView(playBtn);
-
-    // "Delete" button (only for editable playlists)
     if (playlist.isEditable) {
-        auto* deleteBtn = new brls::Button();
-        deleteBtn->setText("Delete Playlist");
-        deleteBtn->setHeight(44);
-        deleteBtn->setMarginBottom(10);
-        deleteBtn->registerClickAction([this, dialog, playlistId, playlistName](brls::View*) {
-            dialog->dismiss();
+        rows.push_back({ "cross.png", "Delete Playlist", "", false, false,
+            [this, playlistId, playlistName](brls::View*) {
             showPlaylistOptionsDialog(MusicItem{playlistId, playlistName, "", "", "", "", MediaType::PLAYLIST});
             return true;
-        });
-        deleteBtn->addGestureRecognizer(new brls::TapGestureRecognizer(deleteBtn));
-        optionsBox->addView(deleteBtn);
+        }});
     }
 
-    dialog->addView(optionsBox);
-    dialog->open();
+    rows.push_back({ "cross.png", "Cancel", "", false, true,
+        [](brls::View*) { return true; }});
+
+    MediaDetailView::showOptionsPopover(anchor, "PLAYLIST", playlistName, std::move(rows));
 }
 
 void LibrarySectionTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
