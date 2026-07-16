@@ -37,6 +37,29 @@ jobs:
           vdpm zstd freetype libpng $PWD/*-arm.tar.xz
           git config --system --add safe.directory "$GITHUB_WORKSPACE"
 
+      # aiortc-based gateways (Music Assistant remote access) refuse the DTLS
+      # connection unless a DTLS-SRTP profile is negotiated, even for
+      # datachannel-only sessions. vitasdk's prebuilt mbedTLS lacks
+      # MBEDTLS_SSL_DTLS_SRTP, so rebuild it with the option enabled using the
+      # same recipe as vitasdk/packages (source + vita patch + threading).
+      - name: Rebuild mbedTLS with DTLS-SRTP support
+        run: |
+          apk add python3 patch bzip2
+          cd /tmp
+          wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
+          tar xf mbedtls-3.6.5.tar.bz2
+          cd mbedtls-3.6.5
+          patch -p1 < "$GITHUB_WORKSPACE/patches/mbedtls_vitasdk.patch"
+          python3 scripts/config.py set MBEDTLS_THREADING_C
+          python3 scripts/config.py set MBEDTLS_THREADING_PTHREAD
+          python3 scripts/config.py set MBEDTLS_SSL_DTLS_SRTP
+          mkdir build && cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=$VITASDK/share/vita.toolchain.cmake \
+            -DCMAKE_INSTALL_PREFIX=$VITASDK/arm-vita-eabi -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DMBEDTLS_FATAL_WARNINGS=OFF
+          make -j$(nproc) mbedtls
+          make install
+
       - name: Build
         run: |
           cmake -B build -G Ninja

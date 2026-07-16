@@ -198,8 +198,12 @@ else()
 endif()
 
 # libdatachannel patch: its mbedTLS DTLS code sets SRTP protection profiles
-# unconditionally, but vitasdk's mbedTLS is built without MBEDTLS_SSL_DTLS_SRTP.
-# SRTP is only needed for media (we build NO_MEDIA); guard those two spots.
+# unconditionally, which requires MBEDTLS_SSL_DTLS_SRTP; the patch guards those
+# spots so either mbedTLS build compiles. NOTE: negotiating a DTLS-SRTP profile
+# is REQUIRED in practice even though we build NO_MEDIA - aiortc-based peers
+# (the MA remote-access gateway) fail the transport right after the DTLS
+# handshake if no profile was negotiated. CI therefore rebuilds mbedTLS with
+# MBEDTLS_SSL_DTLS_SRTP enabled (see .github/workflows/build-vpk.yml).
 set(DC_DTLS_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_dtlstransport.cpp)
 set(DC_DTLS_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/dtlstransport.cpp)
 if(EXISTS ${DC_DTLS_PATCH})
