@@ -84,6 +84,13 @@ brls::View* PlayerActivity::createContentView() {
 void PlayerActivity::onContentAvailable() {
     brls::Logger::debug("PlayerActivity content available");
 
+    // The up-next list scrolls CENTERED so D-pad Up/Down always change focus and
+    // scroll immediately. The default NATURAL only moves focus once the next row
+    // is already fully on screen, so UP/DOWN couldn't reach an off-screen track.
+    // CENTERED clamps at the ends, so the first/last tracks still sit flush.
+    if (queueScroll)
+        queueScroll->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
+
 #ifdef __vita__
     // Boost CPU/GPU clocks to max for smooth media playback
     scePowerSetArmClockFrequency(444);
@@ -316,6 +323,19 @@ void PlayerActivity::onContentAvailable() {
                 return true;
             });
             queueBtn->addGestureRecognizer(new brls::TapGestureRecognizer(queueBtn));
+        }
+
+        // Queue side-sheet "Clear" control (wired once; lives in the hidden overlay)
+        if (queueClearBtn) {
+            queueClearBtn->registerClickAction([this](brls::View* view) {
+                clearUpcoming();
+                return true;
+            });
+            queueClearBtn->addGestureRecognizer(new brls::TapGestureRecognizer(queueClearBtn));
+            // Clear is the top of the sheet's focusable content; route UP back to
+            // itself so it can't escape to the player's queue button behind the
+            // overlay (which is what happens with the default upward traversal).
+            queueClearBtn->setCustomNavigationRoute(brls::FocusDirection::UP, queueClearBtn);
         }
 
         // Music mode: controls never auto-hide, always visible
@@ -1333,14 +1353,6 @@ void PlayerActivity::showQueueOverlay() {
     }
 
     // Clear button: drop everything after the current track
-    if (queueClearBtn) {
-        queueClearBtn->registerClickAction([this](brls::View* view) {
-            clearUpcoming();
-            return true;
-        });
-        queueClearBtn->addGestureRecognizer(new brls::TapGestureRecognizer(queueClearBtn));
-    }
-
     // Fetch a fresh snapshot of the server queue, then build the sheet
     fetchQueueSnapshot(true);
 }
