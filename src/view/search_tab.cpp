@@ -30,7 +30,7 @@ static MusicItem musicItemFromJson(const Json& j) {
     if (j.has("uri"))        item.uri       = j["uri"].str();
     // Extract image URL: try image object, then metadata.images array
     if (j.has("image") && j["image"].type() == Json::OBJECT && j["image"].has("path")) {
-        item.imageUrl = j["image"]["path"].str();
+        item.imageUrl = MAClient::imageRefFromJson(j["image"]);
         if (j["image"].has("provider")) item.imageProvider = j["image"]["provider"].str();
     } else if (j.has("image") && j["image"].type() == Json::STRING) {
         item.imageUrl = j["image"].str();
@@ -38,7 +38,7 @@ static MusicItem musicItemFromJson(const Json& j) {
         const Json& meta = j["metadata"];
         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
             const Json& img = meta["images"][static_cast<size_t>(0)];
-            if (img.has("path")) item.imageUrl = img["path"].str();
+            item.imageUrl = MAClient::imageRefFromJson(img);
             if (img.has("provider")) item.imageProvider = img["provider"].str();
         }
     }

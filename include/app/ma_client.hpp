@@ -223,6 +223,12 @@ public:
     std::string getThumbnailUrl(const std::string& imageUrl, int width = 0, int height = 0,
                                const std::string& provider = "");
 
+    // Extract an image reference from a serialized MediaItemImage object.
+    // Prefers the opaque server-side proxy_id (returned as "proxyid:<id>",
+    // consumed by getThumbnailUrl to build the canonical /imageproxy/<id>
+    // endpoint); falls back to the raw path for older servers.
+    static std::string imageRefFromJson(const Json& imageObj);
+
     // Server info
     ServerInfo getServerInfo() const { return m_serverInfo; }
 
