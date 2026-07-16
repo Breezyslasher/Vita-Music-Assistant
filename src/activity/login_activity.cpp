@@ -24,12 +24,46 @@
 
 namespace vita_ma {
 
+namespace {
+
+// Card palette (login 1c)
+inline NVGcolor colText()      { return nvgRGB(0xee, 0xf2, 0xf6); }
+inline NVGcolor colMuted()     { return nvgRGB(0x93, 0xa0, 0xae); }
+inline NVGcolor colDim()       { return nvgRGB(0x5d, 0x68, 0x75); }
+inline NVGcolor colCyan()      { return nvgRGB(0x00, 0xbc, 0xee); }
+inline NVGcolor colCyanInk()   { return nvgRGB(0x04, 0x22, 0x2e); }
+inline NVGcolor colClear()     { return nvgRGBA(0, 0, 0, 0); }
+
+// Group a long Remote ID for display: XHK7-YM5K-6OJ3-...
+std::string groupRemoteId(const std::string& id) {
+    std::string out;
+    for (size_t i = 0; i < id.size(); i++) {
+        if (i > 0 && i % 4 == 0) out += '-';
+        out += id[i];
+    }
+    return out;
+}
+
+} // namespace
+
 LoginActivity::LoginActivity() {
     brls::Logger::debug("LoginActivity created");
 }
 
+LoginActivity::~LoginActivity() {
+    m_caretTimer.stop();
+}
+
 brls::View* LoginActivity::createContentView() {
     return brls::View::createFromXMLResource("activity/login.xml");
+}
+
+void LoginActivity::setStatus(const std::string& text) {
+    if (statusLabel) statusLabel->setText(text);
+    if (statusDot) {
+        statusDot->setVisibility(text.empty() ? brls::Visibility::INVISIBLE
+                                              : brls::Visibility::VISIBLE);
+    }
 }
 
 void LoginActivity::onContentAvailable() {
@@ -41,105 +75,206 @@ void LoginActivity::onContentAvailable() {
     m_username = app.getUsername();
     m_remoteId = app.getSettings().remoteId;
     // If the saved server is itself a Remote ID, surface it in the remote field
-    if (m_remoteId.empty() && MAClient::isRemoteId(m_serverUrl)) {
-        m_remoteId = m_serverUrl;
+    if (MAClient::isRemoteId(m_serverUrl)) {
+        if (m_remoteId.empty()) m_remoteId = m_serverUrl;
+        m_serverUrl.clear();
+        m_authMode = AuthMode::REMOTE;
     }
 
-    // Set title
-    if (titleLabel) {
-        titleLabel->setText("Vita Music Assistant");
-    }
-
-    updateUIForMode();
+    // Segmented mode switch
+    auto wireSegment = [this](brls::Box* seg, AuthMode mode) {
+        if (!seg) return;
+        seg->registerClickAction([this, mode](brls::View*) {
+            setAuthMode(mode);
+            return true;
+        });
+        seg->addGestureRecognizer(new brls::TapGestureRecognizer(seg));
+    };
+    wireSegment(segMa, AuthMode::MUSIC_ASSISTANT);
+    wireSegment(segHa, AuthMode::HOME_ASSISTANT);
+    wireSegment(segRemote, AuthMode::REMOTE);
 
     // Server URL input (click to edit via IME)
-    if (serverLabel) {
-        serverLabel->setText(std::string("Server: ") + (m_serverUrl.empty() ? "Not set" : m_serverUrl));
-        serverLabel->registerClickAction([this](brls::View* view) {
+    if (serverField) {
+        serverField->registerClickAction([this](brls::View*) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
                 m_serverUrl = text;
-                serverLabel->setText(std::string("Server: ") + text);
+                updateFieldValues();
             }, "Enter Server URL", "http://your-server:8095", 256, m_serverUrl);
             return true;
         });
-        serverLabel->addGestureRecognizer(new brls::TapGestureRecognizer(serverLabel));
+        serverField->addGestureRecognizer(new brls::TapGestureRecognizer(serverField));
     }
 
     // Username input
-    if (usernameLabel) {
-        usernameLabel->setText(std::string("Username: ") + (m_username.empty() ? "Not set" : m_username));
-        usernameLabel->registerClickAction([this](brls::View* view) {
+    if (usernameField) {
+        usernameField->registerClickAction([this](brls::View*) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
                 m_username = text;
-                usernameLabel->setText(std::string("Username: ") + text);
+                updateFieldValues();
             }, "Enter Username", "admin", 128, m_username);
             return true;
         });
-        usernameLabel->addGestureRecognizer(new brls::TapGestureRecognizer(usernameLabel));
+        usernameField->addGestureRecognizer(new brls::TapGestureRecognizer(usernameField));
     }
 
     // Password input
-    if (passwordLabel) {
-        passwordLabel->setText("Password: Not set");
-        passwordLabel->registerClickAction([this](brls::View* view) {
+    if (passwordField) {
+        passwordField->registerClickAction([this](brls::View*) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
                 m_password = text;
-                // Show masked password
-                std::string masked(text.length(), '*');
-                passwordLabel->setText(std::string("Password: ") + (text.empty() ? "Not set" : masked));
+                updateFieldValues();
             }, "Enter Password", "", 128, "");
             return true;
         });
-        passwordLabel->addGestureRecognizer(new brls::TapGestureRecognizer(passwordLabel));
+        passwordField->addGestureRecognizer(new brls::TapGestureRecognizer(passwordField));
     }
 
     // Remote ID input (WebRTC remote access)
-    if (remoteLabel) {
-        remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
-        remoteLabel->registerClickAction([this](brls::View* view) {
+    if (remoteField) {
+        remoteField->registerClickAction([this](brls::View*) {
             brls::Application::getImeManager()->openForText([this](std::string text) {
                 // Canonicalize (strips hyphen grouping / extracts from a pasted URL)
                 m_remoteId = WebRTCClient::normalizeRemoteId(text);
-                remoteLabel->setText(std::string("Remote ID: ") + (m_remoteId.empty() ? "Not set" : m_remoteId));
+                updateFieldValues();
             }, "Enter Remote ID", "Remote ID from server settings", 80, m_remoteId);
             return true;
         });
-        remoteLabel->addGestureRecognizer(new brls::TapGestureRecognizer(remoteLabel));
+        remoteField->addGestureRecognizer(new brls::TapGestureRecognizer(remoteField));
     }
 
-    // Login button
-    if (loginButton) {
-        loginButton->setText("Login");
-        loginButton->registerClickAction([this](brls::View* view) {
-            onLoginPressed();
+    // Connect / Log In button
+    if (connectButton) {
+        connectButton->registerClickAction([this](brls::View*) {
+            onConnectPressed();
             return true;
         });
+        connectButton->addGestureRecognizer(new brls::TapGestureRecognizer(connectButton));
+        connectButton->setShadowType(brls::ShadowType::GENERIC);
     }
 
-    // Mode switch button
-    if (modeButton) {
-        modeButton->registerClickAction([this](brls::View* view) {
-            switchAuthMode();
-            return true;
-        });
+    // Blinking cyan caret in the Remote ID field
+    m_caretTimer.setCallback([this]() {
+        m_caretVisible = !m_caretVisible;
+        if (remoteCaret && m_authMode == AuthMode::REMOTE) {
+            remoteCaret->setVisibility(m_caretVisible ? brls::Visibility::VISIBLE
+                                                      : brls::Visibility::INVISIBLE);
+        }
+    });
+    m_caretTimer.start(600);
+
+    updateUIForMode();
+    updateFieldValues();
+}
+
+void LoginActivity::updateFieldValues() {
+    if (serverValue) {
+        bool empty = m_serverUrl.empty();
+        serverValue->setText(empty ? "http://your-server:8095" : m_serverUrl);
+        serverValue->setTextColor(empty ? colDim() : colText());
+    }
+    if (usernameValue) {
+        bool empty = m_username.empty();
+        usernameValue->setText(empty ? "Not set" : m_username);
+        usernameValue->setTextColor(empty ? colDim() : colText());
+    }
+    if (passwordValue) {
+        bool empty = m_password.empty();
+        passwordValue->setText(empty ? "Not set" : std::string(m_password.length(), '*'));
+        passwordValue->setTextColor(empty ? colDim() : colText());
+    }
+    if (remoteValue) {
+        bool empty = m_remoteId.empty();
+        remoteValue->setText(empty ? "Enter Remote ID" : groupRemoteId(m_remoteId));
+        remoteValue->setTextColor(empty ? colDim() : colText());
+        remoteValue->setFontSize(empty ? 18.0f : 16.0f);
+    }
+}
+
+void LoginActivity::setAuthMode(AuthMode mode) {
+    if (m_authMode == mode) return;
+    m_authMode = mode;
+    updateUIForMode();
+}
+
+void LoginActivity::updateUIForMode() {
+    // Segmented switch: active segment fills cyan with dark ink text
+    auto styleSegment = [](brls::Box* seg, brls::Label* label, bool active) {
+        if (seg)   seg->setBackgroundColor(active ? colCyan() : colClear());
+        if (label) label->setTextColor(active ? colCyanInk() : colMuted());
+    };
+    styleSegment(segMa, segMaLabel, m_authMode == AuthMode::MUSIC_ASSISTANT);
+    styleSegment(segHa, segHaLabel, m_authMode == AuthMode::HOME_ASSISTANT);
+    styleSegment(segRemote, segRemoteLabel, m_authMode == AuthMode::REMOTE);
+
+    bool remote = (m_authMode == AuthMode::REMOTE);
+    if (fieldsCredentials)
+        fieldsCredentials->setVisibility(remote ? brls::Visibility::GONE
+                                                : brls::Visibility::VISIBLE);
+    if (fieldsRemote)
+        fieldsRemote->setVisibility(remote ? brls::Visibility::VISIBLE
+                                           : brls::Visibility::GONE);
+
+    if (connectLabel) connectLabel->setText(remote ? "Connect" : "Log In");
+
+    switch (m_authMode) {
+        case AuthMode::MUSIC_ASSISTANT:
+            setStatus("Enter your Music Assistant server credentials");
+            break;
+        case AuthMode::HOME_ASSISTANT:
+            setStatus("Enter your Home Assistant credentials");
+            break;
+        case AuthMode::REMOTE:
+            setStatus("Connect from anywhere via secure WebRTC");
+            break;
+    }
+}
+
+void LoginActivity::onConnectPressed() {
+    if (m_authMode == AuthMode::REMOTE) {
+        onRemoteLoginPressed();
+        return;
     }
 
-    // Remote login button
-    if (remoteButton) {
-        remoteButton->registerClickAction([this](brls::View* view) {
-            onRemoteLoginPressed();
-            return true;
-        });
+    if (m_serverUrl.empty()) {
+        setStatus("Please enter a server URL");
+        return;
+    }
+
+    // A Remote ID pasted into the server field still works: route it to the
+    // remote flow rather than trying HTTP against it.
+    if (MAClient::isRemoteId(m_serverUrl)) {
+        m_remoteId = WebRTCClient::normalizeRemoteId(m_serverUrl);
+        setAuthMode(AuthMode::REMOTE);
+        updateFieldValues();
+        onRemoteLoginPressed();
+        return;
+    }
+
+    if (m_username.empty()) {
+        setStatus("Please enter a username");
+        return;
+    }
+
+    if (m_password.empty()) {
+        setStatus("Please enter a password");
+        return;
+    }
+
+    if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
+        loginWithMA(m_serverUrl, m_username, m_password);
+    } else {
+        loginWithHA(m_serverUrl, m_username, m_password);
     }
 }
 
 void LoginActivity::onRemoteLoginPressed() {
     if (m_remoteId.empty()) {
-        if (statusLabel) statusLabel->setText("Enter a Remote ID first");
+        setStatus("Enter a Remote ID first");
         return;
     }
     if (!MAClient::isRemoteId(m_remoteId)) {
-        if (statusLabel) statusLabel->setText("Invalid Remote ID - copy it from the server's Remote Access settings");
+        setStatus("Invalid Remote ID - copy it from the server's Remote Access settings");
         return;
     }
 
@@ -148,11 +283,7 @@ void LoginActivity::onRemoteLoginPressed() {
     // doesn't have.
     auto& app = Application::getInstance();
     if (app.getAuthToken().empty()) {
-        if (statusLabel) {
-            statusLabel->setText(
-                "Remote ID needs a saved login. Sign in once with your server "
-                "URL, then use Remote Login.");
-        }
+        setStatus("Remote ID needs a saved login - sign in once with your server URL first");
         return;
     }
 
@@ -160,7 +291,7 @@ void LoginActivity::onRemoteLoginPressed() {
     app.getSettings().remoteId = m_remoteId;
     app.saveSettings();
 
-    if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
+    setStatus("Establishing secure WebRTC connection...");
     std::string user = !m_username.empty() ? m_username : app.getUsername();
     std::string remoteId = m_remoteId;
     std::string token = app.getAuthToken();
@@ -177,95 +308,16 @@ void LoginActivity::onRemoteLoginPressed() {
                 a.setAuthToken(token);
                 a.setUsername(user);
                 a.saveSettings();
-                if (statusLabel) statusLabel->setText("Connected!");
+                setStatus("Connected!");
                 a.connectSendspin();
                 a.pushMainActivity();
             } else {
                 std::string err = WebRTCClient::instance().getLastError();
-                if (statusLabel) {
-                    statusLabel->setText("Remote connection failed: " +
-                                         (err.empty() ? "unknown error" : err));
-                }
+                setStatus("Remote connection failed: " +
+                          (err.empty() ? "unknown error" : err));
             }
         });
     }).detach();
-}
-
-void LoginActivity::updateUIForMode() {
-    if (subtitleLabel) {
-        if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-            subtitleLabel->setText("Music Assistant Login");
-        } else {
-            subtitleLabel->setText("Home Assistant Login");
-        }
-    }
-
-    if (modeButton) {
-        if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-            modeButton->setText("Use HA Login");
-        } else {
-            modeButton->setText("Use MA Login");
-        }
-    }
-
-    if (statusLabel) {
-        if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-            statusLabel->setText("Enter your Music Assistant server credentials");
-        } else {
-            statusLabel->setText("Enter your Home Assistant credentials");
-        }
-    }
-}
-
-void LoginActivity::switchAuthMode() {
-    if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-        m_authMode = AuthMode::HOME_ASSISTANT;
-    } else {
-        m_authMode = AuthMode::MUSIC_ASSISTANT;
-    }
-    updateUIForMode();
-}
-
-void LoginActivity::onLoginPressed() {
-    if (m_serverUrl.empty()) {
-        if (statusLabel) statusLabel->setText("Please enter a server URL");
-        return;
-    }
-
-    // Remote ID: connect via MA remote access (WebRTC).
-    // Token login (POST /auth/login) needs HTTP reachability, so a remote
-    // connection reuses the token from a previous direct sign-in.
-    if (MAClient::isRemoteId(m_serverUrl)) {
-        auto& app = Application::getInstance();
-        if (app.getAuthToken().empty()) {
-            if (statusLabel) {
-                statusLabel->setText(
-                    "Remote ID needs a saved login. Sign in once with your "
-                    "server URL, then switch the server to the Remote ID.");
-            }
-            return;
-        }
-        if (statusLabel) statusLabel->setText("Connecting remotely (pairing can take ~30s)...");
-        std::string user = !m_username.empty() ? m_username : app.getUsername();
-        connectWithToken(m_serverUrl, app.getAuthToken(), user);
-        return;
-    }
-
-    if (m_username.empty()) {
-        if (statusLabel) statusLabel->setText("Please enter a username");
-        return;
-    }
-
-    if (m_password.empty()) {
-        if (statusLabel) statusLabel->setText("Please enter a password");
-        return;
-    }
-
-    if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-        loginWithMA(m_serverUrl, m_username, m_password);
-    } else {
-        loginWithHA(m_serverUrl, m_username, m_password);
-    }
 }
 
 void LoginActivity::loginWithMA(const std::string& serverUrl,
