@@ -67,14 +67,49 @@ private:
     void onTrackEnded(const QueueItem* nextTrack);  // Called when track ends
     void updateQueueDisplay();      // Update UI with queue info
 
-    // Queue list overlay
+    // Queue list overlay (Direction-A side sheet, ported from Vita_plex).
+    // The sheet always renders the SERVER queue of the active player; every
+    // mutation is a player_queues/* API call (see fetchQueueSnapshot).
     void showQueueOverlay();
     void hideQueueOverlay();
     void populateQueueList();       // Build queue list with cover art and titles
-    void playFromQueue(int index);  // Play a specific track from queue list
+    void updateNowPlayingBlock();   // Refresh the "Now Playing" header row
+    void removeFocusedQueueTrack(); // Remove the track for the focused up-next row
+    void removeQueueTrackByIndex(int trackIdx);  // Shared remove (server call + rebuild)
+    void moveFocusedQueueTrack(int direction);  // -1 = up, +1 = down (LB/RB)
+    void clearUpcoming();           // Clear button: drop everything after current
+    void linkFirstRowToClear();     // Route UP off the first row to the Clear button
+    void refixQueueUpRoutes(int lo);
+    void scrollQueueToChild(int idx);
+    void toggleQueueGrab();         // pick up the focused track / drop it
+    void setQueueGrab(bool on);     // enter/leave move mode + update the row cue
+    void animateGrabLift(bool lifted);
     bool m_queueOverlayVisible = false;
+    bool m_queueGrabActive = false;     // a track is "picked up" for Up/Down reorder
     bool m_queuePopulating = false;     // Guard against re-entrant populateQueueList
-    uint32_t m_cachedQueueVersion = 0; // Queue version when rows were last built (0 = never)
+    // Current index the rows were last built around (Now Playing / Up Next split)
+    int m_lastRenderedCurrentIndex = -1;
+    // Currently focused up-next row (background tint + remove affordance)
+    brls::Box* m_focusedQueueRow = nullptr;
+    // 0..1 grab-lift progress (row slides out while held). Mapped to
+    // translationX on m_focusedQueueRow each tick.
+    brls::Animatable m_grabLift;
+    static constexpr float kGrabLiftPx = 14.0f;  // how far the held row slides out
+    // When >= 0, the child index populateQueueList / the batched build should
+    // land focus on after a rebuild (set by reorder commits)
+    int m_queueFocusTargetChild = -1;
+
+    // Server queue snapshot rendered by the sheet (player_queues/get + items).
+    // QueueItem.ratingKey carries the MA queue_item_id for API calls; the list
+    // is already in play order (the server applies shuffle at enqueue time).
+    std::vector<QueueItem> m_queueSnapshot;
+    int m_queueSnapshotCurrentIdx = -1;
+    void fetchQueueSnapshot(bool showWhenReady);  // refresh snapshot, then populate
+    // Coalesce event-driven refetches: bulk edits (Clear = N deletes) fire a
+    // QUEUE_UPDATED burst; run one fetch at a time and fold the burst into a
+    // single trailing refetch.
+    bool m_queueFetchInFlight = false;
+    bool m_queueRefetchQueued = false;
 
     // Windowed queue rendering - only create rows for a window around the current track
     // to avoid creating thousands of views for large queues
@@ -97,10 +132,6 @@ private:
     int m_queueBatchNext = 0;                    // Next row index to create
     int m_queueBatchTotal = 0;                   // Total rows to create
     bool m_queueBatchActive = false;             // Whether batched creation is in progress
-    std::vector<QueueItem> m_queueBatchTracks;   // Snapshot of tracks for batched creation
-    std::vector<int> m_queueBatchShuffleOrder;   // Snapshot of shuffle order
-    int m_queueBatchCurrentIndex = 0;            // Current track index snapshot
-    bool m_queueBatchShuffled = false;           // Shuffle state snapshot
     void populateQueueBatch();                   // Create next batch of rows
     void createQueueRow(int displayIdx, int trackIdx, const QueueItem& track, bool isCurrent);
 
@@ -110,6 +141,7 @@ private:
     struct QueueRowData {
         int trackIdx;
         std::string title;
+        brls::Box* removeBtn = nullptr;  // revealed while the row is focused
     };
     std::unordered_map<brls::View*, QueueRowData> m_queueRowData;
 
@@ -128,16 +160,6 @@ private:
 
     // Helper to find a row's current display position in the queue list
     int findQueueRowDisplayIndex(brls::View* row);
-    // Swap two adjacent queue rows visually (no rebuild)
-    void swapQueueRows(int displayIdxA, int displayIdxB, bool skipThumbReload = false);
-    // Bulk-reassign all rows in [origIdx..targetIdx] from queue data (O(range) not O(n) swaps)
-    void reassignQueueRange(int origIdx, int targetIdx);
-    // Renumber all queue row labels after a reorder
-    void renumberQueueRows();
-    // Remove a single queue row from the display (no rebuild)
-    void removeQueueRow(int displayIdx);
-    // Update queue overlay title with current track count/duration
-    void updateQueueTitle();
 
     // Drag-to-reorder state: hold delay + live row movement
     struct DragState {
@@ -203,9 +225,17 @@ private:
     BRLS_BIND(brls::Box, queueBtn, "player/queue_btn");
     BRLS_BIND(brls::Image, queueIcon, "player/queue_icon");
     BRLS_BIND(brls::Box, queueOverlay, "player/queue_overlay");
+    BRLS_BIND(brls::Box, queueScrim, "player/queue_scrim");
     BRLS_BIND(brls::Label, queueOverlayTitle, "player/queue_overlay_title");
     BRLS_BIND(brls::Box, queueList, "player/queue_list");
     BRLS_BIND(brls::ScrollingFrame, queueScroll, "player/queue_scroll");
+    BRLS_BIND(brls::Box, queueNowPlaying, "player/queue_now_playing");
+    BRLS_BIND(brls::Image, queueNpThumb, "player/queue_np_thumb");
+    BRLS_BIND(brls::Label, queueNpTitle, "player/queue_np_title");
+    BRLS_BIND(brls::Label, queueNpArtist, "player/queue_np_artist");
+    BRLS_BIND(brls::Label, queueNpLabel, "player/queue_np_label");
+    BRLS_BIND(brls::Label, queueUpNextLabel, "player/queue_upnext_label");
+    BRLS_BIND(brls::Box, queueClearBtn, "player/queue_clear_btn");
 
 
     // Player switcher

@@ -195,8 +195,13 @@ public:
     void queueClear(const std::string& queueId, MAResponseCallback cb = nullptr);
     void getQueueItems(const std::string& queueId, MAResponseCallback cb,
                        int limit = 500, int offset = 0);
+    void getQueue(const std::string& queueId, MAResponseCallback cb);
     void queueMoveItem(const std::string& queueId, const std::string& itemId,
                        int posShift, MAResponseCallback cb = nullptr);
+    void queueDeleteItem(const std::string& queueId, const std::string& itemId,
+                         MAResponseCallback cb = nullptr);
+    void playQueueIndex(const std::string& queueId, int index,
+                        MAResponseCallback cb = nullptr);
 
     // === Player Commands ===
 
