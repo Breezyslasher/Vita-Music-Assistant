@@ -816,7 +816,7 @@ void PlayerActivity::loadMedia() {
 
             // Extract image URL: try image object, then metadata.images array
             if (result.has("image") && result["image"].type() == Json::OBJECT && result["image"].has("path")) {
-                item.imageUrl = result["image"]["path"].str();
+                item.imageUrl = MAClient::imageRefFromJson(result["image"]);
                 if (result["image"].has("provider")) item.imageProvider = result["image"]["provider"].str();
             } else if (result.has("image") && result["image"].type() == Json::STRING) {
                 item.imageUrl = result["image"].str();
@@ -824,7 +824,7 @@ void PlayerActivity::loadMedia() {
                 const Json& meta = result["metadata"];
                 if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                     const Json& img = meta["images"][static_cast<size_t>(0)];
-                    if (img.has("path")) item.imageUrl = img["path"].str();
+                    item.imageUrl = MAClient::imageRefFromJson(img);
                     if (img.has("provider")) item.imageProvider = img["provider"].str();
                 }
             }
@@ -1349,13 +1349,13 @@ void PlayerActivity::showQueueOverlay() {
                         if (mi["artists"][0].has("name")) qi.artist = mi["artists"][0]["name"].str();
                     }
                     if (mi.has("image") && mi["image"].type() == Json::OBJECT) {
-                        if (mi["image"].has("path")) qi.imageUrl = mi["image"]["path"].str();
+                        if (mi["image"].has("path")) qi.imageUrl = MAClient::imageRefFromJson(mi["image"]);
                         if (mi["image"].has("provider")) qi.imageProvider = mi["image"]["provider"].str();
                     }
                 }
                 if (item.has("image") && item["image"].type() == Json::OBJECT) {
                     if (qi.imageUrl.empty() && item["image"].has("path"))
-                        qi.imageUrl = item["image"]["path"].str();
+                        qi.imageUrl = MAClient::imageRefFromJson(item["image"]);
                     if (qi.imageProvider.empty() && item["image"].has("provider"))
                         qi.imageProvider = item["image"]["provider"].str();
                 }

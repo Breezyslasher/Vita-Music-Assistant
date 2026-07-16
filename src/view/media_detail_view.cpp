@@ -266,7 +266,7 @@ void MediaDetailView::loadMusicCategories() {
                     mi.name = item.has("name") ? item["name"].str() : "";
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
-                        mi.imageUrl = item["image"]["path"].str();
+                        mi.imageUrl = MAClient::imageRefFromJson(item["image"]);
                         if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
@@ -274,7 +274,7 @@ void MediaDetailView::loadMusicCategories() {
                         const Json& meta = item["metadata"];
                         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                             const Json& img = meta["images"][static_cast<size_t>(0)];
-                            if (img.has("path")) mi.imageUrl = img["path"].str();
+                            mi.imageUrl = MAClient::imageRefFromJson(img);
                             if (img.has("provider")) mi.imageProvider = img["provider"].str();
                         }
                     }
@@ -419,7 +419,7 @@ void MediaDetailView::loadTrackList() {
                     mi.name = item.has("name") ? item["name"].str() : "";
                     // Extract image URL: try image object, then metadata.images array
                     if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
-                        mi.imageUrl = item["image"]["path"].str();
+                        mi.imageUrl = MAClient::imageRefFromJson(item["image"]);
                         if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                     } else if (item.has("image") && item["image"].type() == Json::STRING) {
                         mi.imageUrl = item["image"].str();
@@ -427,7 +427,7 @@ void MediaDetailView::loadTrackList() {
                         const Json& meta = item["metadata"];
                         if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                             const Json& img = meta["images"][static_cast<size_t>(0)];
-                            if (img.has("path")) mi.imageUrl = img["path"].str();
+                            mi.imageUrl = MAClient::imageRefFromJson(img);
                             if (img.has("provider")) mi.imageProvider = img["provider"].str();
                         }
                     }
@@ -740,7 +740,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         mi.name = item.has("name") ? item["name"].str() : "";
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
-                            mi.imageUrl = item["image"]["path"].str();
+                            mi.imageUrl = MAClient::imageRefFromJson(item["image"]);
                             if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
@@ -748,7 +748,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                             const Json& meta = item["metadata"];
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
-                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                                mi.imageUrl = MAClient::imageRefFromJson(img);
                                 if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }
@@ -809,7 +809,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         mi.name = item.has("name") ? item["name"].str() : "";
                         // Extract image URL: try image object, then metadata.images array
                         if (item.has("image") && item["image"].type() == Json::OBJECT && item["image"].has("path")) {
-                            mi.imageUrl = item["image"]["path"].str();
+                            mi.imageUrl = MAClient::imageRefFromJson(item["image"]);
                             if (item["image"].has("provider")) mi.imageProvider = item["image"]["provider"].str();
                         } else if (item.has("image") && item["image"].type() == Json::STRING) {
                             mi.imageUrl = item["image"].str();
@@ -817,7 +817,7 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                             const Json& meta = item["metadata"];
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
-                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                                mi.imageUrl = MAClient::imageRefFromJson(img);
                                 if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }
@@ -900,7 +900,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                         mi.itemId = r.has("item_id") ? r["item_id"].str() : "";
                         mi.name = r.has("name") ? r["name"].str() : "";
                         if (r.has("image") && r["image"].type() == Json::OBJECT && r["image"].has("path")) {
-                            mi.imageUrl = r["image"]["path"].str();
+                            mi.imageUrl = MAClient::imageRefFromJson(r["image"]);
                             if (r["image"].has("provider")) mi.imageProvider = r["image"]["provider"].str();
                         } else if (r.has("image") && r["image"].type() == Json::STRING) {
                             mi.imageUrl = r["image"].str();
@@ -908,7 +908,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                             const Json& meta = r["metadata"];
                             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                                 const Json& img = meta["images"][static_cast<size_t>(0)];
-                                if (img.has("path")) mi.imageUrl = img["path"].str();
+                                mi.imageUrl = MAClient::imageRefFromJson(img);
                                 if (img.has("provider")) mi.imageProvider = img["provider"].str();
                             }
                         }

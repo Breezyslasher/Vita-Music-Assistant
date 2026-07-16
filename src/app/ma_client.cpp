@@ -881,42 +881,59 @@ static std::string urlEncode(const std::string& str) {
     return encoded;
 }
 
+std::string MAClient::imageRefFromJson(const Json& imageObj) {
+    if (imageObj.type() != Json::OBJECT) return "";
+    if (imageObj.has("proxy_id") && imageObj["proxy_id"].type() == Json::STRING &&
+        !imageObj["proxy_id"].str().empty()) {
+        return "proxyid:" + imageObj["proxy_id"].str();
+    }
+    if (imageObj.has("path")) return imageObj["path"].str();
+    return "";
+}
+
+// The canonical /imageproxy/<id> endpoint only serves fixed thumbnail sizes;
+// snap a requested size to the smallest allowed size that is not smaller.
+static int snapImageproxySize(int requested) {
+    static const int allowed[] = {80, 160, 256, 512, 1024};
+    for (int s : allowed) {
+        if (requested <= s) return s;
+    }
+    return 1024;
+}
+
 std::string MAClient::getThumbnailUrl(const std::string& imageUrl, int width, int height,
                                       const std::string& provider) {
     if (imageUrl.empty()) return "";
 
     int size = width > 0 ? width : (height > 0 ? height : 300);
 
-    // Remote mode: no HTTP reachability - return a server-relative path that
-    // ImageLoader routes through the WebRTC http-proxy tunnel (paths starting
-    // with '/' signal proxying).
-    if (m_remoteMode.load()) {
-        std::string path = "/imageproxy?path=" + urlEncode(imageUrl);
+    // Server-relative path for remote mode: ImageLoader routes paths starting
+    // with '/' through the WebRTC http-proxy tunnel.
+    std::string path;
+    if (imageUrl.rfind("proxyid:", 0) == 0) {
+        // Canonical endpoint: /imageproxy/<proxy_id>?size=N. The legacy
+        // ?path=&provider= form is deprecated (the server logs a warning) and
+        // only accepts a fixed set of sizes on the new route.
+        path = "/imageproxy/" + imageUrl.substr(8) +
+               "?size=" + std::to_string(snapImageproxySize(size));
+    } else {
+        // Older servers (no proxy_id field): legacy imageproxy query form.
+        // Routing through the imageproxy keeps images small for the Vita's
+        // limited RAM; it accepts both relative paths and full URLs.
+        path = "/imageproxy?path=" + urlEncode(imageUrl);
         path += "&size=" + std::to_string(size);
         if (!provider.empty()) {
             path += "&provider=" + urlEncode(provider);
         }
+    }
+
+    if (m_remoteMode.load()) {
         return path;
     }
 
-    // Build server base URL
     std::string base = m_serverUrl;
     if (!base.empty() && base.back() == '/') base.pop_back();
-
-    // Route ALL images through the MA imageproxy for consistent resizing.
-    // This prevents downloading multi-megabyte full-res images on Vita's
-    // limited 256MB RAM. The imageproxy accepts both relative paths and
-    // full URLs in the 'path' parameter.
-    std::string url = base + "/imageproxy?path=" + urlEncode(imageUrl);
-    url += "&size=" + std::to_string(size);
-
-    // Include provider instance ID so the imageproxy can resolve
-    // provider-specific paths (e.g. Plex /library/metadata/... paths)
-    if (!provider.empty()) {
-        url += "&provider=" + urlEncode(provider);
-    }
-
-    return url;
+    return base + path;
 }
 
 void MAClient::deletePlaylist(const std::string& itemId, MAResponseCallback cb) {

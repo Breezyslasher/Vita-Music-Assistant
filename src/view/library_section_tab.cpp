@@ -331,7 +331,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                 mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
-                    mi.imageUrl = obj["image"]["path"].str();
+                    mi.imageUrl = MAClient::imageRefFromJson(obj["image"]);
                     if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
@@ -339,7 +339,7 @@ void LibrarySectionTab::onPlaylistSelected(const MusicItem& playlist) {
                     const Json& meta = obj["metadata"];
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
-                        if (img.has("path")) mi.imageUrl = img["path"].str();
+                        mi.imageUrl = MAClient::imageRefFromJson(img);
                         if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }
@@ -757,7 +757,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                 mi.uri        = obj.has("uri")           ? obj["uri"].str()         : "";
                 // Extract image URL: try image object, then metadata.images array
                 if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
-                    mi.imageUrl = obj["image"]["path"].str();
+                    mi.imageUrl = MAClient::imageRefFromJson(obj["image"]);
                     if (obj["image"].has("provider")) mi.imageProvider = obj["image"]["provider"].str();
                 } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
                     mi.imageUrl = obj["image"].str();
@@ -765,7 +765,7 @@ void LibrarySectionTab::playPlaylistWithQueue(const std::string& playlistId, int
                     const Json& meta = obj["metadata"];
                     if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                         const Json& img = meta["images"][static_cast<size_t>(0)];
-                        if (img.has("path")) mi.imageUrl = img["path"].str();
+                        mi.imageUrl = MAClient::imageRefFromJson(img);
                         if (img.has("provider")) mi.imageProvider = img["provider"].str();
                     }
                 }

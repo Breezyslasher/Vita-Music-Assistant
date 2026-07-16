@@ -53,7 +53,7 @@ static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expe
 
         // Extract image URL: try image object, then metadata.images array
         if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
-            item.imageUrl = obj["image"]["path"].str();
+            item.imageUrl = MAClient::imageRefFromJson(obj["image"]);
             if (obj["image"].has("provider")) item.imageProvider = obj["image"]["provider"].str();
         } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
             item.imageUrl = obj["image"].str();
@@ -61,7 +61,7 @@ static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expe
             const Json& meta = obj["metadata"];
             if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
                 const Json& img = meta["images"][static_cast<size_t>(0)];
-                if (img.has("path")) item.imageUrl = img["path"].str();
+                item.imageUrl = MAClient::imageRefFromJson(img);
                 if (img.has("provider")) item.imageProvider = img["provider"].str();
             }
         }
