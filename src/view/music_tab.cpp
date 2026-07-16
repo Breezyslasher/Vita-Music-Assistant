@@ -467,102 +467,26 @@ void MusicTab::showCreatePlaylistDialog() {
 }
 
 void MusicTab::showAlbumContextMenu(const MusicItem& album) {
-    auto* dialog = new brls::Dialog(album.name);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
-    MusicItem capturedAlbum = album;
-
-    addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        brls::Logger::debug("MusicTab: Play Now - TODO: implement with MA async API");
-        // TODO: Use MAClient async API to fetch album tracks and play
-        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
-        return true;
-    });
-
-    addDialogButton("Play Next", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        brls::Logger::debug("MusicTab: Play Next - TODO: implement with MA async API");
-        // TODO: Use MAClient async API to fetch album tracks and queue next
-        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
-        return true;
-    });
-
-    addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog](brls::View*) {
-        dialog->dismiss();
-        brls::Logger::debug("MusicTab: Add to Queue - TODO: implement with MA async API");
-        // TODO: Use MAClient async API to fetch album tracks and add to queue
-        // MAClient::instance().getAlbumTracks(capturedAlbum.itemId, [](bool success, const Json& result) { ... });
-        return true;
-    });
-
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    // Shared popover menu with the real MA-backed actions
+    MediaDetailView::showAlbumContextMenuStatic(album);
 }
 
 void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
-    auto* dialog = new brls::Dialog(playlist.name);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto* trackCount = new brls::Label();
-    trackCount->setText("Tracks: " + std::to_string(playlist.itemCount));
-    trackCount->setMarginBottom(10);
-    optionsBox->addView(trackCount);
-
-    if (!playlist.isEditable) {
-        auto* smartLabel = new brls::Label();
-        smartLabel->setText("(Smart Playlist - cannot be edited)");
-        smartLabel->setFontSize(14);
-        smartLabel->setTextColor(nvgRGBA(150, 150, 150, 255));
-        smartLabel->setMarginBottom(10);
-        optionsBox->addView(smartLabel);
-    }
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
+    brls::View* anchor = brls::Application::getCurrentFocus();
     MusicItem capturedPlaylist = playlist;
+    std::string countSub = playlist.itemCount > 0
+        ? std::to_string(playlist.itemCount) + " tracks" : "";
 
-    addDialogButton("Play All", [this, capturedPlaylist, dialog](brls::View*) {
-        dialog->dismiss();
+    std::vector<OptionRow> rows;
+
+    rows.push_back({ "play.png", "Play All", countSub, true, false,
+        [this, capturedPlaylist](brls::View*) {
         playPlaylistWithQueue(capturedPlaylist.itemId, 0);
         return true;
-    });
+    }});
 
-    addDialogButton("Add to Queue", [capturedPlaylist, dialog](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "format-list-group.png", "Add to Queue", "", false, false,
+        [capturedPlaylist](brls::View*) {
 
         MAClient::instance().getPlaylistTracks(capturedPlaylist.itemId, [](bool success, const Json& result) {
             if (!success) {
@@ -606,12 +530,12 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
             });
         }, 0, capturedPlaylist.provider);
         return true;
-    });
+    }});
 
-    // Delete button (only for editable playlists)
+    // Delete row (only for editable playlists)
     if (capturedPlaylist.isEditable) {
-        addDialogButton("Delete", [this, capturedPlaylist, dialog](brls::View*) {
-            dialog->dismiss();
+        rows.push_back({ "cross.png", "Delete", "", false, false,
+            [this, capturedPlaylist](brls::View*) {
             brls::Dialog* confirmDialog = new brls::Dialog("Delete this playlist?");
             confirmDialog->addButton("Yes, Delete", [this, capturedPlaylist]() {
                 std::weak_ptr<bool> aliveWeak = m_alive;
@@ -631,20 +555,15 @@ void MusicTab::showPlaylistOptionsDialog(const MusicItem& playlist) {
             confirmDialog->addButton("Cancel", []() {});
             confirmDialog->open();
             return true;
-        });
+        }});
     }
 
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
+    rows.push_back({ "cross.png", "Cancel", "", false, true,
+        [](brls::View*) { return true; }});
 
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    std::string title = playlist.isEditable ? playlist.name
+                                            : playlist.name + " (smart)";
+    MediaDetailView::showOptionsPopover(anchor, "PLAYLIST", title, std::move(rows));
 }
 
 } // namespace vita_ma

@@ -632,71 +632,231 @@ void MediaDetailView::performTrackAction(const MusicItem& track, size_t trackInd
     }
 }
 
+// ---------------------------------------------------------------------------
+// Compact options popover (the START context menu), ported 1:1 from Vita_plex
+// (artboard "D4a"): centered 320px dark panel over a scrim, context line +
+// title header, hairline divider, 44px icon rows.
+
+// Palette literals scoped to this component (matches artboard "D4a").
+namespace popcol {
+    // panel = the app shell surface, line = the sidebar separator hairline.
+    inline NVGcolor panel()     { return nvgRGB(50, 50, 50); }
+    inline NVGcolor line()      { return nvgRGB(67, 67, 74); }
+    inline NVGcolor text()      { return nvgRGB(255, 255, 255); }
+    inline NVGcolor muted()     { return nvgRGB(0xA8, 0xA6, 0xB4); }
+    inline NVGcolor dim()       { return nvgRGB(0x80, 0x7E, 0x8C); }
+    inline NVGcolor gold()      { return nvgRGB(0xE5, 0xA0, 0x0D); }
+    inline NVGcolor scrim()     { return nvgRGBA(10, 9, 14, 128); }
+}
+
+// Translucent host so the underlying screen shows through the scrim.
+class PopoverActivity : public brls::Activity {
+public:
+    explicit PopoverActivity(brls::Box* content) : brls::Activity(content) {}
+    bool isTranslucent() override { return true; }
+};
+
+void MediaDetailView::showOptionsPopover(brls::View* anchor,
+                                         const std::string& contextLine,
+                                         const std::string& title,
+                                         std::vector<OptionRow> rows) {
+    namespace pc = popcol;
+
+    // ── Geometry ────────────────────────────────────────────────────────
+    // Centered, audio-picker style. The anchor is not used for positioning —
+    // every menu opens centered.
+    const float screenW = brls::Application::contentWidth;
+    const float screenH = brls::Application::contentHeight;
+    const float kPopoverW = 320.0f;
+    const float kMargin   = 40.0f;
+    (void)anchor;
+
+    // ── Scrim (full-screen, centers the panel) ──────────────────────────
+    auto* scrim = new brls::Box();
+    scrim->setAxis(brls::Axis::COLUMN);
+    scrim->setWidthPercentage(100.0f);
+    scrim->setHeightPercentage(100.0f);
+    scrim->setJustifyContent(brls::JustifyContent::CENTER);
+    scrim->setAlignItems(brls::AlignItems::CENTER);
+    scrim->setBackgroundColor(pc::scrim());
+    scrim->addGestureRecognizer(new brls::TapGestureRecognizer(scrim,
+        []() { brls::Application::popActivity(); }));
+
+    // ── Popover panel ───────────────────────────────────────────────────
+    auto* panel = new brls::Box();
+    panel->setAxis(brls::Axis::COLUMN);
+    panel->setBackgroundColor(pc::panel());
+    panel->setBorderColor(pc::line());
+    panel->setBorderThickness(1.0f);
+    panel->setShadowType(brls::ShadowType::GENERIC);
+    panel->setPadding(8.0f, 8.0f, 8.0f, 8.0f);
+    panel->setCornerRadius(14.0f);
+    // Fixed 320px, clamped on screens too narrow to hold it with margins.
+    float panelW = kPopoverW;
+    if (panelW + 2.0f * kMargin > screenW) panelW = screenW - 2.0f * kMargin;
+    panel->setWidth(panelW);
+
+    // ── Header (context line + title) ───────────────────────────────────
+    // borealis only supports a uniform border, so the bottom rule under the
+    // header is a separate 1px divider box rather than a per-side border.
+    auto* header = new brls::Box();
+    header->setAxis(brls::Axis::COLUMN);
+    header->setPadding(8.0f, 10.0f, 11.0f, 10.0f);
+
+    if (!contextLine.empty()) {
+        auto* ctx = new brls::Label();
+        ctx->setText(contextLine);
+        ctx->setFontSize(11.0f);
+        ctx->setTextColor(pc::dim());
+        ctx->setSingleLine(true);
+        ctx->setMarginBottom(2.0f);
+        header->addView(ctx);
+    }
+    auto* titleLabel = new brls::Label();
+    titleLabel->setText(title);
+    titleLabel->setFontSize(16.0f);
+    titleLabel->setTextColor(pc::text());
+    titleLabel->setSingleLine(true);
+    header->addView(titleLabel);
+    panel->addView(header);
+
+    auto* divider = new brls::Box();
+    divider->setHeight(1.0f);
+    divider->setAlignSelf(brls::AlignSelf::STRETCH);
+    divider->setBackgroundColor(pc::line());
+    divider->setMarginBottom(6.0f);
+    panel->addView(divider);
+
+    // Only a genuinely long menu (e.g. Add to Playlist with many playlists)
+    // scrolls; the common short context menus add their rows straight to the
+    // panel and render centered, exactly as before.
+    brls::Box* rowsParent = panel;
+    {
+        const float availForRows = screenH - 2.0f * kMargin - 90.0f;  // minus header/divider/padding
+        const float wantRows = static_cast<float>(rows.size()) * 44.0f;
+        if (wantRows > availForRows && availForRows > 132.0f) {
+            auto* rowsBox = new brls::Box();
+            rowsBox->setAxis(brls::Axis::COLUMN);
+            auto* scrollFrame = new brls::ScrollingFrame();
+            scrollFrame->setContentView(rowsBox);
+            scrollFrame->setHeight(availForRows);
+            panel->addView(scrollFrame);
+            rowsParent = rowsBox;
+        }
+    }
+
+    // ── Rows ────────────────────────────────────────────────────────────
+    brls::View* defaultFocus = nullptr;
+    brls::View* firstRow      = nullptr;
+    for (auto& r : rows) {
+        OptionRow row = r;  // copy into the row closure
+
+        auto* rowBox = new brls::Box();
+        rowBox->setAxis(brls::Axis::ROW);
+        rowBox->setAlignItems(brls::AlignItems::CENTER);
+        rowBox->setHeight(44.0f);
+        rowBox->setPadding(0.0f, 12.0f, 0.0f, 12.0f);
+        rowBox->setCornerRadius(9.0f);
+        rowBox->setFocusable(true);
+        rowBox->setHighlightCornerRadius(9.0f);
+
+        // Leading icon.
+        auto* img = new brls::Image();
+        if (!row.icon.empty()) img->setImageFromRes("icons/" + row.icon);
+        img->setScalingType(brls::ImageScalingType::FIT);
+        img->setWidth(20.0f);
+        img->setHeight(20.0f);
+        img->setMarginRight(11.0f);
+        rowBox->addView(img);
+
+        // Label.
+        auto* lbl = new brls::Label();
+        lbl->setText(row.label);
+        lbl->setFontSize(15.0f);
+        lbl->setSingleLine(true);
+        lbl->setGrow(1.0f);
+        if (row.danger) lbl->setTextColor(pc::muted());
+        else            lbl->setTextColor(pc::text());
+        rowBox->addView(lbl);
+
+        // Trailing mono sub-value.
+        if (!row.sub.empty()) {
+            auto* sub = new brls::Label();
+            sub->setText(row.sub);
+            sub->setFontSize(12.0f);
+            sub->setHorizontalAlign(brls::HorizontalAlign::RIGHT);
+            sub->setSingleLine(true);
+            sub->setMarginLeft(8.0f);
+            sub->setTextColor(pc::dim());
+            rowBox->addView(sub);
+        }
+
+        // Activate: dismiss the popover first (preserving the old
+        // dialog->dismiss() ordering), then run the verbatim action body.
+        auto act = row.action;
+        auto onActivate = [act](brls::View* v) -> bool {
+            brls::Application::popActivity(brls::TransitionAnimation::FADE,
+                [act, v]() { if (act) act(v); });
+            return true;
+        };
+        rowBox->registerClickAction(onActivate);
+        rowBox->addGestureRecognizer(new brls::TapGestureRecognizer(rowBox));
+
+        rowsParent->addView(rowBox);
+        if (!firstRow) firstRow = rowBox;
+        if (row.primary && !defaultFocus) defaultFocus = rowBox;
+    }
+    if (!defaultFocus) defaultFocus = firstRow;
+
+    scrim->addView(panel);
+
+    scrim->registerAction("Back", brls::ControllerButton::BUTTON_B,
+        [](brls::View*) { brls::Application::popActivity(); return true; });
+
+    brls::Application::pushActivity(new PopoverActivity(scrim));
+    if (defaultFocus) brls::Application::giveFocus(defaultFocus);
+}
+
 void MediaDetailView::showTrackActionDialog(const MusicItem& track, size_t trackIndex) {
-    auto* dialog = new brls::Dialog("Choose Action");
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
+    (void)trackIndex;
+    brls::View* anchor = brls::Application::getCurrentFocus();
     MusicItem capturedTrack = track;
-    size_t capturedIndex = trackIndex;
 
-    addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
-        MusicItem track = capturedTrack;
-        dialog->close([track]() {
-            std::vector<MusicItem> single = {track};
-            playTracksOnSelectedPlayer(single, "play");
-        });
-        return true;
-    });
+    std::vector<OptionRow> rows;
 
-    addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
-        MusicItem track = capturedTrack;
-        dialog->close([track]() {
-            std::vector<MusicItem> single = {track};
-            playTracksOnSelectedPlayer(single, "next");
-        });
+    rows.push_back({ "play.png", "Play Now (Clear Queue)", "", true, false,
+        [capturedTrack](brls::View*) {
+        std::vector<MusicItem> single = {capturedTrack};
+        playTracksOnSelectedPlayer(single, "play");
         return true;
-    });
+    }});
 
-    addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
-        MusicItem track = capturedTrack;
-        dialog->close([track]() {
-            std::vector<MusicItem> single = {track};
-            playTracksOnSelectedPlayer(single, "add");
-        });
+    rows.push_back({ "skip-next.png", "Play Next", "", false, false,
+        [capturedTrack](brls::View*) {
+        std::vector<MusicItem> single = {capturedTrack};
+        playTracksOnSelectedPlayer(single, "next");
         return true;
-    });
+    }});
 
-    addDialogButton("Add to Playlist", [dialog](brls::View*) {
-        dialog->close([]() {
-            brls::Application::notify("Add to playlist: not yet implemented");
-        });
+    rows.push_back({ "format-list-group.png", "Add to Bottom of Queue", "", false, false,
+        [capturedTrack](brls::View*) {
+        std::vector<MusicItem> single = {capturedTrack};
+        playTracksOnSelectedPlayer(single, "add");
         return true;
-    });
+    }});
 
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->close();
+    rows.push_back({ "book-multiple.png", "Add to Playlist", "", false, false,
+        [](brls::View*) {
+        brls::Application::notify("Add to playlist: not yet implemented");
         return true;
-    });
+    }});
 
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->close();
+    rows.push_back({ "cross.png", "Cancel", "", false, true,
+        [](brls::View*) {
         return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    }});
+
+    showOptionsPopover(anchor, "TRACK", track.name, std::move(rows));
 }
 
 void MediaDetailView::showAlbumContextMenu(const MusicItem& album) {
@@ -704,27 +864,14 @@ void MediaDetailView::showAlbumContextMenu(const MusicItem& album) {
 }
 
 void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
-    auto* dialog = new brls::Dialog(artist.name);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
+    brls::View* anchor = brls::Application::getCurrentFocus();
     MusicItem capturedArtist = artist;
 
+    std::vector<OptionRow> rows;
+
     // Shuffle Artist - fetch all tracks and shuffle
-    addDialogButton("Shuffle Artist", [capturedArtist, dialog](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "shuffle-variant.png", "Shuffle Artist", "", true, false,
+        [capturedArtist](brls::View*) {
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
 
@@ -789,11 +936,11 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
             });
         });
         return true;
-    });
+    }});
 
     // Play All (in order)
-    addDialogButton("Play All", [capturedArtist, dialog](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "play.png", "Play All", "", false, false,
+        [capturedArtist](brls::View*) {
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
 
@@ -851,37 +998,18 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
             });
         });
         return true;
-    });
+    }});
 
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss(); return true;
-    });
-
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "cross.png", "Cancel", "", false, true,
+        [](brls::View*) {
         return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    }});
+
+    showOptionsPopover(anchor, "ARTIST", artist.name, std::move(rows));
 }
 
 void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
-    auto* dialog = new brls::Dialog(album.name);
-
-    auto* optionsBox = new brls::Box();
-    optionsBox->setAxis(brls::Axis::COLUMN);
-    optionsBox->setPadding(20);
-
-    auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-        auto* btn = new brls::Button();
-        btn->setText(text);
-        btn->setHeight(44);
-        btn->setMarginBottom(10);
-        btn->registerClickAction(action);
-        btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-        optionsBox->addView(btn);
-    };
-
+    brls::View* anchor = brls::Application::getCurrentFocus();
     MusicItem capturedAlbum = album;
 
     // Helper: fetch tracks for an album or playlist, then play with given option
@@ -950,98 +1078,72 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
         });
     };
 
-    addDialogButton("Play Now (Clear Queue)", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
-        dialog->dismiss();
+    std::vector<OptionRow> rows;
+
+    rows.push_back({ "play.png", "Play Now (Clear Queue)", "", true, false,
+        [capturedAlbum, fetchAndPlay](brls::View*) {
         fetchAndPlay(capturedAlbum, "play");
         return true;
-    });
+    }});
 
-    addDialogButton("Play Next", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "skip-next.png", "Play Next", "", false, false,
+        [capturedAlbum, fetchAndPlay](brls::View*) {
         fetchAndPlay(capturedAlbum, "next");
         return true;
-    });
+    }});
 
-    addDialogButton("Add to Bottom of Queue", [capturedAlbum, dialog, fetchAndPlay](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "format-list-group.png", "Add to Bottom of Queue", "", false, false,
+        [capturedAlbum, fetchAndPlay](brls::View*) {
         fetchAndPlay(capturedAlbum, "add");
         return true;
-    });
+    }});
 
-    addDialogButton("Cancel", [dialog](brls::View*) {
-        dialog->dismiss();
+    rows.push_back({ "cross.png", "Cancel", "", false, true,
+        [](brls::View*) {
         return true;
-    });
+    }});
 
-    dialog->addView(optionsBox);
-    dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-        dialog->dismiss();
-        return true;
-    });
-    brls::Application::pushActivity(new brls::Activity(dialog));
+    const char* ctx = (album.mediaType == MediaType::PLAYLIST) ? "PLAYLIST" : "ALBUM";
+    showOptionsPopover(anchor, ctx, album.name, std::move(rows));
 }
 
 void MediaDetailView::performTrackActionStatic(const MusicItem& track) {
     TrackDefaultAction action = Application::getInstance().getSettings().trackDefaultAction;
 
     if (action == TrackDefaultAction::ASK_EACH_TIME) {
-        // Show a simplified action dialog (no playlist option without MediaDetailView context)
-        auto* dialog = new brls::Dialog("Choose Action");
-
-        auto* optionsBox = new brls::Box();
-        optionsBox->setAxis(brls::Axis::COLUMN);
-        optionsBox->setPadding(20);
-
-        auto addDialogButton = [&optionsBox](const std::string& text, std::function<bool(brls::View*)> action) {
-            auto* btn = new brls::Button();
-            btn->setText(text);
-            btn->setHeight(44);
-            btn->setMarginBottom(10);
-            btn->registerClickAction(action);
-            btn->addGestureRecognizer(new brls::TapGestureRecognizer(btn));
-            optionsBox->addView(btn);
-        };
-
+        // Simplified menu (no playlist option without MediaDetailView context)
+        brls::View* anchor = brls::Application::getCurrentFocus();
         MusicItem capturedTrack = track;
 
-        addDialogButton("Play Now (Clear Queue)", [capturedTrack, dialog](brls::View*) {
-            MusicItem track = capturedTrack;
-            dialog->close([track]() {
-                std::vector<MusicItem> single = {track};
-                playTracksOnSelectedPlayer(single, "play");
-            });
-            return true;
-        });
+        std::vector<OptionRow> rows;
 
-        addDialogButton("Play Next", [capturedTrack, dialog](brls::View*) {
-            MusicItem track = capturedTrack;
-            dialog->close([track]() {
-                std::vector<MusicItem> single = {track};
-                playTracksOnSelectedPlayer(single, "next");
-            });
+        rows.push_back({ "play.png", "Play Now (Clear Queue)", "", true, false,
+            [capturedTrack](brls::View*) {
+            std::vector<MusicItem> single = {capturedTrack};
+            playTracksOnSelectedPlayer(single, "play");
             return true;
-        });
+        }});
 
-        addDialogButton("Add to Bottom of Queue", [capturedTrack, dialog](brls::View*) {
-            MusicItem track = capturedTrack;
-            dialog->close([track]() {
-                std::vector<MusicItem> single = {track};
-                playTracksOnSelectedPlayer(single, "add");
-            });
+        rows.push_back({ "skip-next.png", "Play Next", "", false, false,
+            [capturedTrack](brls::View*) {
+            std::vector<MusicItem> single = {capturedTrack};
+            playTracksOnSelectedPlayer(single, "next");
             return true;
-        });
+        }});
 
-        addDialogButton("Cancel", [dialog](brls::View*) {
-            dialog->close();
+        rows.push_back({ "format-list-group.png", "Add to Bottom of Queue", "", false, false,
+            [capturedTrack](brls::View*) {
+            std::vector<MusicItem> single = {capturedTrack};
+            playTracksOnSelectedPlayer(single, "add");
             return true;
-        });
+        }});
 
-        dialog->addView(optionsBox);
-        dialog->registerAction("Back", brls::ControllerButton::BUTTON_B, [dialog](brls::View*) {
-            dialog->close();
+        rows.push_back({ "cross.png", "Cancel", "", false, true,
+            [](brls::View*) {
             return true;
-        });
-        brls::Application::pushActivity(new brls::Activity(dialog));
+        }});
+
+        showOptionsPopover(anchor, "TRACK", track.name, std::move(rows));
         return;
     }
 

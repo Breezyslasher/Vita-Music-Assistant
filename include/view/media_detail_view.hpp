@@ -8,9 +8,24 @@
 #include <borealis.hpp>
 #include <memory>
 #include <atomic>
+#include <functional>
+#include <vector>
 #include "app/ma_types.hpp"
 
 namespace vita_ma {
+
+// One row of the compact options popover (the START context menu). Each menu
+// translates its actions into OptionRows and feeds the whole vector to
+// MediaDetailView::showOptionsPopover(). Presentation only — the `action`
+// runs after the popover dismisses. (Ported 1:1 from Vita_plex.)
+struct OptionRow {
+    std::string icon;     // resources/icons asset key (e.g. "play.png")
+    std::string label;
+    std::string sub;      // optional trailing mono value ("", "42 tracks")
+    bool primary = false; // default-focused row (the play action)
+    bool danger  = false; // muted (Cancel)
+    std::function<bool(brls::View*)> action;
+};
 
 class MediaDetailView : public brls::Box {
 public:
@@ -18,6 +33,15 @@ public:
     ~MediaDetailView();
 
     static brls::View* create();
+
+    // Shared builder for the compact options popover (Vita_plex artboard
+    // "D4a"): centered 320px dark panel over a scrim with a context line +
+    // title header and icon rows. Every context menu funnels its rows through
+    // here. Static because several callers are static members.
+    static void showOptionsPopover(brls::View* anchor,
+                                   const std::string& contextLine,
+                                   const std::string& title,
+                                   std::vector<OptionRow> rows);
 
 private:
     void loadDetails();
