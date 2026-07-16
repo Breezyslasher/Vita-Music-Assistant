@@ -151,6 +151,11 @@ bool WebRTCClient::connectRemote(const std::string& remoteId) {
     setState(WebRTCState::CONNECTING_SIGNALING);
     brls::Logger::info("RemoteAccess: connecting to signaling for {}", m_remoteId);
 
+    // Signaling messages must not depend on the UI loop: session restore
+    // blocks the main thread in connectRemote() before mainLoop() ever runs,
+    // so a brls::sync'd pairing message would sit unprocessed until the 60s
+    // timeout. None of the signaling handling touches the UI.
+    m_signalingWs.setDispatchOnMainThread(false);
     m_signalingWs.setOnMessage([this](const std::string& msg) {
         onSignalingMessage(msg);
     });
@@ -345,6 +350,11 @@ void WebRTCClient::startPeerConnection(const Json& iceServersJson) {
     if (config.iceServers.empty()) {
         config.iceServers.emplace_back("stun:stun.l.google.com:19302");
     }
+
+    // MA api responses (library listings etc.) arrive as single data-channel
+    // messages that can exceed libdatachannel's 256 KiB default, which then
+    // logs "SCTP message is too large" and truncates the JSON.
+    config.maxMessageSize = 1024 * 1024;
 
     std::lock_guard<std::mutex> lock(m_rtcMutex);
     auto t0 = std::chrono::steady_clock::now();

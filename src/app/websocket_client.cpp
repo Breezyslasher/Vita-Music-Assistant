@@ -496,9 +496,13 @@ void WebSocketClient::receiveLoop() {
             if (m_state.load() == WsState::CONNECTED) {
                 m_state.store(WsState::DISCONNECTED);
                 if (m_onClose) {
-                    brls::sync([this]() {
+                    if (m_dispatchOnMain) {
+                        brls::sync([this]() {
+                            m_onClose(1006, "Connection lost");
+                        });
+                    } else {
                         m_onClose(1006, "Connection lost");
-                    });
+                    }
                 }
             }
             break;
@@ -507,10 +511,14 @@ void WebSocketClient::receiveLoop() {
         switch (opcode) {
             case WsOpcode::TEXT:
                 if (m_onMessage) {
-                    std::string msg = payload;
-                    brls::sync([this, msg]() {
-                        m_onMessage(msg);
-                    });
+                    if (m_dispatchOnMain) {
+                        std::string msg = payload;
+                        brls::sync([this, msg]() {
+                            m_onMessage(msg);
+                        });
+                    } else {
+                        m_onMessage(payload);
+                    }
                 }
                 break;
 
@@ -541,9 +549,13 @@ void WebSocketClient::receiveLoop() {
                             reason = payload.substr(2);
                         }
                     }
-                    brls::sync([this, code, reason]() {
+                    if (m_dispatchOnMain) {
+                        brls::sync([this, code, reason]() {
+                            m_onClose(code, reason);
+                        });
+                    } else {
                         m_onClose(code, reason);
-                    });
+                    }
                 }
                 // Send close frame back
                 sendFrame(WsOpcode::CLOSE,

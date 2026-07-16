@@ -57,6 +57,13 @@ public:
     void setOnError(WsErrorCallback cb) { m_onError = std::move(cb); }
     void setOnClose(WsCloseCallback cb) { m_onClose = std::move(cb); }
 
+    // By default text/close callbacks are marshalled to the UI thread via
+    // brls::sync. Disable for callbacks that don't touch the UI and must not
+    // depend on the main loop running (e.g. WebRTC signaling: session restore
+    // blocks the main thread before the first mainLoop() iteration, so a
+    // brls::sync'd pairing message would deadlock until the 60s timeout).
+    void setDispatchOnMainThread(bool enable) { m_dispatchOnMain = enable; }
+
 private:
     void receiveLoop();
     bool performHandshake(const std::string& host, const std::string& path, int port, const std::string& subprotocol);
@@ -89,6 +96,7 @@ private:
     WsBinaryCallback m_onBinary;
     WsErrorCallback m_onError;
     WsCloseCallback m_onClose;
+    bool m_dispatchOnMain = true;
 
     // Low-level I/O
     int rawSend(const uint8_t* data, size_t len);
