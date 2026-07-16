@@ -208,6 +208,20 @@ else()
     message(FATAL_ERROR "Patch file not found: ${JUICE_RANDOM_PATCH}")
 endif()
 
+# libdatachannel patch: SctpTransport::doRecv() puts a 64KB receive buffer on
+# the stack. On the Vita, pthread stacks are heap-allocated, so that frame
+# overruns the SCTP worker thread's stack into adjacent heap chunks and
+# corrupts the global heap (crash: main thread aborts in free() right after the
+# SCTP handshake). Move the buffer to a thread_local heap allocation.
+set(DC_SCTP_PATCH  ${CMAKE_CURRENT_SOURCE_DIR}/patches/libdatachannel_sctptransport.cpp)
+set(DC_SCTP_TARGET ${CMAKE_CURRENT_SOURCE_DIR}/lib/libdatachannel/src/impl/sctptransport.cpp)
+if(EXISTS ${DC_SCTP_PATCH})
+    message(STATUS "Applying patch: libdatachannel sctptransport.cpp (off-stack recv buffer)")
+    configure_file(${DC_SCTP_PATCH} ${DC_SCTP_TARGET} COPYONLY)
+else()
+    message(FATAL_ERROR "Patch file not found: ${DC_SCTP_PATCH}")
+endif()
+
 # Application source files
 set(APP_SOURCES
     # Main entry
