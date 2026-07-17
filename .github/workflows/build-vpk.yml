@@ -31,7 +31,7 @@ jobs:
         env:
           SWITCHFIN_URL: https://github.com/dragonflylee/switchfin/releases/download/vita-packages
         run: |
-          for pkg in mbedtls-3.6.5-1 curl-8.16.0-2 ffmpeg-n6.0-3 mpv-0.36.0-3; do
+          for pkg in mbedtls-3.6.7-1 curl-8.16.0-3 ffmpeg-n6.0-3 mpv-0.36.0-3; do
             wget "$SWITCHFIN_URL/${pkg}-arm.tar.xz"
           done
           vdpm zstd freetype libpng $PWD/*-arm.tar.xz
@@ -46,9 +46,9 @@ jobs:
         run: |
           apk add python3 patch bzip2
           cd /tmp
-          wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
-          tar xf mbedtls-3.6.5.tar.bz2
-          cd mbedtls-3.6.5
+          wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+          tar xf mbedtls-3.6.7.tar.bz2
+          cd mbedtls-3.6.7
           patch -p1 < "$GITHUB_WORKSPACE/patches/mbedtls_vitasdk.patch"
           python3 scripts/config.py set MBEDTLS_THREADING_C
           python3 scripts/config.py set MBEDTLS_THREADING_PTHREAD
