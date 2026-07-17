@@ -1,5 +1,15 @@
+diff --git a/library/common.h b/library/common.h
+--- a/library/common.h
++++ b/library/common.h
+@@ -40,6 +40,7 @@
+     (defined(__APPLE__) && defined(__MACH__)) ||                  \
+     defined(__HAIKU__) ||                                         \
+     defined(__midipix__) ||                                       \
++    defined(__vita__) ||                                          \
+     /* Add other Unix-like platform indicators here ^^^^ */ 0
+ /* defined(MBEDTLS_PLATFORM_IS_UNIXLIKE) ==> we can include <unistd.h> */
+ #define MBEDTLS_PLATFORM_IS_UNIXLIKE
 diff --git a/library/entropy_poll.c b/library/entropy_poll.c
-index 611768cd85..2c0a2264a3 100644
 --- a/library/entropy_poll.c
 +++ b/library/entropy_poll.c
 @@ -31,7 +31,7 @@
@@ -11,7 +21,7 @@ index 611768cd85..2c0a2264a3 100644
  #error \
      "Platform entropy sources only work on Unix and Windows, see MBEDTLS_NO_PLATFORM_ENTROPY in mbedtls_config.h"
  #endif
-@@ -145,6 +145,28 @@ static int sysctl_arnd_wrapper(unsigned char *buf, size_t buflen)
+@@ -145,6 +145,28 @@
  #endif /* KERN_ARND */
  #endif /* __FreeBSD__ || __NetBSD__ */
  
@@ -39,11 +49,12 @@ index 611768cd85..2c0a2264a3 100644
 +
  #include <stdio.h>
  
- int mbedtls_platform_entropy_poll(void *data,
-@@ -176,6 +198,14 @@ int mbedtls_platform_entropy_poll(void *data,
+ const char *mbedtls_platform_dev_random = MBEDTLS_PLATFORM_DEV_RANDOM;
+@@ -177,6 +199,14 @@
+         return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
      }
      *olen = len;
-     return 0;
++    return 0;
 +#elif defined(__vita__)
 +    ((void) file);
 +    ((void) read_len);
@@ -51,24 +62,13 @@ index 611768cd85..2c0a2264a3 100644
 +        return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
 +    }
 +    *olen = len;
-+    return 0;
+     return 0;
  #else
  
-     *olen = 0;
 diff --git a/library/net_sockets.c b/library/net_sockets.c
-index 1419c787b9..8f39594fe7 100644
 --- a/library/net_sockets.c
 +++ b/library/net_sockets.c
-@@ -21,7 +21,7 @@
- 
- #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
-     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
--    !defined(__HAIKU__) && !defined(__midipix__)
-+    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__vita__)
- #error "This module only works on Unix and Windows, see MBEDTLS_NET_C in mbedtls_config.h"
- #endif
- 
-@@ -279,6 +279,40 @@ static int net_would_block(const mbedtls_net_context *ctx)
+@@ -277,6 +277,40 @@
      ((void) ctx);
      return WSAGetLastError() == WSAEWOULDBLOCK;
  }
@@ -109,7 +109,7 @@ index 1419c787b9..8f39594fe7 100644
  #else
  /*
   * Check if the requested operation would be blocking on a non-blocking socket
-@@ -430,6 +464,9 @@ int mbedtls_net_set_block(mbedtls_net_context *ctx)
+@@ -428,6 +462,9 @@
      !defined(EFI32)
      u_long n = 0;
      return ioctlsocket(ctx->fd, FIONBIO, &n);
@@ -119,7 +119,7 @@ index 1419c787b9..8f39594fe7 100644
  #else
      return fcntl(ctx->fd, F_SETFL, fcntl(ctx->fd, F_GETFL) & ~O_NONBLOCK);
  #endif
-@@ -441,6 +478,9 @@ int mbedtls_net_set_nonblock(mbedtls_net_context *ctx)
+@@ -439,6 +476,9 @@
      !defined(EFI32)
      u_long n = 1;
      return ioctlsocket(ctx->fd, FIONBIO, &n);
@@ -130,33 +130,14 @@ index 1419c787b9..8f39594fe7 100644
      return fcntl(ctx->fd, F_SETFL, fcntl(ctx->fd, F_GETFL) | O_NONBLOCK);
  #endif
 diff --git a/library/platform_util.c b/library/platform_util.c
-index 19ef07aead..19a09917a9 100644
 --- a/library/platform_util.c
 +++ b/library/platform_util.c
-@@ -220,11 +220,11 @@ void (*mbedtls_test_hook_test_fail)(const char *, int, const char *);
- #include <time.h>
- #if !defined(_WIN32) && \
-     (defined(unix) || defined(__unix) || defined(__unix__) || \
--    (defined(__APPLE__) && defined(__MACH__)) || defined(__HAIKU__) || defined(__midipix__))
-+    (defined(__APPLE__) && defined(__MACH__)) || defined(__HAIKU__) || defined(__midipix__) || defined(__vita__))
+@@ -219,7 +219,7 @@
  #include <unistd.h>
- #endif \
-     /* !_WIN32 && (unix || __unix || __unix__ || (__APPLE__ && __MACH__) || __HAIKU__ || __midipix__) */
+ #endif
+ 
 -#if (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__)
 +#if (defined(_POSIX_VERSION) && _POSIX_VERSION >= 199309L) || defined(__HAIKU__) || defined(__vita__)
  mbedtls_ms_time_t mbedtls_ms_time(void)
  {
      int ret;
-diff --git a/library/timing.c b/library/timing.c
-index 58f1c1ec2e..30dbc1dd62 100644
---- a/library/timing.c
-+++ b/library/timing.c
-@@ -15,7 +15,7 @@
- 
- #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
-     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
--    !defined(__HAIKU__) && !defined(__midipix__)
-+    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__vita__)
- #error "This module only works on Unix and Windows, see MBEDTLS_TIMING_C in mbedtls_config.h"
- #endif
- 
