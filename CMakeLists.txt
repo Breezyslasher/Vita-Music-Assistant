@@ -402,6 +402,7 @@ target_link_libraries(${PROJECT_NAME}
     SceVideodec_stub
     SceCodecEngine_stub
     SceCamera_stub
+    ScePower_stub
 
     # Standard libraries last (m is provided by libstdc++)
     z

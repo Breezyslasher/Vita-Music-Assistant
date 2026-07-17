@@ -34,16 +34,22 @@ private:
 
     bool startCamera();
     void stopCamera();
-    void cameraLoop();
+    void cameraLoop();   // reads frames + updates preview (kept light so preview stays smooth)
+    void decodeLoop();   // decodes the latest frame on its own thread (quirc is heavy)
 
     std::function<void(const std::string&)> m_onResult;
 
-    // Latest camera frame (RGBA bytes) for the preview
+    // Latest camera frame (RGBA bytes), shared by preview + decoder.
+    // m_frameSeq bumps on each captured frame so the decoder only re-decodes
+    // fresh frames and never works on a stale backlog.
     std::mutex m_frameMutex;
     std::vector<unsigned char> m_frameRgba;
     std::atomic<bool> m_frameDirty{false};
+    std::atomic<uint32_t> m_frameSeq{0};
+    std::vector<unsigned char> m_decodeRgba;  // decoder's private snapshot
 
     std::thread m_camThread;
+    std::thread m_decodeThread;
     std::atomic<bool> m_running{false};
     std::atomic<bool> m_resultDelivered{false};
 
