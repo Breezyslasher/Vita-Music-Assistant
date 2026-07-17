@@ -208,9 +208,14 @@ void LoginActivity::updateUIForMode() {
     styleSegment(segRemote, segRemoteLabel, m_authMode == AuthMode::REMOTE);
 
     bool remote = (m_authMode == AuthMode::REMOTE);
-    if (fieldsCredentials)
-        fieldsCredentials->setVisibility(remote ? brls::Visibility::GONE
-                                                : brls::Visibility::VISIBLE);
+    // Remote mode keeps Username/Password (used for a first-time login over
+    // the WebRTC channel when no token is saved); only Server URL disappears.
+    if (serverCaption)
+        serverCaption->setVisibility(remote ? brls::Visibility::GONE
+                                            : brls::Visibility::VISIBLE);
+    if (serverField)
+        serverField->setVisibility(remote ? brls::Visibility::GONE
+                                          : brls::Visibility::VISIBLE);
     if (fieldsRemote)
         fieldsRemote->setVisibility(remote ? brls::Visibility::VISIBLE
                                            : brls::Visibility::GONE);
@@ -278,13 +283,18 @@ void LoginActivity::onRemoteLoginPressed() {
         return;
     }
 
-    // A remote connection reuses the token from a previous direct sign-in:
-    // token login (POST /auth/login) needs HTTP reachability the remote path
-    // doesn't have.
+    // Prefer a saved token from a previous sign-in. Without one, log in with
+    // credentials over the WebRTC channel itself: 'auth/login' is a socket
+    // command (callable unauthenticated), so no HTTP reachability is needed.
     auto& app = Application::getInstance();
-    if (app.getAuthToken().empty()) {
-        setStatus("Remote ID needs a saved login - sign in once with your server URL first");
-        return;
+    std::string token = app.getAuthToken();
+    bool credentialLogin = token.empty();
+    if (credentialLogin) {
+        if (m_username.empty() || m_password.empty()) {
+            setStatus("Enter your username and password (first remote login)");
+            return;
+        }
+        MAClient::instance().setPendingCredentials(m_username, m_password, "builtin");
     }
 
     // Persist the Remote ID so it is remembered next launch.
@@ -294,27 +304,27 @@ void LoginActivity::onRemoteLoginPressed() {
     setStatus("Establishing secure WebRTC connection...");
     std::string user = !m_username.empty() ? m_username : app.getUsername();
     std::string remoteId = m_remoteId;
-    std::string token = app.getAuthToken();
 
     // connect() blocks until the WebRTC handshake completes (or fails), so it
     // must not run on the UI thread.
     std::thread([this, remoteId, token, user]() {
         bool ok = MAClient::instance().connect(remoteId, token);
 
-        brls::sync([this, remoteId, token, user, ok]() {
+        brls::sync([this, remoteId, user, ok]() {
             if (ok) {
                 auto& a = Application::getInstance();
                 a.setServerUrl(remoteId);
-                a.setAuthToken(token);
                 a.setUsername(user);
                 a.saveSettings();
+                // Credential logins persist their token via the long-lived
+                // token upgrade callback; a reused token is stored already.
                 setStatus("Connected!");
                 a.connectSendspin();
                 a.pushMainActivity();
             } else {
                 std::string err = WebRTCClient::instance().getLastError();
-                setStatus("Remote connection failed: " +
-                          (err.empty() ? "unknown error" : err));
+                if (err.empty()) err = "check Remote ID and credentials";
+                setStatus("Remote connection failed: " + err);
             }
         });
     }).detach();

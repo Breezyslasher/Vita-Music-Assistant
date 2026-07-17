@@ -61,6 +61,7 @@ private:
 
     // Credential fields (MA / HA modes)
     BRLS_BIND(brls::Box, fieldsCredentials, "login/fields_credentials");
+    BRLS_BIND(brls::Label, serverCaption, "login/server_caption");
     BRLS_BIND(brls::Box, serverField, "login/server_field");
     BRLS_BIND(brls::Label, serverValue, "login/server_value");
     BRLS_BIND(brls::Box, usernameField, "login/username_field");

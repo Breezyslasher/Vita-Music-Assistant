@@ -10,25 +10,6 @@
     alignItems="center"
     backgroundColor="#0b0e13">
 
-    <!-- Soft radial aura behind the card (two stacked translucent circles
-         approximate the radial falloff; borealis has no gradients) -->
-    <brls:Box
-        width="560"
-        height="560"
-        positionType="absolute"
-        positionTop="-8"
-        positionLeft="200"
-        cornerRadius="280"
-        backgroundColor="#00bcee0d"/>
-    <brls:Box
-        width="380"
-        height="380"
-        positionType="absolute"
-        positionTop="82"
-        positionLeft="290"
-        cornerRadius="190"
-        backgroundColor="#00bcee14"/>
-
     <!-- Card -->
     <brls:Box
         id="login/card"

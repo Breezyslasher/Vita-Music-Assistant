@@ -367,40 +367,16 @@ void MAClient::onMessage(const std::string& message) {
             m_serverInfo.schema_version);
 
         // Check if auth is required
-        if (m_serverInfo.schema_version >= 28 && !m_authToken.empty()) {
-            // Send auth command
-            Json kwargs;
-            kwargs["token"] = Json(m_authToken);
-            sendCommand("auth", kwargs, [this](bool success, const Json& result) {
-                if (success) {
-                    m_authenticated.store(true);
-                    brls::Logger::info("MA: authenticated successfully");
-                    flushPreAuthQueue();
-                    if (m_eventCallback) {
-                        m_eventCallback(MAEvent::CONNECTED, Json());
-                    }
-                    // On a fresh direct login, upgrade the short-lived token to
-                    // a long-lived one so remote (WebRTC) connections - which
-                    // cannot reach /auth/login to re-authenticate - never expire.
-                    if (m_upgradeToLongLived.load() && !m_remoteMode.load()) {
-                        m_upgradeToLongLived.store(false);
-                        upgradeToLongLivedToken();
-                    }
-                } else {
-                    // The token was rejected (expired/invalid) - distinct from a
-                    // network drop. Stop the reconnect loop so we don't spin
-                    // forever replaying a dead token, and ask the app to re-login.
-                    brls::Logger::error("MA: authentication failed (token rejected)");
-                    m_shouldReconnect.store(false);
-                    m_authenticated.store(false);
-                    if (m_onAuthFailed) {
-                        m_onAuthFailed();
-                    }
-                    if (m_eventCallback) {
-                        m_eventCallback(MAEvent::AUTH_FAILED, Json());
-                    }
-                }
-            });
+        if (m_serverInfo.schema_version >= 28 &&
+            (!m_authToken.empty() || !m_pendingLoginUser.empty())) {
+            if (m_authToken.empty()) {
+                // No token but credentials were provided: log in over the
+                // socket itself ('auth/login' is callable unauthenticated),
+                // which also works across WebRTC remote connections.
+                sendLoginCommand();
+            } else {
+                sendAuthCommand();
+            }
         } else {
             // No auth needed or no token provided
             m_authenticated.store(true);
@@ -464,6 +440,87 @@ void MAClient::onClose(int code, const std::string& reason) {
     }
 }
 
+void MAClient::setPendingCredentials(const std::string& username, const std::string& password,
+                                     const std::string& providerId) {
+    m_pendingLoginUser = username;
+    m_pendingLoginPass = password;
+    m_pendingLoginProvider = providerId.empty() ? "builtin" : providerId;
+}
+
+void MAClient::sendAuthCommand() {
+    Json kwargs;
+    kwargs["token"] = Json(m_authToken);
+    sendCommand("auth", kwargs, [this](bool success, const Json& result) {
+        if (success) {
+            m_authenticated.store(true);
+            brls::Logger::info("MA: authenticated successfully");
+            flushPreAuthQueue();
+            if (m_eventCallback) {
+                m_eventCallback(MAEvent::CONNECTED, Json());
+            }
+            // Upgrade a fresh short-lived token to a long-lived one so future
+            // connections - especially remote WebRTC ones - never expire.
+            // Works over any transport: auth/token/create is a WS command.
+            if (m_upgradeToLongLived.load()) {
+                m_upgradeToLongLived.store(false);
+                upgradeToLongLivedToken();
+            }
+        } else {
+            // The token was rejected (expired/invalid) - distinct from a
+            // network drop. Stop the reconnect loop so we don't spin
+            // forever replaying a dead token, and ask the app to re-login.
+            brls::Logger::error("MA: authentication failed (token rejected)");
+            m_shouldReconnect.store(false);
+            m_authenticated.store(false);
+            if (m_onAuthFailed) {
+                m_onAuthFailed();
+            }
+            if (m_eventCallback) {
+                m_eventCallback(MAEvent::AUTH_FAILED, Json());
+            }
+        }
+    });
+}
+
+void MAClient::sendLoginCommand() {
+    Json kwargs;
+    kwargs["username"] = Json(m_pendingLoginUser);
+    kwargs["password"] = Json(m_pendingLoginPass);
+    kwargs["provider_id"] = Json(m_pendingLoginProvider);
+    kwargs["device_name"] = Json(std::string("PS Vita"));
+    // One-shot: never retain credentials past the attempt
+    m_pendingLoginUser.clear();
+    m_pendingLoginPass.clear();
+    m_pendingLoginProvider.clear();
+
+    brls::Logger::info("MA: logging in over the socket (auth/login)");
+    sendCommand("auth/login", kwargs, [this](bool success, const Json& result) {
+        bool loginOk = success && result.type() == Json::OBJECT &&
+                       result.has("success") && result["success"].boolVal() &&
+                       result.has("token") && !result["token"].str().empty();
+        if (loginOk) {
+            m_authToken = result["token"].str();
+            // The login token is short-lived: upgrade it after auth so it is
+            // durable for future (remote) connections.
+            m_upgradeToLongLived.store(true);
+            sendAuthCommand();
+        } else {
+            std::string err = "Login failed";
+            if (success && result.type() == Json::OBJECT && result.has("error"))
+                err = result["error"].str();
+            brls::Logger::error("MA: socket login failed: {}", err);
+            m_shouldReconnect.store(false);
+            m_authenticated.store(false);
+            if (m_onAuthFailed) {
+                m_onAuthFailed();
+            }
+            if (m_eventCallback) {
+                m_eventCallback(MAEvent::AUTH_FAILED, Json());
+            }
+        }
+    });
+}
+
 void MAClient::upgradeToLongLivedToken() {
     // auth/token/create -> returns a new long-lived token string (expires_at
     // null). We swap our in-memory token to it (so the reconnect loop uses the
@@ -515,7 +572,7 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
                             MAResponseCallback cb) {
     // Queue commands that arrive before authentication completes
     // (except the "auth" command itself)
-    if (!m_authenticated.load() && command != "auth") {
+    if (!m_authenticated.load() && command != "auth" && command != "auth/login") {
         brls::Logger::debug("MA: queuing command '{}' until auth completes", command);
         std::lock_guard<std::mutex> lock(m_preAuthMutex);
         m_preAuthQueue.push_back({command, kwargs, std::move(cb)});

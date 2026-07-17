@@ -112,6 +112,14 @@ public:
     // WebRTC ones, which can't reach /auth/login - never expire. Set this
     // before a fresh username/password login.
     void setUpgradeToLongLived(bool v) { m_upgradeToLongLived.store(v); }
+
+    // Credential login over the socket itself (works over WebRTC remote
+    // connections too): when set and no token is given, the client sends the
+    // 'auth/login' command after server_info, then authenticates with the
+    // returned token. providerId "builtin" or "homeassistant". Cleared after
+    // one use.
+    void setPendingCredentials(const std::string& username, const std::string& password,
+                               const std::string& providerId = "builtin");
     // Invoked (on the WS thread) with the freshly minted long-lived token so
     // the app can persist it. m_authToken is already updated when this fires.
     void setTokenUpgradedCallback(std::function<void(const std::string&)> cb) {
@@ -293,6 +301,13 @@ private:
     std::function<void()> m_onAuthFailed;
     void attemptReconnect();
     void upgradeToLongLivedToken();
+
+    // One-shot credentials for socket-level auth/login (see setPendingCredentials)
+    std::string m_pendingLoginUser;
+    std::string m_pendingLoginPass;
+    std::string m_pendingLoginProvider;
+    void sendAuthCommand();   // authenticate with m_authToken
+    void sendLoginCommand();  // auth/login with pending credentials, then auth
 };
 
 } // namespace vita_ma
