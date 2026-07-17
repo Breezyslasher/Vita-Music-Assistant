@@ -430,6 +430,7 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     # App resources - XML layouts
     FILE resources/xml/activity/main.xml resources/xml/activity/main.xml
     FILE resources/xml/activity/login.xml resources/xml/activity/login.xml
+    FILE resources/xml/activity/qr_scanner.xml resources/xml/activity/qr_scanner.xml
     FILE resources/xml/activity/player.xml resources/xml/activity/player.xml
     FILE resources/xml/activity/reader.xml resources/xml/activity/reader.xml
     FILE resources/xml/tabs/home.xml resources/xml/tabs/home.xml
@@ -466,6 +467,7 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     FILE resources/icons/menu.png resources/icons/menu.png
     FILE resources/icons/mini_star.png resources/icons/mini_star.png
     FILE resources/icons/options.png resources/icons/options.png
+    FILE resources/icons/qrcode-scan.png resources/icons/qrcode-scan.png
     FILE resources/icons/radio.png resources/icons/radio.png
     FILE resources/icons/radio_checked.png resources/icons/radio_checked.png
     FILE resources/icons/refresh.png resources/icons/refresh.png
