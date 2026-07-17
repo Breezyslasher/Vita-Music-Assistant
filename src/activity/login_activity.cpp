@@ -10,6 +10,7 @@
  */
 
 #include "activity/login_activity.hpp"
+#include "activity/qr_scanner_activity.hpp"
 #include "app/application.hpp"
 #include "app/ma_client.hpp"
 #include "app/webrtc_client.hpp"
@@ -146,6 +147,26 @@ void LoginActivity::onContentAvailable() {
             return true;
         });
         remoteField->addGestureRecognizer(new brls::TapGestureRecognizer(remoteField));
+    }
+
+    // QR scan: open the camera and scan the Remote ID code shown in the
+    // server's Remote Access settings
+    if (remoteScanButton) {
+        remoteScanButton->registerClickAction([this](brls::View*) {
+            brls::Application::pushActivity(new QrScannerActivity(
+                [this](const std::string& payload) {
+                    std::string id = WebRTCClient::normalizeRemoteId(payload);
+                    if (id.empty()) {
+                        setStatus("QR code is not a Remote ID");
+                        return;
+                    }
+                    m_remoteId = id;
+                    updateFieldValues();
+                    setStatus("Remote ID scanned");
+                }));
+            return true;
+        });
+        remoteScanButton->addGestureRecognizer(new brls::TapGestureRecognizer(remoteScanButton));
     }
 
     // Connect / Log In button

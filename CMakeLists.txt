@@ -293,6 +293,7 @@ set(APP_SOURCES
     src/activity/main_activity.cpp
     src/activity/login_activity.cpp
     src/activity/player_activity.cpp
+    src/activity/qr_scanner_activity.cpp
 
     # Views
     src/view/home_tab.cpp
@@ -322,6 +323,12 @@ set(APP_SOURCES
 
     # Vita platform shims for libdatachannel deps
     src/platform/vita/compat/vita_ifaddrs.c
+
+    # quirc QR decoder (Remote ID scanning)
+    lib/quirc/quirc.c
+    lib/quirc/decode.c
+    lib/quirc/identify.c
+    lib/quirc/version_db.c
 )
 
 # Include directories
@@ -329,6 +336,7 @@ set(APP_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${BOREALIS_LIBRARY}/include
     ${BOREALIS_LIBRARY}/include/borealis/extern
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/quirc
 )
 
 # Create executable
@@ -393,6 +401,7 @@ target_link_libraries(${PROJECT_NAME}
     SceAppMgr_stub
     SceVideodec_stub
     SceCodecEngine_stub
+    SceCamera_stub
 
     # Standard libraries last (m is provided by libstdc++)
     z
