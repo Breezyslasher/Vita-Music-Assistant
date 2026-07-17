@@ -74,6 +74,7 @@ private:
     BRLS_BIND(brls::Box, remoteField, "login/remote_field");
     BRLS_BIND(brls::Label, remoteValue, "login/remote_value");
     BRLS_BIND(brls::Box, remoteCaret, "login/remote_caret");
+    BRLS_BIND(brls::Box, remoteScanButton, "login/remote_scan_button");
 
     // Connect button + status
     BRLS_BIND(brls::Box, connectButton, "login/connect_button");

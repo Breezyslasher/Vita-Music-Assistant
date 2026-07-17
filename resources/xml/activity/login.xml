@@ -220,30 +220,55 @@
                 marginBottom="4"
                 textColor="#8b95a3ff"/>
             <brls:Box
-                id="login/remote_field"
                 width="100%"
-                height="56"
                 axis="row"
-                justifyContent="center"
-                alignItems="center"
-                paddingLeft="12"
-                paddingRight="12"
-                backgroundColor="#12161dff"
-                cornerRadius="12"
-                focusable="true"
-                highlightCornerRadius="12">
-                <brls:Label
-                    id="login/remote_value"
-                    text="Enter Remote ID"
-                    fontSize="18"
-                    singleLine="true"
-                    textColor="#5d6875ff"/>
+                alignItems="stretch">
                 <brls:Box
-                    id="login/remote_caret"
-                    width="2"
-                    height="26"
-                    marginLeft="4"
-                    backgroundColor="#00bceeff"/>
+                    id="login/remote_field"
+                    grow="1"
+                    height="56"
+                    axis="row"
+                    justifyContent="center"
+                    alignItems="center"
+                    paddingLeft="12"
+                    paddingRight="12"
+                    backgroundColor="#12161dff"
+                    cornerRadius="12"
+                    focusable="true"
+                    highlightCornerRadius="12">
+                    <brls:Label
+                        id="login/remote_value"
+                        text="Enter Remote ID"
+                        fontSize="18"
+                        singleLine="true"
+                        textColor="#5d6875ff"/>
+                    <brls:Box
+                        id="login/remote_caret"
+                        width="2"
+                        height="26"
+                        marginLeft="4"
+                        backgroundColor="#00bceeff"/>
+                </brls:Box>
+                <!-- QR scan: open the camera and scan the Remote ID code -->
+                <brls:Box
+                    id="login/remote_scan_button"
+                    width="56"
+                    height="56"
+                    axis="row"
+                    justifyContent="center"
+                    alignItems="center"
+                    marginLeft="8"
+                    backgroundColor="#12161dff"
+                    cornerRadius="12"
+                    focusable="true"
+                    highlightCornerRadius="12">
+                    <brls:Image
+                        id="login/remote_scan_icon"
+                        width="24"
+                        height="24"
+                        scalingType="fit"
+                        image="@res/icons/qrcode-scan.png"/>
+                </brls:Box>
             </brls:Box>
 
             <!-- Signaling host hint -->
