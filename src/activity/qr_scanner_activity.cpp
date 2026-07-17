@@ -19,6 +19,8 @@ extern "C" {
 #ifdef __vita__
 #include <psp2/camera.h>
 #include <psp2/kernel/sysmem.h>
+#include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 #endif
 
 namespace vita_ma {
@@ -131,6 +133,14 @@ bool QrScannerActivity::startCamera() {
 #ifdef __vita__
     if (m_running.load()) return true;
 
+    // Max out CPU/GPU clocks: quirc's finder-pattern search is heavy, and at
+    // stock clocks it can't keep up with the preview (choppy) and only ever
+    // decodes stale frames. At 444MHz it decodes several full frames/sec.
+    scePowerSetArmClockFrequency(444);
+    scePowerSetBusClockFrequency(222);
+    scePowerSetGpuClockFrequency(222);
+    scePowerSetGpuXbarClockFrequency(166);
+
     // Camera output buffer must live in CDRAM
     const SceSize bufSize = (CAM_W * CAM_H * 4 + 0x3ffff) & ~0x3ffff;  // 256KB aligned
     m_memblock = sceKernelAllocMemBlock("qr_camera",
@@ -193,8 +203,10 @@ bool QrScannerActivity::startCamera() {
 
     m_camDevice = dev;
     m_frameRgba.assign(CAM_W * CAM_H * 4, 0);
+    m_decodeRgba.assign(CAM_W * CAM_H * 4, 0);
     m_running.store(true);
     m_camThread = std::thread([this]() { cameraLoop(); });
+    m_decodeThread = std::thread([this]() { decodeLoop(); });
     return true;
 #else
     (void)m_previewTex;
@@ -202,9 +214,11 @@ bool QrScannerActivity::startCamera() {
 #endif
 }
 
+// Camera thread: only reads frames and refreshes the preview buffer. Kept
+// deliberately cheap (a single memcpy) so the preview stays smooth no matter
+// how long a decode takes on the other thread.
 void QrScannerActivity::cameraLoop() {
 #ifdef __vita__
-    int frameNo = 0;
     while (m_running.load()) {
         SceCameraRead read = {};
         read.size = sizeof(SceCameraRead);
@@ -217,16 +231,37 @@ void QrScannerActivity::cameraLoop() {
         if (!m_running.load()) break;
 
         const unsigned char* frame = static_cast<const unsigned char*>(m_camBase);
-
         {
             std::lock_guard<std::mutex> lock(m_frameMutex);
             std::memcpy(m_frameRgba.data(), frame, CAM_W * CAM_H * 4);
+            m_frameSeq.fetch_add(1);
         }
         m_frameDirty.store(true);
+    }
+#endif
+}
 
-        // Decode every 3rd frame (~5 scans/sec at 15 fps)
-        if (++frameNo % 3 != 0 || !m_qr) continue;
+// Decode thread: continuously decodes the most recent frame. Runs independently
+// of the camera read so a slow decode never freezes the preview, and always
+// works on the freshest frame (no stale backlog - the cause of "won't scan
+// until I close and reopen").
+void QrScannerActivity::decodeLoop() {
+#ifdef __vita__
+    uint32_t lastSeq = 0;
+    while (m_running.load()) {
+        // Wait for a frame newer than the one we last decoded
+        uint32_t seq = m_frameSeq.load();
+        if (seq == lastSeq || !m_qr) {
+            sceKernelDelayThread(8 * 1000);  // 8ms
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_frameMutex);
+            std::memcpy(m_decodeRgba.data(), m_frameRgba.data(), CAM_W * CAM_H * 4);
+            lastSeq = m_frameSeq.load();
+        }
 
+        const unsigned char* frame = m_decodeRgba.data();
         int qw = 0, qh = 0;
         uint8_t* gray = quirc_begin(m_qr, &qw, &qh);
         if (!gray) continue;
@@ -270,6 +305,7 @@ void QrScannerActivity::stopCamera() {
 #ifdef __vita__
     if (!m_running.load() && !m_cameraOpen) {
         if (m_camThread.joinable()) m_camThread.join();
+        if (m_decodeThread.joinable()) m_decodeThread.join();
         return;
     }
     m_running.store(false);
@@ -278,6 +314,7 @@ void QrScannerActivity::stopCamera() {
         sceCameraStop(m_camDevice);
     }
     if (m_camThread.joinable()) m_camThread.join();
+    if (m_decodeThread.joinable()) m_decodeThread.join();
     if (m_cameraOpen) {
         sceCameraClose(m_camDevice);
         m_cameraOpen = false;
