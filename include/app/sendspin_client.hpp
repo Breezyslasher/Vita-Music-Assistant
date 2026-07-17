@@ -7,6 +7,8 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <thread>
+#include <cstdint>
 
 namespace vita_ma {
 
@@ -139,6 +141,23 @@ private:
 
     // Handshake
     void sendClientHello();
+
+    // Time synchronization (client-initiated round-trip, per the Sendspin spec).
+    // The client periodically sends client/time{client_transmitted}; the server
+    // replies server/time{client_transmitted, server_received, server_transmitted}.
+    // We estimate the server<->client clock offset from the round trip. Audio is
+    // played best-effort through MPV, so the offset is advisory (logged/exposed),
+    // not used for sample-accurate playout.
+    void startTimeSync();
+    void stopTimeSync();
+    void sendTimeRequest();
+    void handleServerTime(const Json& payload);
+    static int64_t monotonicMicros();
+
+    std::thread m_timeSyncThread;
+    std::atomic<bool> m_timeSyncRunning{false};
+    std::atomic<int64_t> m_clockOffsetUs{0};  // server_time - client_time estimate
+    std::atomic<bool> m_timeSynced{false};
 
     // Start MPV playback from the local HTTP stream
     void startMpvPlayback();
