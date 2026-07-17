@@ -537,7 +537,10 @@ void SettingsTab::onRemoteConnect() {
         brls::sync([remoteId, token, username, ok]() {
             if (ok) {
                 Application& a = Application::getInstance();
-                a.setServerUrl(remoteId);
+                // Keep the saved server URL (direct address); remember the
+                // remote route instead.
+                a.getSettings().remoteId = remoteId;
+                a.getSettings().lastConnectionRemote = true;
                 a.setAuthToken(token);
                 a.setUsername(username);
                 a.getSettings().remoteAccessEnabled = true;
