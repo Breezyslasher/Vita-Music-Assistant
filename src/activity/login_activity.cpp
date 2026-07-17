@@ -74,10 +74,15 @@ void LoginActivity::onContentAvailable() {
     m_serverUrl = app.getServerUrl();
     m_username = app.getUsername();
     m_remoteId = app.getSettings().remoteId;
-    // If the saved server is itself a Remote ID, surface it in the remote field
+    // If the saved server is itself a Remote ID (legacy settings), surface it
+    // in the remote field
     if (MAClient::isRemoteId(m_serverUrl)) {
         if (m_remoteId.empty()) m_remoteId = m_serverUrl;
         m_serverUrl.clear();
+        m_authMode = AuthMode::REMOTE;
+    }
+    // Land on the Remote segment when the last session was remote
+    if (app.getSettings().lastConnectionRemote && !m_remoteId.empty()) {
         m_authMode = AuthMode::REMOTE;
     }
 
@@ -313,7 +318,10 @@ void LoginActivity::onRemoteLoginPressed() {
         brls::sync([this, remoteId, user, ok]() {
             if (ok) {
                 auto& a = Application::getInstance();
-                a.setServerUrl(remoteId);
+                // Keep the saved server URL (the direct address); remember the
+                // remote route via remoteId + lastConnectionRemote instead.
+                a.getSettings().remoteId = remoteId;
+                a.getSettings().lastConnectionRemote = true;
                 a.setUsername(user);
                 a.saveSettings();
                 // Credential logins persist their token via the long-lived
@@ -558,9 +566,16 @@ void LoginActivity::connectWithToken(const std::string& serverUrl,
     if (client.connect(serverUrl, token)) {
         brls::Logger::info("Login: WebSocket connected and authenticated");
 
-        // Save credentials
+        // Save credentials. A Remote ID is stored as the remote route - the
+        // saved server URL always keeps the direct HTTP address.
         auto& app = Application::getInstance();
-        app.setServerUrl(serverUrl);
+        if (MAClient::isRemoteId(serverUrl)) {
+            app.getSettings().remoteId = serverUrl;
+            app.getSettings().lastConnectionRemote = true;
+        } else {
+            app.setServerUrl(serverUrl);
+            app.getSettings().lastConnectionRemote = false;
+        }
         app.setAuthToken(token);
         app.setUsername(username);
         app.saveSettings();

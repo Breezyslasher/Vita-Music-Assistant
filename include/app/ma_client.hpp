@@ -6,6 +6,8 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <condition_variable>
+#include <chrono>
 #include <atomic>
 
 namespace vita_ma {
@@ -308,6 +310,14 @@ private:
     std::string m_pendingLoginProvider;
     void sendAuthCommand();   // authenticate with m_authToken
     void sendLoginCommand();  // auth/login with pending credentials, then auth
+
+    // connect() blocks until the async auth exchange resolves (success,
+    // rejection, or transport loss) so callers get a trustworthy result.
+    std::mutex m_authWaitMutex;
+    std::condition_variable m_authWaitCv;
+    bool m_authResolved = false;
+    void resolveAuthWait();
+    bool waitForAuthOutcome(int timeoutMs);
 };
 
 } // namespace vita_ma

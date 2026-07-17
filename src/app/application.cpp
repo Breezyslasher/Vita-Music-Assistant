@@ -67,10 +67,7 @@ bool Application::init() {
             // expiry (main pushed, then async auth fails) or a stray retry can't
             // stack multiple login screens.
             if (m_reloginPrompted.exchange(true)) return;
-            bool remote = MAClient::instance().isRemoteMode();
-            brls::Application::notify(remote
-                ? "Session expired. Connect to your server directly to sign in again."
-                : "Session expired. Please sign in again.");
+            brls::Application::notify("Session expired. Please sign in again.");
             pushLoginActivity();
         });
     });
@@ -83,11 +80,18 @@ void Application::run() {
     brls::Logger::info("Application::run - isLoggedIn={}, serverUrl={}",
                        isLoggedIn(), m_serverUrl.empty() ? "(empty)" : m_serverUrl);
 
-    // Check if we have a saved server URL
-    if (!m_serverUrl.empty()) {
+    // Reconnect the way we last connected: over remote access when the last
+    // session was remote (the saved server URL always keeps the direct
+    // address), directly otherwise.
+    std::string restoreTarget = m_serverUrl;
+    if (m_settings.lastConnectionRemote && MAClient::isRemoteId(m_settings.remoteId)) {
+        restoreTarget = m_settings.remoteId;
+    }
+
+    if (!restoreTarget.empty()) {
         brls::Logger::info("Restoring saved session...");
         // Connect to Music Assistant server
-        if (MAClient::instance().connect(m_serverUrl, m_authToken)) {
+        if (MAClient::instance().connect(restoreTarget, m_authToken)) {
             brls::Logger::info("Connected to server");
             connectSendspin();
             pushMainActivity();
@@ -369,6 +373,7 @@ bool Application::loadSettings() {
     // Remote access
     m_settings.remoteId = extractString("remoteId");
     m_settings.remoteAccessEnabled = extractBool("remoteAccessEnabled", false);
+    m_settings.lastConnectionRemote = extractBool("lastConnectionRemote", false);
 
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
@@ -426,7 +431,8 @@ bool Application::saveSettings() {
     json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
     json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
     json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";
-    json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + "\n";
+    json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + ",\n";
+    json += "  \"lastConnectionRemote\": " + std::string(m_settings.lastConnectionRemote ? "true" : "false") + "\n";
 
     json += "}\n";
 

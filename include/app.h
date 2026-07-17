@@ -173,6 +173,10 @@ struct AppSettings {
     // Remote access
     std::string remoteId;              // 26-char base32 remote access id
     bool remoteAccessEnabled = false;
+    // True when the last successful connection went over remote access;
+    // session restore then reconnects via the Remote ID instead of the
+    // saved server URL (which always keeps the direct HTTP address).
+    bool lastConnectionRemote = false;
 };
 
 // Debug logging functions
