@@ -601,7 +601,7 @@ void SettingsTab::createAboutSection() {
     // Version info
     auto* versionCell = new brls::DetailCell();
     versionCell->setText("Version");
-    versionCell->setDetailText(VMA_VERSION);
+    versionCell->setDetailText("Beta 0.2.1");
     m_contentBox->addView(versionCell);
 
     // App description
