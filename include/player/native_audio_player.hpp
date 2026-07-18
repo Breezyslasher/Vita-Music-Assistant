@@ -40,7 +40,14 @@ public:
     // Hard stop: tear down output immediately.
     void stop();
 
+    // Pause/resume the audio output without tearing down the stream. The
+    // output thread stops feeding sceAudioOut (hardware goes silent) but the
+    // decoded PCM and decoder stay intact, so resume() continues instantly.
+    void pause();
+    void resume();
+
     bool isPlaying() const { return m_running.load(); }
+    bool isPaused() const { return m_paused.load(); }
 
     // Forwarders for dr_flac's C callbacks (they only get a void* user
     // pointer). Public so the free functions in the .cpp can reach the ring.
@@ -84,6 +91,7 @@ private:
     std::thread m_decodeThread;
     std::thread m_outputThread;
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_paused{false};        // output stalled but stream intact
     std::atomic<bool> m_endOfStream{false};   // no more encoded data will arrive
     std::atomic<bool> m_decodeDone{false};    // decoder finished producing PCM
 

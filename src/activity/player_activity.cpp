@@ -1063,6 +1063,24 @@ void PlayerActivity::togglePlayPause() {
         return;
     }
 
+    // Native audio owns local playback directly (no mpv). Pause/resume the
+    // local output instantly and mirror the state to the server.
+    auto& native = NativeAudioPlayer::instance();
+    if (native.isPlaying()) {
+        std::string queueId = getActivePlayerId();
+        if (native.isPaused()) {
+            native.resume();
+            m_isPlaying = true;
+            if (!queueId.empty()) MAClient::instance().queuePlay(queueId);
+        } else {
+            native.pause();
+            m_isPlaying = false;
+            if (!queueId.empty()) MAClient::instance().queuePause(queueId);
+        }
+        updatePlayPauseLabel();
+        return;
+    }
+
     MpvPlayer& player = MpvPlayer::getInstance();
 
     if (player.isPlaying()) {
