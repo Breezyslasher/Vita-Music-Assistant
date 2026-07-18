@@ -249,6 +249,11 @@ private:
     void onRemotePlayerEvent(const Json& data);  // Handle PLAYER_UPDATED events from server
     void onRemoteQueueEvent(const Json& data);   // Handle QUEUE_UPDATED events from server
     std::vector<PlayerInfo> m_availablePlayers;  // Cached player list
+    std::string m_ownPlayerId;                   // MA player_id of our own registered Sendspin player
+
+    // Find our own Sendspin-registered player in a players list (matched by the
+    // Sendspin client id, then by name). Returns its MA player_id, or "".
+    std::string findOwnPlayerId(const std::vector<PlayerInfo>& players) const;
 
     // Remote player state tracking
     std::string m_remoteCurrentUri;       // URI of currently playing track on remote player
