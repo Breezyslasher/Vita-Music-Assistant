@@ -55,6 +55,12 @@ public:
     // Connect to Sendspin after MA API connection is established
     void connectSendspin();
 
+    // Resolve our own registered Sendspin player's real MA player_id (matched
+    // by client id, then name) and store it in App, so local playback commands
+    // target the correct player. Retries a few times while MA finishes
+    // registering the player. Safe to call from any connect path.
+    void resolveOwnPlayerId(int attemptsLeft = 5);
+
     // Apply theme
     void applyTheme();
 

@@ -386,17 +386,13 @@ void PlayerActivity::onContentAvailable() {
                     m_availablePlayers = players;
                     m_ownPlayerId = findOwnPlayerId(players);
 
-                    // Adopt our own registered Sendspin player as the active
-                    // player when nothing is explicitly selected. This routes
-                    // local Vita playback through MA's real player_id (instead
-                    // of the raw client id) so transport commands, the current
-                    // track, and cover art all resolve correctly - and it keeps
-                    // us from showing a broken duplicate "This Vita" entry.
-                    auto& settings = Application::getInstance().getSettings();
-                    if (settings.selectedPlayerId.empty() && !m_ownPlayerId.empty()) {
-                        settings.selectedPlayerId = m_ownPlayerId;
-                        Application::getInstance().saveSettings();
-                        loadRemotePlayerState();
+                    // Point local playback at MA's real player_id for our own
+                    // registered Sendspin player (the raw client id isn't a
+                    // valid player_id, so play_media/pause were being sent to
+                    // the wrong target). The Vita stays on the instant local
+                    // control path - we only correct the id it commands.
+                    if (!m_ownPlayerId.empty()) {
+                        App::instance().setPlayerId(m_ownPlayerId);
                     }
                     updatePlayerNameLabel();
                 });
@@ -2715,6 +2711,9 @@ void PlayerActivity::showPlayerSwitcher() {
         brls::sync([this, players]() {
             m_availablePlayers = players;
             m_ownPlayerId = findOwnPlayerId(players);
+            if (!m_ownPlayerId.empty()) {
+                App::instance().setPlayerId(m_ownPlayerId);
+            }
 
             auto* dialog = new brls::Dialog("Switch Player");
             auto* box = new brls::Box();
@@ -2723,22 +2722,42 @@ void PlayerActivity::showPlayerSwitcher() {
 
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
-            // One entry per player. Our own registered Sendspin player is
-            // labeled "This Vita" (local playback); no separate pseudo-entry,
-            // so it never shows up twice.
+            // "This Vita" (local playback via Sendspin). Selecting it clears the
+            // remote selection so controls run on the instant local path.
+            {
+                auto* btn = new brls::Button();
+                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
+                std::string label = "This Vita";
+                if (currentId.empty()) label += "  *";
+                btn->setText(label);
+                btn->setMarginBottom(4);
+                btn->registerClickAction([this, dialog](brls::View*) {
+                    auto& settings = Application::getInstance().getSettings();
+                    settings.selectedPlayerId.clear();
+                    Application::getInstance().saveSettings();
+                    dialog->close();
+                    updatePlayerNameLabel();
+                    brls::Application::notify("Switched to This Vita");
+                    return true;
+                });
+                box->addView(btn);
+            }
+
+            // Remote players. Skip our own registered player - it's already
+            // represented by the "This Vita" entry above, so it never shows twice.
             for (size_t i = 0; i < m_availablePlayers.size(); i++) {
-                bool isOwn = !m_ownPlayerId.empty() &&
-                             m_availablePlayers[i].playerId == m_ownPlayerId;
+                if (!m_ownPlayerId.empty() && m_availablePlayers[i].playerId == m_ownPlayerId)
+                    continue;
 
                 auto* btn = new brls::Button();
                 btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string pname = isOwn ? "This Vita" : m_availablePlayers[i].name;
-                std::string label = pname;
+                std::string label = m_availablePlayers[i].name;
                 if (!m_availablePlayers[i].available) label += " (offline)";
                 if (m_availablePlayers[i].playerId == currentId) label += "  *";
                 btn->setText(label);
                 btn->setMarginBottom(4);
                 std::string pid = m_availablePlayers[i].playerId;
+                std::string pname = m_availablePlayers[i].name;
                 btn->registerClickAction([this, dialog, pid, pname](brls::View*) {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;
