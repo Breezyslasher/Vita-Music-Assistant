@@ -5,6 +5,7 @@
 #include "player/native_audio_player.hpp"
 #include <borealis.hpp>
 #include <cstring>
+#include <cstdio>
 
 // dr_flac: single-header FLAC decoder (public domain / MIT-0). We drive it from
 // callbacks over the pushed byte stream; no file IO or Ogg needed.
@@ -51,10 +52,28 @@ void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
         std::lock_guard<std::mutex> lock(m_mutex);
         m_encoded.clear();
         m_readPos = 0;
-        // Seed the decoder with the container header (FLAC needs STREAMINFO).
-        if (!codecHeader.empty()) {
-            m_encoded.insert(m_encoded.end(), codecHeader.begin(), codecHeader.end());
+        m_baseOffset = 0;
+        // Seed the decoder with the container header (FLAC needs fLaC+STREAMINFO).
+        std::vector<uint8_t> hdr = codecHeader;
+        if (m_codec == "flac" && !hdr.empty()) {
+            // dr_flac's native open requires the "fLaC" marker. Some servers send
+            // only the STREAMINFO metadata block; prepend the magic if missing.
+            bool hasMagic = hdr.size() >= 4 && hdr[0] == 'f' && hdr[1] == 'L' &&
+                            hdr[2] == 'a' && hdr[3] == 'C';
+            if (!hasMagic) {
+                brls::Logger::info("NativeAudio: FLAC header missing fLaC magic, prepending");
+                hdr.insert(hdr.begin(), {'f', 'L', 'a', 'C'});
+            }
+            // Log the first bytes for diagnosis.
+            char hex[64] = {0};
+            for (size_t i = 0; i < hdr.size() && i < 12; i++)
+                snprintf(hex + i * 3, 4, "%02x ", hdr[i]);
+            brls::Logger::info("NativeAudio: FLAC header[{}]: {}", hdr.size(), hex);
         }
+        if (!hdr.empty()) {
+            m_encoded.insert(m_encoded.end(), hdr.begin(), hdr.end());
+        }
+        m_headerLen = m_encoded.size();
     }
     m_endOfStream.store(false);
     m_running.store(true);
@@ -71,6 +90,7 @@ void NativeAudioPlayer::pushAudio(const uint8_t* data, size_t len) {
         // Compact the consumed prefix occasionally so the vector doesn't grow
         // forever while streaming.
         if (m_readPos > 1024 * 1024 && m_readPos * 2 > m_encoded.size()) {
+            m_baseOffset += m_readPos;
             m_encoded.erase(m_encoded.begin(), m_encoded.begin() + m_readPos);
             m_readPos = 0;
         }
@@ -120,12 +140,19 @@ size_t NativeAudioPlayer::readEncoded(void* out, size_t bytes) {
 }
 
 #ifdef __vita__
-// dr_flac read callback: pull from the encoded ring.
+// dr_flac callbacks: pull from / reposition within the encoded ring.
 static size_t drflacReadCb(void* pUserData, void* pBufferOut, size_t bytesToRead) {
-    auto* self = static_cast<NativeAudioPlayer*>(pUserData);
-    // readEncoded is a private member; the player befriends this file via a
-    // thin forwarding method below.
-    return self->readEncodedForCallback(pBufferOut, bytesToRead);
+    return static_cast<NativeAudioPlayer*>(pUserData)->readEncodedForCallback(pBufferOut, bytesToRead);
+}
+static drflac_bool32 drflacSeekCb(void* pUserData, int offset, drflac_seek_origin origin) {
+    return static_cast<NativeAudioPlayer*>(pUserData)->seekForCallback(offset, (int)origin)
+               ? DRFLAC_TRUE : DRFLAC_FALSE;
+}
+static drflac_bool32 drflacTellCb(void* pUserData, drflac_int64* pCursor) {
+    int64_t c = 0;
+    bool ok = static_cast<NativeAudioPlayer*>(pUserData)->tellForCallback(&c);
+    if (pCursor) *pCursor = (drflac_int64)c;
+    return ok ? DRFLAC_TRUE : DRFLAC_FALSE;
 }
 #endif
 
@@ -144,8 +171,19 @@ void NativeAudioPlayer::outputLoop() {
     std::vector<int16_t> outBuf(GRAIN * 2, 0);
 
     if (m_codec == "flac") {
-        // onRead + user pointer; a live push stream can't seek or tell.
-        drflac* flac = drflac_open(drflacReadCb, nullptr, nullptr, this, nullptr);
+        // Wait for the first audio frame to arrive before opening, so dr_flac's
+        // header init has header + frame data to read/validate and never sees a
+        // premature short/EOF read.
+        {
+            std::unique_lock<std::mutex> lock(m_mutex);
+            m_cv.wait(lock, [this]() {
+                return m_encoded.size() > m_headerLen || m_endOfStream.load() ||
+                       !m_running.load();
+            });
+        }
+        if (!m_running.load()) { sceAudioOutReleasePort(port); return; }
+
+        drflac* flac = drflac_open(drflacReadCb, drflacSeekCb, drflacTellCb, this, nullptr);
         if (!flac) {
             brls::Logger::error("NativeAudio: drflac_open failed");
             sceAudioOutReleasePort(port);
@@ -210,9 +248,28 @@ void NativeAudioPlayer::outputLoop() {
 #endif
 }
 
-// Thin forwarder so the free C callback can reach the private read path.
+// Thin forwarders so the free C callbacks can reach the private ring.
 size_t NativeAudioPlayer::readEncodedForCallback(void* out, size_t bytes) {
     return readEncoded(out, bytes);
+}
+
+bool NativeAudioPlayer::tellForCallback(int64_t* cursor) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (cursor) *cursor = (int64_t)(m_baseOffset + m_readPos);
+    return true;
+}
+
+bool NativeAudioPlayer::seekForCallback(int offset, int origin) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    // origin: 0 = SET (absolute), 1 = CUR (relative). END is unsupported on a
+    // live stream.
+    int64_t cur = (int64_t)(m_baseOffset + m_readPos);
+    int64_t target = (origin == 1) ? cur + offset : offset;
+    int64_t low = (int64_t)m_baseOffset;
+    int64_t high = (int64_t)(m_baseOffset + m_encoded.size());
+    if (target < low || target > high) return false;  // outside the buffered window
+    m_readPos = (size_t)(target - low);
+    return true;
 }
 
 } // namespace vita_ma

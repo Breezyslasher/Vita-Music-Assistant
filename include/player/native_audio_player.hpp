@@ -42,9 +42,13 @@ public:
 
     bool isPlaying() const { return m_running.load(); }
 
-    // Forwarder for dr_flac's C read callback (which only gets a void* user
-    // pointer). Public so the free function in the .cpp can reach the ring.
+    // Forwarders for dr_flac's C callbacks (they only get a void* user
+    // pointer). Public so the free functions in the .cpp can reach the ring.
+    // Seek/tell operate on absolute stream positions so dr_flac can reposition
+    // within the still-buffered window during open.
     size_t readEncodedForCallback(void* out, size_t bytes);
+    bool seekForCallback(int offset, int origin);   // origin: 0=SET,1=CUR,2=END
+    bool tellForCallback(int64_t* cursor);
 
 private:
     NativeAudioPlayer() = default;
@@ -65,6 +69,10 @@ private:
     std::condition_variable m_cv;
     std::vector<uint8_t> m_encoded;  // byte queue (append at back, read via m_readPos)
     size_t m_readPos = 0;
+    // Bytes dropped from the front by compaction; absolute stream position is
+    // m_baseOffset + m_readPos. Lets seek/tell work in absolute coordinates.
+    uint64_t m_baseOffset = 0;
+    size_t m_headerLen = 0;  // seed header length (to defer open until a frame arrives)
 
     std::string m_codec;
     int m_sampleRate = 44100;
