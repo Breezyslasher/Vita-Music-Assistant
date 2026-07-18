@@ -122,7 +122,6 @@ void SendspinClient::disconnect() {
     if (m_state.load() == SendspinState::DISCONNECTED) return;
 
     brls::Logger::info("Sendspin: disconnecting");
-    stopTimeSync();
     if (m_remoteMode) {
         // The data channel belongs to the shared remote-access session
         // (owned by MAClient); just stop listening on it.
@@ -238,9 +237,6 @@ void SendspinClient::onTextMessage(const std::string& message) {
 
         setState(SendspinState::CONNECTED);
 
-        // Begin the client-initiated time-sync round trip
-        startTimeSync();
-
         // Store the player ID for use with play_media
         brls::sync([this]() {
             App::instance().setPlayerId(m_clientId);
@@ -347,9 +343,9 @@ void SendspinClient::onTextMessage(const std::string& message) {
         }
     }
     else if (type == "server/time") {
-        // Reply to our own client/time request: server echoes client_transmitted
-        // and adds server_received / server_transmitted. Compute the offset.
-        handleServerTime(msg.has("payload") ? msg["payload"] : msg);
+        // We do not do sample-accurate synchronized playout (audio is played
+        // best-effort through MPV / the native decoder), so the time channel
+        // isn't used. It's optional in the protocol; ignore it.
     }
     else if (type == "server/command") {
         // Server command (e.g., volume change)
@@ -426,9 +422,6 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
 void SendspinClient::onClose(int code, const std::string& reason) {
     brls::Logger::info("Sendspin: connection closed ({}: {})", code, reason);
-    // Note: not joined here (onClose can run on a callback thread the sync
-    // thread may sync() onto); flag it to stop and let disconnect() join.
-    m_timeSyncRunning.store(false);
     m_audioServer.signalStreamEnd();
     NativeAudioPlayer::instance().stop();
     setState(SendspinState::DISCONNECTED);
@@ -495,74 +488,6 @@ std::vector<uint8_t> SendspinClient::buildFlacHeader(int sampleRate, int channel
     // Bytes 26-41: MD5 signature = all zeros (unknown)
 
     return header;
-}
-
-int64_t SendspinClient::monotonicMicros() {
-    auto now = std::chrono::steady_clock::now();
-    return std::chrono::duration_cast<std::chrono::microseconds>(
-        now.time_since_epoch()).count();
-}
-
-void SendspinClient::sendTimeRequest() {
-    Json timeMsg;
-    timeMsg["type"] = Json("client/time");
-    Json payload;
-    // Full-precision monotonic microseconds (not truncated). The server echoes
-    // this back verbatim in server/time, so its exact value only needs to be
-    // consistent with the clock used when the reply arrives.
-    payload["client_transmitted"] = Json(static_cast<double>(monotonicMicros()));
-    timeMsg["payload"] = payload;
-    sendRaw(timeMsg.dump());
-}
-
-void SendspinClient::handleServerTime(const Json& payload) {
-    if (!payload.has("client_transmitted") || !payload.has("server_received") ||
-        !payload.has("server_transmitted")) {
-        return;
-    }
-    const int64_t t0 = static_cast<int64_t>(payload["client_transmitted"].numVal()); // client sent
-    const int64_t t1 = static_cast<int64_t>(payload["server_received"].numVal());     // server got
-    const int64_t t2 = static_cast<int64_t>(payload["server_transmitted"].numVal());  // server sent
-    const int64_t t3 = monotonicMicros();                                             // client got
-
-    // NTP-style estimate: offset = ((T1-T0) + (T2-T3)) / 2, round trip excludes
-    // server processing time.
-    const int64_t offset = ((t1 - t0) + (t2 - t3)) / 2;
-    const int64_t rtt = (t3 - t0) - (t2 - t1);
-
-    m_clockOffsetUs.store(offset);
-    m_timeSynced.store(true);
-    brls::Logger::debug("Sendspin: time sync offset={}us rtt={}us", offset, rtt);
-}
-
-void SendspinClient::startTimeSync() {
-    if (m_timeSyncRunning.exchange(true)) return;  // already running
-    m_timeSynced.store(false);
-    m_timeSyncThread = std::thread([this]() {
-        // Converge quickly at first (four fast probes), then keep the clock
-        // aligned with a slow heartbeat while connected.
-        int probes = 0;
-        while (m_timeSyncRunning.load()) {
-            if (isConnected()) {
-                sendTimeRequest();
-                probes++;
-            }
-            int waitMs = (probes < 4) ? 250 : 5000;
-            for (int i = 0; i < waitMs && m_timeSyncRunning.load(); i += 50) {
-#ifdef __vita__
-                sceKernelDelayThread(50 * 1000);
-#else
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-#endif
-            }
-        }
-    });
-}
-
-void SendspinClient::stopTimeSync() {
-    m_timeSyncRunning.store(false);
-    if (m_timeSyncThread.joinable()) m_timeSyncThread.join();
-    m_timeSynced.store(false);
 }
 
 void SendspinClient::startMpvPlayback() {
