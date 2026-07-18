@@ -366,6 +366,7 @@ bool Application::loadSettings() {
 
     // Load player settings
     m_settings.localPlayback = extractBool("localPlayback", true);
+    m_settings.nativeAudio = extractBool("nativeAudio", false);
     m_settings.sendspinPlayerName = extractString("sendspinPlayerName");
     if (m_settings.sendspinPlayerName.empty()) m_settings.sendspinPlayerName = "PS Vita";
     m_settings.selectedPlayerId = extractString("selectedPlayerId");
@@ -428,6 +429,7 @@ bool Application::saveSettings() {
 
     // Player settings
     json += "  \"localPlayback\": " + std::string(m_settings.localPlayback ? "true" : "false") + ",\n";
+    json += "  \"nativeAudio\": " + std::string(m_settings.nativeAudio ? "true" : "false") + ",\n";
     json += "  \"sendspinPlayerName\": \"" + m_settings.sendspinPlayerName + "\",\n";
     json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
     json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";

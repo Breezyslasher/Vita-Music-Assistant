@@ -336,6 +336,20 @@ void SettingsTab::createPlayerSection() {
     localPlaybackInfo->setMarginTop(4);
     m_contentBox->addView(localPlaybackInfo);
 
+    m_nativeAudioToggle = new brls::BooleanCell();
+    m_nativeAudioToggle->init("Native Audio Decoder", settings.nativeAudio, [&settings](bool value) {
+        settings.nativeAudio = value;
+        Application::getInstance().saveSettings();
+    });
+    m_contentBox->addView(m_nativeAudioToggle);
+
+    auto* nativeAudioInfo = new brls::Label();
+    nativeAudioInfo->setText("Experimental: decode audio directly (dr_flac + sceAudioOut) instead of mpv. Takes effect on the next track.");
+    nativeAudioInfo->setFontSize(14);
+    nativeAudioInfo->setMarginLeft(16);
+    nativeAudioInfo->setMarginTop(4);
+    m_contentBox->addView(nativeAudioInfo);
+
     // Player name setting - opens on-screen keyboard for free-form input
     m_playerNameCell = new brls::DetailCell();
     m_playerNameCell->setText("Player Name");

@@ -12,6 +12,8 @@
 
 namespace vita_ma {
 
+class Json;  // defined in app/ma_client.hpp (included by the .cpp)
+
 // Sendspin is Music Assistant's native streaming protocol.
 // The Vita connects to the MA server's Sendspin port (8927) and registers
 // as a player. The server then streams audio data over WebSocket binary
@@ -128,6 +130,10 @@ private:
     AudioStreamServer m_audioServer;
     bool m_mpvStarted = false;  // Whether MPV has been started for current stream
     size_t m_audioChunkCount = 0;  // Audio chunks received in current stream (for logging)
+    // Snapshot of the "native audio" setting taken at stream/start: when true
+    // this stream decodes via NativeAudioPlayer (dr_flac + sceAudioOut) instead
+    // of the HTTP-server + mpv path.
+    bool m_useNativeAudio = false;
 
     // Callbacks
     StreamStateCallback m_stateCallback;

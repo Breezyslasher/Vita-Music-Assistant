@@ -314,6 +314,7 @@ set(APP_SOURCES
 
     # Player
     src/player/mpv_player.cpp
+    src/player/native_audio_player.cpp
 
     # Utils
     src/utils/http_client.cpp
@@ -337,6 +338,7 @@ set(APP_INCLUDES
     ${BOREALIS_LIBRARY}/include
     ${BOREALIS_LIBRARY}/include/borealis/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/quirc
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/dr_libs
 )
 
 # Create executable
