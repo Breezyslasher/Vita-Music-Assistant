@@ -6,6 +6,7 @@
 #include <borealis.hpp>
 #include <cstring>
 #include <cstdio>
+#include <algorithm>
 
 // dr_flac: single-header FLAC decoder (public domain / MIT-0). We drive it from
 // callbacks over the pushed byte stream; no file IO or Ogg needed.
@@ -17,17 +18,22 @@
 #ifdef __vita__
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 #endif
 
 namespace vita_ma {
 
 // sceAudioOut plays a fixed number of frames per output call ("grain"). 1024
-// frames @ 44100 Hz is ~23ms of audio - small enough for responsiveness, large
-// enough that the blocking output call paces the decoder smoothly.
+// frames @ 44100 Hz is ~23ms of audio.
 static constexpr int GRAIN = 1024;
 // Bail out if the encoded backlog explodes (output stalled / port dead) rather
 // than growing memory without bound on a 256 MB device.
 static constexpr size_t MAX_BACKLOG = 8 * 1024 * 1024;
+// Decoded PCM ring capacity (~2s of interleaved stereo S16) and how much to
+// prime before the first sceAudioOut call (~400ms). The prebuffer absorbs
+// decode/network jitter so playback doesn't underrun.
+static constexpr size_t PCM_CAP_SAMPLES  = 44100u * 2u * 2u;      // 2 s stereo
+static constexpr size_t PCM_PREBUF_SAMPLES = (44100u * 2u * 2u) / 5u;  // ~400 ms
 
 NativeAudioPlayer& NativeAudioPlayer::instance() {
     static NativeAudioPlayer inst;
@@ -75,12 +81,27 @@ void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
         }
         m_headerLen = m_encoded.size();
     }
+    {
+        std::lock_guard<std::mutex> lock(m_pcmMutex);
+        if (m_pcm.size() != PCM_CAP_SAMPLES) m_pcm.assign(PCM_CAP_SAMPLES, 0);
+        m_pcmHead = 0;
+        m_pcmCount = 0;
+    }
     m_endOfStream.store(false);
+    m_decodeDone.store(false);
     m_running.store(true);
+
+#ifdef __vita__
+    // Give the decoder plenty of CPU headroom so it stays well ahead of
+    // real-time (mirrors the player/QR scanner clock boost).
+    scePowerSetArmClockFrequency(444);
+    scePowerSetBusClockFrequency(222);
+#endif
 
     brls::Logger::info("NativeAudio: starting {} {}Hz {}ch {}bit",
                        m_codec, m_sampleRate, m_channels, m_bitDepth);
-    m_thread = std::thread([this]() { outputLoop(); });
+    m_decodeThread = std::thread([this]() { decodeLoop(); });
+    m_outputThread = std::thread([this]() { outputLoop(); });
 }
 
 void NativeAudioPlayer::pushAudio(const uint8_t* data, size_t len) {
@@ -105,23 +126,79 @@ void NativeAudioPlayer::pushAudio(const uint8_t* data, size_t len) {
 }
 
 void NativeAudioPlayer::endStream() {
+    // Let the decoder drain what's buffered, then the output thread finishes
+    // playing the PCM ring and both threads exit.
     m_endOfStream.store(true);
-    m_cv.notify_one();
-    if (m_thread.joinable()) m_thread.join();
+    m_cv.notify_all();
+    m_pcmCv.notify_all();
+    if (m_decodeThread.joinable()) m_decodeThread.join();
+    if (m_outputThread.joinable()) m_outputThread.join();
     m_running.store(false);
 }
 
 void NativeAudioPlayer::stop() {
     m_running.store(false);
     m_endOfStream.store(true);
-    m_cv.notify_one();
-    if (m_thread.joinable()) m_thread.join();
+    m_cv.notify_all();
+    m_pcmCv.notify_all();
+    if (m_decodeThread.joinable()) m_decodeThread.join();
+    if (m_outputThread.joinable()) m_outputThread.join();
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_encoded.clear();
         m_readPos = 0;
+        m_baseOffset = 0;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_pcmMutex);
+        m_pcmHead = 0;
+        m_pcmCount = 0;
     }
     m_endOfStream.store(false);
+    m_decodeDone.store(false);
+}
+
+// --- PCM ring (decoder -> output) --------------------------------------------
+
+void NativeAudioPlayer::pcmPush(const int16_t* src, size_t samples) {
+    size_t off = 0;
+    while (off < samples && m_running.load()) {
+        std::unique_lock<std::mutex> lock(m_pcmMutex);
+        m_pcmCv.wait(lock, [this]() {
+            return m_pcmCount < PCM_CAP_SAMPLES || !m_running.load();
+        });
+        if (!m_running.load()) return;
+        size_t space = PCM_CAP_SAMPLES - m_pcmCount;
+        size_t n = std::min(space, samples - off);
+        size_t tail = (m_pcmHead + m_pcmCount) % PCM_CAP_SAMPLES;
+        size_t first = std::min(n, PCM_CAP_SAMPLES - tail);
+        std::memcpy(&m_pcm[tail], src + off, first * sizeof(int16_t));
+        if (n > first)
+            std::memcpy(&m_pcm[0], src + off + first, (n - first) * sizeof(int16_t));
+        m_pcmCount += n;
+        off += n;
+        lock.unlock();
+        m_pcmCv.notify_all();
+    }
+}
+
+size_t NativeAudioPlayer::pcmPop(int16_t* dst, size_t samples, bool& drained) {
+    std::unique_lock<std::mutex> lock(m_pcmMutex);
+    m_pcmCv.wait(lock, [this]() {
+        return m_pcmCount > 0 || m_decodeDone.load() || !m_running.load();
+    });
+    if (!m_running.load()) { drained = true; return 0; }
+    size_t n = std::min(samples, m_pcmCount);
+    size_t first = std::min(n, PCM_CAP_SAMPLES - m_pcmHead);
+    std::memcpy(dst, &m_pcm[m_pcmHead], first * sizeof(int16_t));
+    if (n > first)
+        std::memcpy(dst + first, &m_pcm[0], (n - first) * sizeof(int16_t));
+    m_pcmHead = (m_pcmHead + n) % PCM_CAP_SAMPLES;
+    m_pcmCount -= n;
+    drained = (m_pcmCount == 0 && m_decodeDone.load());
+    lock.unlock();
+    m_pcmCv.notify_all();
+    return n;
 }
 
 size_t NativeAudioPlayer::readEncoded(void* out, size_t bytes) {
@@ -156,24 +233,16 @@ static drflac_bool32 drflacTellCb(void* pUserData, drflac_int64* pCursor) {
 }
 #endif
 
-void NativeAudioPlayer::outputLoop() {
+// Producer: decode encoded audio into interleaved stereo S16 and fill the PCM
+// ring (blocks when the ring is full - natural backpressure). Never touches
+// sceAudioOut, so a slow decode can't stall audio output.
+void NativeAudioPlayer::decodeLoop() {
 #ifdef __vita__
-    int port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN, m_sampleRate,
-                                   SCE_AUDIO_OUT_MODE_STEREO);
-    if (port < 0) {
-        brls::Logger::error("NativeAudio: sceAudioOutOpenPort failed: 0x{:08x}",
-                            (unsigned)port);
-        m_running.store(false);
-        return;
-    }
-
-    // Interleaved stereo S16 output buffer for one grain.
-    std::vector<int16_t> outBuf(GRAIN * 2, 0);
+    std::vector<int16_t> stereo(GRAIN * 2, 0);
 
     if (m_codec == "flac") {
-        // Wait for the first audio frame to arrive before opening, so dr_flac's
-        // header init has header + frame data to read/validate and never sees a
-        // premature short/EOF read.
+        // Wait for the first audio frame so dr_flac's header init has header +
+        // frame data and never hits a premature short/EOF read.
         {
             std::unique_lock<std::mutex> lock(m_mutex);
             m_cv.wait(lock, [this]() {
@@ -181,41 +250,32 @@ void NativeAudioPlayer::outputLoop() {
                        !m_running.load();
             });
         }
-        if (!m_running.load()) { sceAudioOutReleasePort(port); return; }
-
-        drflac* flac = drflac_open(drflacReadCb, drflacSeekCb, drflacTellCb, this, nullptr);
-        if (!flac) {
-            brls::Logger::error("NativeAudio: drflac_open failed");
-            sceAudioOutReleasePort(port);
-            m_running.store(false);
-            return;
-        }
-        brls::Logger::info("NativeAudio: FLAC opened {}ch {}Hz",
-                           flac->channels, flac->sampleRate);
-        // Temp decode buffer sized to the stream's channel count.
-        std::vector<int16_t> dec(GRAIN * flac->channels, 0);
-        while (m_running.load()) {
-            drflac_uint64 got = drflac_read_pcm_frames_s16(flac, GRAIN, dec.data());
-            if (got == 0) break;  // end of stream
-            // Map to interleaved stereo (upmix mono, passthrough stereo, take
-            // first two channels otherwise).
-            for (int i = 0; i < GRAIN; i++) {
-                if (i < (int)got) {
-                    if (flac->channels == 1) {
-                        outBuf[i * 2] = outBuf[i * 2 + 1] = dec[i];
-                    } else {
-                        outBuf[i * 2]     = dec[i * flac->channels];
-                        outBuf[i * 2 + 1] = dec[i * flac->channels + 1];
+        if (m_running.load()) {
+            drflac* flac = drflac_open(drflacReadCb, drflacSeekCb, drflacTellCb, this, nullptr);
+            if (!flac) {
+                brls::Logger::error("NativeAudio: drflac_open failed");
+            } else {
+                brls::Logger::info("NativeAudio: FLAC opened {}ch {}Hz",
+                                   flac->channels, flac->sampleRate);
+                std::vector<int16_t> dec(GRAIN * flac->channels, 0);
+                while (m_running.load()) {
+                    drflac_uint64 got = drflac_read_pcm_frames_s16(flac, GRAIN, dec.data());
+                    if (got == 0) break;  // end of stream
+                    for (drflac_uint64 i = 0; i < got; i++) {
+                        if (flac->channels == 1) {
+                            stereo[i * 2] = stereo[i * 2 + 1] = dec[i];
+                        } else {
+                            stereo[i * 2]     = dec[i * flac->channels];
+                            stereo[i * 2 + 1] = dec[i * flac->channels + 1];
+                        }
                     }
-                } else {
-                    outBuf[i * 2] = outBuf[i * 2 + 1] = 0;  // zero-pad last grain
+                    pcmPush(stereo.data(), (size_t)got * 2);
                 }
+                drflac_close(flac);
             }
-            sceAudioOutOutput(port, outBuf.data());
         }
-        drflac_close(flac);
     } else {
-        // Raw interleaved S16 PCM. Read one grain worth of bytes at a time.
+        // Raw interleaved S16 PCM.
         const size_t grainBytes = (size_t)GRAIN * m_channels * sizeof(int16_t);
         std::vector<uint8_t> raw(grainBytes, 0);
         while (m_running.load()) {
@@ -226,22 +286,69 @@ void NativeAudioPlayer::outputLoop() {
                 filled += n;
             }
             if (filled == 0) break;
-            std::memset(raw.data() + filled, 0, grainBytes - filled);  // zero-pad
+            size_t frames = filled / (m_channels * sizeof(int16_t));
             const int16_t* src = reinterpret_cast<const int16_t*>(raw.data());
-            for (int i = 0; i < GRAIN; i++) {
+            for (size_t i = 0; i < frames; i++) {
                 if (m_channels == 1) {
-                    outBuf[i * 2] = outBuf[i * 2 + 1] = src[i];
+                    stereo[i * 2] = stereo[i * 2 + 1] = src[i];
                 } else {
-                    outBuf[i * 2]     = src[i * m_channels];
-                    outBuf[i * 2 + 1] = src[i * m_channels + 1];
+                    stereo[i * 2]     = src[i * m_channels];
+                    stereo[i * 2 + 1] = src[i * m_channels + 1];
                 }
             }
-            sceAudioOutOutput(port, outBuf.data());
+            pcmPush(stereo.data(), frames * 2);
         }
+    }
+
+    // Signal the output thread that no more PCM will be produced.
+    m_decodeDone.store(true);
+    m_pcmCv.notify_all();
+    brls::Logger::info("NativeAudio: decode finished");
+#endif
+}
+
+// Consumer: drain the PCM ring into sceAudioOut. Prebuffers first so playback
+// starts with a cushion, then keeps the port fed a grain at a time; the
+// blocking Output call paces it. Under-runs (decoder briefly behind) emit a
+// grain of silence rather than a repeated/garbled buffer.
+void NativeAudioPlayer::outputLoop() {
+#ifdef __vita__
+    int port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN, m_sampleRate,
+                                   SCE_AUDIO_OUT_MODE_STEREO);
+    if (port < 0) {
+        brls::Logger::error("NativeAudio: sceAudioOutOpenPort failed: 0x{:08x}",
+                            (unsigned)port);
+        m_running.store(false);
+        m_cv.notify_all();
+        return;
+    }
+
+    // Prime the PCM ring before the first output so we start with slack.
+    {
+        std::unique_lock<std::mutex> lock(m_pcmMutex);
+        m_pcmCv.wait(lock, [this]() {
+            return m_pcmCount >= PCM_PREBUF_SAMPLES || m_decodeDone.load() ||
+                   !m_running.load();
+        });
+    }
+
+    std::vector<int16_t> outBuf(GRAIN * 2, 0);
+    const size_t grainSamples = (size_t)GRAIN * 2;
+    while (m_running.load()) {
+        bool drained = false;
+        size_t got = pcmPop(outBuf.data(), grainSamples, drained);
+        if (got == 0 && drained) break;  // stream finished and ring empty
+        if (got < grainSamples) {
+            // Zero-pad an underrun / final partial grain.
+            std::memset(outBuf.data() + got, 0, (grainSamples - got) * sizeof(int16_t));
+        }
+        sceAudioOutOutput(port, outBuf.data());
+        if (drained) break;
     }
 
     sceAudioOutReleasePort(port);
     m_running.store(false);
+    m_cv.notify_all();  // wake a decoder that might still be blocked in readEncoded
     brls::Logger::info("NativeAudio: output stopped");
 #else
     m_running.store(false);
