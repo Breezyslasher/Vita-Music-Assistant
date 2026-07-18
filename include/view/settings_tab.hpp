@@ -75,6 +75,7 @@ private:
 
     // Player section
     brls::BooleanCell* m_localPlaybackToggle = nullptr;
+    brls::BooleanCell* m_nativeAudioToggle = nullptr;
     brls::DetailCell* m_playerNameCell = nullptr;
     brls::SelectorCell* m_playerSelector = nullptr;
     std::vector<PlayerInfo> m_players;  // Cached player list from MA

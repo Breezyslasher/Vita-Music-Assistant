@@ -645,7 +645,7 @@ void PlayerActivity::loadFromQueue() {
     // The Sendspin client handles receiving audio from MA server and
     // feeding it to MPV via an audio pipe.
     // Use the selected player ID from settings if set, otherwise use local Vita player
-    const auto& settings = App::instance().getSettings();
+    const auto& settings = Application::getInstance().getSettings();
     std::string playerId = settings.selectedPlayerId.empty()
         ? App::instance().getPlayerId()
         : settings.selectedPlayerId;
