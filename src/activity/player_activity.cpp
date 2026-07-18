@@ -384,6 +384,20 @@ void PlayerActivity::onContentAvailable() {
                     auto alive = aliveWeak.lock();
                     if (!alive || !alive->load()) return;
                     m_availablePlayers = players;
+                    m_ownPlayerId = findOwnPlayerId(players);
+
+                    // Adopt our own registered Sendspin player as the active
+                    // player when nothing is explicitly selected. This routes
+                    // local Vita playback through MA's real player_id (instead
+                    // of the raw client id) so transport commands, the current
+                    // track, and cover art all resolve correctly - and it keeps
+                    // us from showing a broken duplicate "This Vita" entry.
+                    auto& settings = Application::getInstance().getSettings();
+                    if (settings.selectedPlayerId.empty() && !m_ownPlayerId.empty()) {
+                        settings.selectedPlayerId = m_ownPlayerId;
+                        Application::getInstance().saveSettings();
+                        loadRemotePlayerState();
+                    }
                     updatePlayerNameLabel();
                 });
             });
@@ -2330,7 +2344,7 @@ void PlayerActivity::hideControls() {
 void PlayerActivity::updatePlayerNameLabel() {
     if (!playerNameLabel) return;
     const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
-    if (selectedId.empty()) {
+    if (selectedId.empty() || (!m_ownPlayerId.empty() && selectedId == m_ownPlayerId)) {
         playerNameLabel->setText("This Vita");
         return;
     }
@@ -2349,6 +2363,27 @@ std::string PlayerActivity::getActivePlayerId() const {
     const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
     if (!selectedId.empty()) return selectedId;
     return App::instance().getPlayerId();
+}
+
+std::string PlayerActivity::findOwnPlayerId(const std::vector<PlayerInfo>& players) const {
+    // Our Sendspin client id (e.g. "vita_ma_player"); MA derives the player_id
+    // from it, sometimes with a provider prefix.
+    const std::string clientId = App::instance().getPlayerId();
+    std::string name = Application::getInstance().getSettings().sendspinPlayerName;
+    if (name.empty()) name = "PS Vita";
+
+    // 1) player_id equals or embeds our client id.
+    if (!clientId.empty()) {
+        for (const auto& p : players) {
+            if (p.playerId == clientId || p.playerId.find(clientId) != std::string::npos)
+                return p.playerId;
+        }
+    }
+    // 2) fall back to matching the display name.
+    for (const auto& p : players) {
+        if (p.name == name) return p.playerId;
+    }
+    return "";
 }
 
 bool PlayerActivity::isRemotePlayer() const {
@@ -2679,6 +2714,7 @@ void PlayerActivity::showPlayerSwitcher() {
 
         brls::sync([this, players]() {
             m_availablePlayers = players;
+            m_ownPlayerId = findOwnPlayerId(players);
 
             auto* dialog = new brls::Dialog("Switch Player");
             auto* box = new brls::Box();
@@ -2687,37 +2723,22 @@ void PlayerActivity::showPlayerSwitcher() {
 
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
-            // "This Vita (Local)" option
-            {
-                auto* btn = new brls::Button();
-                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string label = "This Vita (Local)";
-                if (currentId.empty()) label += "  *";
-                btn->setText(label);
-                btn->setMarginBottom(4);
-                btn->registerClickAction([this, dialog](brls::View*) {
-                    auto& settings = Application::getInstance().getSettings();
-                    settings.selectedPlayerId.clear();
-                    Application::getInstance().saveSettings();
-                    dialog->close();
-                    updatePlayerNameLabel();
-                    brls::Application::notify("Switched to local Vita player");
-                    return true;
-                });
-                box->addView(btn);
-            }
-
-            // Remote players
+            // One entry per player. Our own registered Sendspin player is
+            // labeled "This Vita" (local playback); no separate pseudo-entry,
+            // so it never shows up twice.
             for (size_t i = 0; i < m_availablePlayers.size(); i++) {
+                bool isOwn = !m_ownPlayerId.empty() &&
+                             m_availablePlayers[i].playerId == m_ownPlayerId;
+
                 auto* btn = new brls::Button();
                 btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string label = m_availablePlayers[i].name;
+                std::string pname = isOwn ? "This Vita" : m_availablePlayers[i].name;
+                std::string label = pname;
                 if (!m_availablePlayers[i].available) label += " (offline)";
                 if (m_availablePlayers[i].playerId == currentId) label += "  *";
                 btn->setText(label);
                 btn->setMarginBottom(4);
                 std::string pid = m_availablePlayers[i].playerId;
-                std::string pname = m_availablePlayers[i].name;
                 btn->registerClickAction([this, dialog, pid, pname](brls::View*) {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;

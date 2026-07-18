@@ -56,23 +56,42 @@ private:
     NativeAudioPlayer(const NativeAudioPlayer&) = delete;
     NativeAudioPlayer& operator=(const NativeAudioPlayer&) = delete;
 
+    // Decode thread: pulls encoded bytes, decodes to interleaved stereo S16,
+    // and fills the PCM ring (with backpressure). Output thread: drains the PCM
+    // ring into sceAudioOut. Decoupling them means a slow decode or a late
+    // network chunk never starves the audio hardware, as long as the PCM ring
+    // stays primed (prebuffer) - the fix for stutter.
+    void decodeLoop();
     void outputLoop();
+
     // Blocking read from the encoded ring; returns bytes copied, or 0 at
     // end-of-stream / stop. Used as dr_flac's read callback and for raw PCM.
     size_t readEncoded(void* out, size_t bytes);
 
-    std::thread m_thread;
-    std::atomic<bool> m_running{false};
-    std::atomic<bool> m_endOfStream{false};
+    // PCM ring helpers (interleaved stereo S16 samples).
+    void pcmPush(const int16_t* src, size_t samples);         // producer, blocks if full
+    size_t pcmPop(int16_t* dst, size_t samples, bool& drained); // consumer, blocks if empty
 
+    std::thread m_decodeThread;
+    std::thread m_outputThread;
+    std::atomic<bool> m_running{false};
+    std::atomic<bool> m_endOfStream{false};   // no more encoded data will arrive
+    std::atomic<bool> m_decodeDone{false};    // decoder finished producing PCM
+
+    // Encoded byte queue (network -> decoder)
     std::mutex m_mutex;
     std::condition_variable m_cv;
-    std::vector<uint8_t> m_encoded;  // byte queue (append at back, read via m_readPos)
+    std::vector<uint8_t> m_encoded;
     size_t m_readPos = 0;
-    // Bytes dropped from the front by compaction; absolute stream position is
-    // m_baseOffset + m_readPos. Lets seek/tell work in absolute coordinates.
-    uint64_t m_baseOffset = 0;
-    size_t m_headerLen = 0;  // seed header length (to defer open until a frame arrives)
+    uint64_t m_baseOffset = 0;  // bytes dropped by compaction (absolute pos = base + readPos)
+    size_t m_headerLen = 0;     // seed header length (defer open until a frame arrives)
+
+    // Decoded PCM ring (decoder -> sceAudioOut), interleaved stereo S16
+    std::mutex m_pcmMutex;
+    std::condition_variable m_pcmCv;
+    std::vector<int16_t> m_pcm;  // circular
+    size_t m_pcmHead = 0;        // read index
+    size_t m_pcmCount = 0;       // samples currently stored
 
     std::string m_codec;
     int m_sampleRate = 44100;

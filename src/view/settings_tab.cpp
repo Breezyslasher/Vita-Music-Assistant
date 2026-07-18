@@ -426,19 +426,28 @@ void SettingsTab::loadPlayerList() {
         brls::sync([this, players]() {
             m_players = players;
 
-            // Build the selector options: "This Vita (Local)" first, then all MA players
+            // Identify our own registered Sendspin player so we can label it
+            // "This Vita" (local playback) instead of listing it as a separate
+            // pseudo-entry - avoids showing the Vita twice.
+            std::string ownClientId = App::instance().getPlayerId();
+            std::string ownName = Application::getInstance().getSettings().sendspinPlayerName;
+            if (ownName.empty()) ownName = "PS Vita";
+
             std::vector<std::string> options;
-            options.push_back("This Vita (Local)");
             int selectedIndex = 0;
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
             for (size_t i = 0; i < m_players.size(); i++) {
-                std::string label = m_players[i].name;
+                bool isOwn = (!ownClientId.empty() &&
+                              (m_players[i].playerId == ownClientId ||
+                               m_players[i].playerId.find(ownClientId) != std::string::npos)) ||
+                             m_players[i].name == ownName;
+                std::string label = isOwn ? "This Vita" : m_players[i].name;
                 if (!m_players[i].available) label += " (offline)";
                 options.push_back(label);
 
                 if (m_players[i].playerId == currentId) {
-                    selectedIndex = static_cast<int>(i + 1);
+                    selectedIndex = static_cast<int>(i);
                 }
             }
 
@@ -454,17 +463,10 @@ void SettingsTab::onPlayerSelected(int index) {
     Application& app = Application::getInstance();
     AppSettings& settings = app.getSettings();
 
-    if (index == 0) {
-        // Local Vita player
-        settings.selectedPlayerId.clear();
-        brls::Logger::info("SettingsTab: Selected local Vita player");
-    } else {
-        int playerIndex = index - 1;
-        if (playerIndex >= 0 && playerIndex < static_cast<int>(m_players.size())) {
-            settings.selectedPlayerId = m_players[playerIndex].playerId;
-            brls::Logger::info("SettingsTab: Selected player '{}' ({})",
-                m_players[playerIndex].name, m_players[playerIndex].playerId);
-        }
+    if (index >= 0 && index < static_cast<int>(m_players.size())) {
+        settings.selectedPlayerId = m_players[index].playerId;
+        brls::Logger::info("SettingsTab: Selected player '{}' ({})",
+            m_players[index].name, m_players[index].playerId);
     }
     app.saveSettings();
 }
