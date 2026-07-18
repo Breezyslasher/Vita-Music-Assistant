@@ -349,6 +349,7 @@ void LoginActivity::onRemoteLoginPressed() {
                 // token upgrade callback; a reused token is stored already.
                 setStatus("Connected!");
                 a.connectSendspin();
+                a.resolveOwnPlayerId();
                 a.pushMainActivity();
             } else {
                 std::string err = WebRTCClient::instance().getLastError();
@@ -448,6 +449,7 @@ void LoginActivity::loginWithMA(const std::string& serverUrl,
 
                 // Connect Sendspin for audio streaming
                 Application::getInstance().connectSendspin();
+                Application::getInstance().resolveOwnPlayerId();
 
                 brls::delay(500, [this, progressDialog]() {
                     progressDialog->dismiss();
@@ -554,6 +556,7 @@ void LoginActivity::loginWithHA(const std::string& serverUrl,
 
                 // Connect Sendspin for audio streaming
                 Application::getInstance().connectSendspin();
+                Application::getInstance().resolveOwnPlayerId();
 
                 brls::delay(500, [this, progressDialog]() {
                     progressDialog->dismiss();

@@ -9,6 +9,8 @@
 #include "view/media_detail_view.hpp"
 #include "utils/image_loader.hpp"
 #include <cmath>
+#include <chrono>
+#include <algorithm>
 
 // From the patched nanovg.c (patches/nanovg.c): accumulates consecutive nvgText
 // calls that share state into a single render call.
@@ -127,15 +129,7 @@ brls::View* RecyclingGrid::getNextFocus(brls::FocusDirection direction, brls::Vi
     return next;
 }
 
-void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index) {
-    if (itemsInRow == 0) {
-        currentRow = new brls::Box();
-        currentRow->setAxis(brls::Axis::ROW);
-        currentRow->setJustifyContent(brls::JustifyContent::FLEX_START);
-        currentRow->setMarginBottom(10);
-        m_contentBox->addView(currentRow);
-    }
-
+MediaItemCell* RecyclingGrid::createCell(size_t index) {
     auto* cell = new MediaItemCell();
     cell->setItem(m_items[index]);
     cell->setMarginRight(10);
@@ -182,6 +176,19 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
             });
     }
 
+    return cell;
+}
+
+void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index) {
+    if (itemsInRow == 0) {
+        currentRow = new brls::Box();
+        currentRow->setAxis(brls::Axis::ROW);
+        currentRow->setJustifyContent(brls::JustifyContent::FLEX_START);
+        currentRow->setMarginBottom(10);
+        m_contentBox->addView(currentRow);
+    }
+
+    MediaItemCell* cell = createCell(index);
     currentRow->addView(cell);
     m_cells.push_back(cell);
 
@@ -406,14 +413,38 @@ void RecyclingGrid::rebuildGrid() {
 
     if (m_items.empty()) return;
 
-    brls::Box* currentRow = nullptr;
-    int itemsInRow = 0;
+    auto t0 = std::chrono::steady_clock::now();
 
-    for (size_t i = 0; i < m_items.size(); i++) {
-        addCellForItem(currentRow, itemsInRow, i);
+    // Build one row at a time into a DETACHED box, add every cell to it, then
+    // attach the finished row to m_contentBox once. Attaching cells to an
+    // already-attached row (the old path) invalidated yoga layout for the whole
+    // growing tree on every cell - O(cells) relayouts that froze the UI for
+    // large libraries. Batching to one invalidation per row (as Vita_Suwayomi
+    // does) keeps setDataSource fast even for hundreds of items.
+    const size_t total = m_items.size();
+    const size_t cols = (size_t)std::max(1, m_columns);
+    for (size_t start = 0; start < total; start += cols) {
+        auto* row = new brls::Box();
+        row->setAxis(brls::Axis::ROW);
+        row->setJustifyContent(brls::JustifyContent::FLEX_START);
+        row->setMarginBottom(10);
+
+        size_t end = std::min(start + cols, total);
+        for (size_t i = start; i < end; i++) {
+            MediaItemCell* cell = createCell(i);
+            row->addView(cell);          // detached row: no tree-wide relayout
+            m_cells.push_back(cell);
+        }
+
+        m_contentBox->addView(row);      // one layout invalidation per row
     }
 
-    m_renderedCount = m_items.size();
+    m_renderedCount = total;
+
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+    brls::Logger::info("RecyclingGrid: built {} cells ({} rows) in {}ms",
+                       (int)total, (int)((total + cols - 1) / cols), (long)ms);
 }
 
 void RecyclingGrid::onItemClicked(int index) {

@@ -8,6 +8,7 @@
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
+#include "player/native_audio_player.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
 #include <algorithm>
@@ -132,8 +133,7 @@ void PlayerActivity::onContentAvailable() {
             // Skip if this is a programmatic update (not user interaction)
             if (m_updatingSlider) return;
             resetControlsIdleTimer();
-            // Seek to position
-            MpvPlayer& player = MpvPlayer::getInstance();
+
             double duration = 0.0;
             // For music queue mode, prefer queue metadata duration (full track length)
             // over MPV duration which may only reflect buffered/demuxed portion
@@ -142,6 +142,22 @@ void PlayerActivity::onContentAvailable() {
                 if (track && track->duration > 0)
                     duration = (double)track->duration;
             }
+
+            // Native audio: seek on the server (which restreams from the new
+            // position) and flush the buffered audio so playback jumps at once.
+            auto& native = NativeAudioPlayer::instance();
+            if (native.isPlaying()) {
+                double target = duration * progress;
+                std::string queueId = getActivePlayerId();
+                if (!queueId.empty())
+                    MAClient::instance().queueSeek(queueId, (int)target);
+                m_nativePosBase = target;
+                native.stop();  // discard buffered audio; new stream starts at target
+                return;
+            }
+
+            // Seek to position
+            MpvPlayer& player = MpvPlayer::getInstance();
             if (duration <= 0)
                 duration = player.getDuration();
             player.seekTo(duration * progress);
@@ -386,17 +402,13 @@ void PlayerActivity::onContentAvailable() {
                     m_availablePlayers = players;
                     m_ownPlayerId = findOwnPlayerId(players);
 
-                    // Adopt our own registered Sendspin player as the active
-                    // player when nothing is explicitly selected. This routes
-                    // local Vita playback through MA's real player_id (instead
-                    // of the raw client id) so transport commands, the current
-                    // track, and cover art all resolve correctly - and it keeps
-                    // us from showing a broken duplicate "This Vita" entry.
-                    auto& settings = Application::getInstance().getSettings();
-                    if (settings.selectedPlayerId.empty() && !m_ownPlayerId.empty()) {
-                        settings.selectedPlayerId = m_ownPlayerId;
-                        Application::getInstance().saveSettings();
-                        loadRemotePlayerState();
+                    // Point local playback at MA's real player_id for our own
+                    // registered Sendspin player (the raw client id isn't a
+                    // valid player_id, so play_media/pause were being sent to
+                    // the wrong target). The Vita stays on the instant local
+                    // control path - we only correct the id it commands.
+                    if (!m_ownPlayerId.empty()) {
+                        App::instance().setPlayerId(m_ownPlayerId);
                     }
                     updatePlayerNameLabel();
                 });
@@ -681,6 +693,9 @@ void PlayerActivity::loadFromQueue() {
     brls::Logger::info("Playing '{}' via player_queues/play_media (player={})",
                        trackTitle, playerId);
 
+    // New track starts at 0 - clear any prior native-audio seek base.
+    m_nativePosBase = 0.0;
+
     client.playMedia(playerId, trackUri, "play",
         [this, trackTitle, alive](bool success, const Json& result) {
         if (!alive->load()) return;
@@ -906,6 +921,47 @@ void PlayerActivity::updateProgress() {
         return;
     }
 
+    // Native audio owns local playback (no mpv): drive the seek bar from the
+    // decoder's played-sample count plus any seek base.
+    {
+        auto& native = NativeAudioPlayer::instance();
+        if (native.isPlaying()) {
+            double position = m_nativePosBase + native.positionSeconds();
+            double duration = 0.0;
+            const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
+            if (track && track->duration > 0) duration = (double)track->duration;
+
+            if (duration > 0) {
+                if (position > duration) position = duration;
+                if (progressSlider) {
+                    m_updatingSlider = true;
+                    progressSlider->setProgress((float)(position / duration));
+                    m_updatingSlider = false;
+                }
+                int posMin = (int)position / 60, posSec = (int)position % 60;
+                int remaining = std::max(0, (int)(duration - position));
+                char elapsedStr[16], remainStr[16];
+                snprintf(elapsedStr, sizeof(elapsedStr), "%d:%02d", posMin, posSec);
+                snprintf(remainStr, sizeof(remainStr), "-%d:%02d", remaining / 60, remaining % 60);
+                if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
+                if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
+            }
+
+            // Keep the play/pause icon in sync with the native output state.
+            bool actuallyPlaying = !native.isPaused();
+            if (actuallyPlaying != m_isPlaying) {
+                m_isPlaying = actuallyPlaying;
+                updatePlayPauseLabel();
+            }
+
+            int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
+            if (autoHide > 0 && m_controlsVisible) {
+                if (++m_controlsIdleSeconds >= autoHide) hideControls();
+            }
+            return;
+        }
+    }
+
     // Deferred MPV initialization (Phase 1 of 2):
     // Create MPV and its GXM render context, but do NOT call loadUrl yet.
     // loadUrl spawns decoder threads that use the shared GXM context via
@@ -1066,6 +1122,24 @@ void PlayerActivity::togglePlayPause() {
         return;
     }
 
+    // Native audio owns local playback directly (no mpv). Pause/resume the
+    // local output instantly and mirror the state to the server.
+    auto& native = NativeAudioPlayer::instance();
+    if (native.isPlaying()) {
+        std::string queueId = getActivePlayerId();
+        if (native.isPaused()) {
+            native.resume();
+            m_isPlaying = true;
+            if (!queueId.empty()) MAClient::instance().queuePlay(queueId);
+        } else {
+            native.pause();
+            m_isPlaying = false;
+            if (!queueId.empty()) MAClient::instance().queuePause(queueId);
+        }
+        updatePlayPauseLabel();
+        return;
+    }
+
     MpvPlayer& player = MpvPlayer::getInstance();
 
     if (player.isPlaying()) {
@@ -1095,6 +1169,22 @@ void PlayerActivity::updatePlayPauseLabel() {
 }
 
 void PlayerActivity::seek(int seconds) {
+    // Native audio: relative seek by restreaming from the new position.
+    auto& native = NativeAudioPlayer::instance();
+    if (native.isPlaying()) {
+        double target = m_nativePosBase + native.positionSeconds() + seconds;
+        if (target < 0) target = 0;
+        const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
+        if (track && track->duration > 0 && target > (double)track->duration)
+            target = (double)track->duration;
+        std::string queueId = getActivePlayerId();
+        if (!queueId.empty())
+            MAClient::instance().queueSeek(queueId, (int)target);
+        m_nativePosBase = target;
+        native.stop();  // discard buffered audio; new stream starts at target
+        return;
+    }
+
     MpvPlayer& player = MpvPlayer::getInstance();
     player.seekRelative(seconds);
 }
@@ -1118,8 +1208,11 @@ void PlayerActivity::playNext() {
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playNext()) {
-        // Stop current playback
+        // Stop current playback. Flush native audio immediately so a skip
+        // doesn't play out the seconds of Sendspin audio already buffered
+        // ahead (that drain is what made skips take ~15s to change track).
         MpvPlayer::getInstance().stop();
+        NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
 
         // Load next track
@@ -1154,8 +1247,10 @@ void PlayerActivity::playPrevious() {
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playPrevious()) {
-        // Stop current playback
+        // Stop current playback and flush buffered native audio so the skip
+        // is immediate rather than draining the pre-buffered stream.
         player.stop();
+        NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
 
         // Load previous track
@@ -2715,6 +2810,9 @@ void PlayerActivity::showPlayerSwitcher() {
         brls::sync([this, players]() {
             m_availablePlayers = players;
             m_ownPlayerId = findOwnPlayerId(players);
+            if (!m_ownPlayerId.empty()) {
+                App::instance().setPlayerId(m_ownPlayerId);
+            }
 
             auto* dialog = new brls::Dialog("Switch Player");
             auto* box = new brls::Box();
@@ -2723,22 +2821,42 @@ void PlayerActivity::showPlayerSwitcher() {
 
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
-            // One entry per player. Our own registered Sendspin player is
-            // labeled "This Vita" (local playback); no separate pseudo-entry,
-            // so it never shows up twice.
+            // "This Vita" (local playback via Sendspin). Selecting it clears the
+            // remote selection so controls run on the instant local path.
+            {
+                auto* btn = new brls::Button();
+                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
+                std::string label = "This Vita";
+                if (currentId.empty()) label += "  *";
+                btn->setText(label);
+                btn->setMarginBottom(4);
+                btn->registerClickAction([this, dialog](brls::View*) {
+                    auto& settings = Application::getInstance().getSettings();
+                    settings.selectedPlayerId.clear();
+                    Application::getInstance().saveSettings();
+                    dialog->close();
+                    updatePlayerNameLabel();
+                    brls::Application::notify("Switched to This Vita");
+                    return true;
+                });
+                box->addView(btn);
+            }
+
+            // Remote players. Skip our own registered player - it's already
+            // represented by the "This Vita" entry above, so it never shows twice.
             for (size_t i = 0; i < m_availablePlayers.size(); i++) {
-                bool isOwn = !m_ownPlayerId.empty() &&
-                             m_availablePlayers[i].playerId == m_ownPlayerId;
+                if (!m_ownPlayerId.empty() && m_availablePlayers[i].playerId == m_ownPlayerId)
+                    continue;
 
                 auto* btn = new brls::Button();
                 btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string pname = isOwn ? "This Vita" : m_availablePlayers[i].name;
-                std::string label = pname;
+                std::string label = m_availablePlayers[i].name;
                 if (!m_availablePlayers[i].available) label += " (offline)";
                 if (m_availablePlayers[i].playerId == currentId) label += "  *";
                 btn->setText(label);
                 btn->setMarginBottom(4);
                 std::string pid = m_availablePlayers[i].playerId;
+                std::string pname = m_availablePlayers[i].name;
                 btn->registerClickAction([this, dialog, pid, pname](brls::View*) {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;

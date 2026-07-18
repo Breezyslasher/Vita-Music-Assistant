@@ -12,6 +12,7 @@
 #include "app/music_queue.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
+#include <chrono>
 
 namespace vita_ma {
 
@@ -300,6 +301,8 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
             if (!alive || !*alive) return;
             if (loadGen != m_loadGen) return;  // category changed while loading
 
+            auto t0 = std::chrono::steady_clock::now();
+
             m_offset += count;
             m_hasMore = (count >= PAGE_SIZE);  // If we got a full page, there may be more
             m_loadingPage = false;
@@ -321,8 +324,16 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
             m_contentGrid->setHasMore(m_hasMore);
             m_loaded = true;
 
-            // Keep pulling pages until the whole category is loaded.
-            if (m_hasMore) loadNextPage();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            brls::Logger::info("LibraryTab: applied page ({} items, total {}) on UI thread in {}ms",
+                               count, (int)m_items.size(), (long)ms);
+
+            // NOTE: pages now load lazily as the user scrolls (RecyclingGrid's
+            // onLoadMore -> loadNextPage). We no longer chain loadNextPage() here
+            // to eagerly pull the whole category, which kept the UI thread and
+            // network saturated and made controls (e.g. pause) unresponsive
+            // until the entire library finished loading.
         });
     };
 
@@ -385,6 +396,8 @@ void LibraryTab::loadNextPage() {
             if (!alive || !*alive) return;
             if (loadGen != m_loadGen) return;  // category changed while loading
 
+            auto t0 = std::chrono::steady_clock::now();
+
             m_offset += count;
             m_hasMore = (count >= PAGE_SIZE);
             m_loadingPage = false;
@@ -395,8 +408,13 @@ void LibraryTab::loadNextPage() {
             }
             m_contentGrid->setHasMore(m_hasMore);
 
-            // Continue pulling pages until the whole category is loaded.
-            if (m_hasMore) loadNextPage();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            brls::Logger::info("LibraryTab: appended page ({} items, total {}) on UI thread in {}ms",
+                               count, (int)m_items.size(), (long)ms);
+
+            // Lazy pagination only: the next page loads when the user scrolls
+            // near the end (RecyclingGrid onLoadMore), not eagerly here.
         });
     };
 

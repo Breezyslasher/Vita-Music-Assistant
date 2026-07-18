@@ -14,6 +14,8 @@
 #include <fstream>
 #include <cstring>
 #include <cctype>
+#include <thread>
+#include <chrono>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
@@ -94,6 +96,7 @@ void Application::run() {
         if (MAClient::instance().connect(restoreTarget, m_authToken)) {
             brls::Logger::info("Connected to server");
             connectSendspin();
+            resolveOwnPlayerId();
             pushMainActivity();
         } else {
             brls::Logger::error("Failed to connect to saved server, showing login");
@@ -187,6 +190,57 @@ void Application::connectSendspin() {
         // Plain local setup: connect directly to the Sendspin port.
         SendspinClient::instance().connect(host, 8927, clientId, clientName);
     }
+}
+
+void Application::resolveOwnPlayerId(int attemptsLeft) {
+    auto& client = MAClient::instance();
+    if (!client.isConnected()) return;
+
+    // The raw Sendspin client id we registered with; MA derives the real
+    // player_id from it (sometimes with a provider prefix).
+    std::string clientId = App::instance().getPlayerId();
+    std::string name = m_settings.sendspinPlayerName;
+    if (name.empty()) name = "PS Vita";
+
+    client.getPlayers([this, clientId, name, attemptsLeft](bool success, const Json& result) {
+        std::string ownId;
+        if (success && result.type() == Json::ARRAY) {
+            for (size_t i = 0; i < result.size() && ownId.empty(); i++) {
+                const Json& p = result[i];
+                std::string pid = p.has("player_id") ? p["player_id"].str() : "";
+                if (pid.empty()) continue;
+                if (!clientId.empty() &&
+                    (pid == clientId || pid.find(clientId) != std::string::npos)) {
+                    ownId = pid;
+                }
+            }
+            // Fall back to a name match if the id didn't line up.
+            for (size_t i = 0; i < result.size() && ownId.empty(); i++) {
+                const Json& p = result[i];
+                std::string pn = p.has("name") ? p["name"].str() : "";
+                if (pn == name && p.has("player_id")) ownId = p["player_id"].str();
+            }
+        }
+
+        if (!ownId.empty()) {
+            brls::sync([ownId]() {
+                App::instance().setPlayerId(ownId);
+                brls::Logger::info("Resolved own player_id: {}", ownId);
+            });
+            return;
+        }
+
+        // Not registered yet - retry shortly (MA lists the player a beat after
+        // the Sendspin handshake).
+        if (attemptsLeft > 0) {
+            std::thread([this, attemptsLeft]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                brls::sync([this, attemptsLeft]() {
+                    resolveOwnPlayerId(attemptsLeft - 1);
+                });
+            }).detach();
+        }
+    });
 }
 
 void Application::pushLoginActivity() {

@@ -40,7 +40,21 @@ public:
     // Hard stop: tear down output immediately.
     void stop();
 
+    // Pause/resume the audio output without tearing down the stream. The
+    // output thread stops feeding sceAudioOut (hardware goes silent) but the
+    // decoded PCM and decoder stay intact, so resume() continues instantly.
+    void pause();
+    void resume();
+
     bool isPlaying() const { return m_running.load(); }
+    bool isPaused() const { return m_paused.load(); }
+
+    // Seconds of audio actually sent to the output since the current stream
+    // started (frozen while paused). Used to drive the player's seek bar.
+    double positionSeconds() const {
+        int sr = m_sampleRate > 0 ? m_sampleRate : 44100;
+        return (double)m_playedFrames.load() / (double)sr;
+    }
 
     // Forwarders for dr_flac's C callbacks (they only get a void* user
     // pointer). Public so the free functions in the .cpp can reach the ring.
@@ -64,6 +78,15 @@ private:
     void decodeLoop();
     void outputLoop();
 
+    // Immediate teardown assuming m_ctrlMutex is already held. Public stop()/
+    // startStream()/endStream() take the mutex so a UI-thread flush can never
+    // race the Sendspin thread's stream transitions on the same std::threads.
+    void stopLocked();
+
+    // Serializes startStream/endStream/stop across the Sendspin receive thread
+    // and any caller (e.g. a UI-thread flush on skip).
+    std::mutex m_ctrlMutex;
+
     // Blocking read from the encoded ring; returns bytes copied, or 0 at
     // end-of-stream / stop. Used as dr_flac's read callback and for raw PCM.
     size_t readEncoded(void* out, size_t bytes);
@@ -75,8 +98,10 @@ private:
     std::thread m_decodeThread;
     std::thread m_outputThread;
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_paused{false};        // output stalled but stream intact
     std::atomic<bool> m_endOfStream{false};   // no more encoded data will arrive
     std::atomic<bool> m_decodeDone{false};    // decoder finished producing PCM
+    std::atomic<uint64_t> m_playedFrames{0};  // frames sent to sceAudioOut this stream
 
     // Encoded byte queue (network -> decoder)
     std::mutex m_mutex;

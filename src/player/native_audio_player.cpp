@@ -47,7 +47,8 @@ NativeAudioPlayer::~NativeAudioPlayer() {
 void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
                                     int channels, int bitDepth,
                                     const std::vector<uint8_t>& codecHeader) {
-    stop();  // tear down any previous stream
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
+    stopLocked();  // tear down any previous stream
 
     m_codec = codec;
     m_sampleRate = sampleRate > 0 ? sampleRate : 44100;
@@ -89,6 +90,8 @@ void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
     }
     m_endOfStream.store(false);
     m_decodeDone.store(false);
+    m_paused.store(false);
+    m_playedFrames.store(0);
     m_running.store(true);
 
 #ifdef __vita__
@@ -128,6 +131,7 @@ void NativeAudioPlayer::pushAudio(const uint8_t* data, size_t len) {
 void NativeAudioPlayer::endStream() {
     // Let the decoder drain what's buffered, then the output thread finishes
     // playing the PCM ring and both threads exit.
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
     m_endOfStream.store(true);
     m_cv.notify_all();
     m_pcmCv.notify_all();
@@ -137,6 +141,22 @@ void NativeAudioPlayer::endStream() {
 }
 
 void NativeAudioPlayer::stop() {
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
+    stopLocked();
+}
+
+void NativeAudioPlayer::pause() {
+    // Stall the output thread; hardware drains its last queued grain then goes
+    // silent. Decoder + PCM ring are untouched so resume() is instant.
+    m_paused.store(true);
+}
+
+void NativeAudioPlayer::resume() {
+    m_paused.store(false);
+    m_pcmCv.notify_all();
+}
+
+void NativeAudioPlayer::stopLocked() {
     m_running.store(false);
     m_endOfStream.store(true);
     m_cv.notify_all();
@@ -156,6 +176,7 @@ void NativeAudioPlayer::stop() {
     }
     m_endOfStream.store(false);
     m_decodeDone.store(false);
+    m_paused.store(false);
 }
 
 // --- PCM ring (decoder -> output) --------------------------------------------
@@ -335,6 +356,16 @@ void NativeAudioPlayer::outputLoop() {
     std::vector<int16_t> outBuf(GRAIN * 2, 0);
     const size_t grainSamples = (size_t)GRAIN * 2;
     while (m_running.load()) {
+        // Paused: stop feeding the hardware (it goes silent after its last
+        // queued grain) but keep the stream alive until resume() or stop().
+        if (m_paused.load()) {
+            std::unique_lock<std::mutex> lock(m_pcmMutex);
+            m_pcmCv.wait(lock, [this]() {
+                return !m_paused.load() || !m_running.load();
+            });
+            if (!m_running.load()) break;
+            continue;
+        }
         bool drained = false;
         size_t got = pcmPop(outBuf.data(), grainSamples, drained);
         if (got == 0 && drained) break;  // stream finished and ring empty
@@ -343,6 +374,7 @@ void NativeAudioPlayer::outputLoop() {
             std::memset(outBuf.data() + got, 0, (grainSamples - got) * sizeof(int16_t));
         }
         sceAudioOutOutput(port, outBuf.data());
+        m_playedFrames.fetch_add(GRAIN);  // one grain = GRAIN stereo frames
         if (drained) break;
     }
 
