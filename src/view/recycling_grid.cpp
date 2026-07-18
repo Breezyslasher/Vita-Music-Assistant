@@ -407,44 +407,68 @@ void RecyclingGrid::updateScrollGating() {
 }
 
 void RecyclingGrid::rebuildGrid() {
-    m_contentBox->clearViews();
     m_cells.clear();
     m_renderedCount = 0;
-
-    if (m_items.empty()) return;
+    m_cachedFirstVisible = -1;
+    m_cachedLastVisible = -1;
 
     auto t0 = std::chrono::steady_clock::now();
 
-    // Build one row at a time into a DETACHED box, add every cell to it, then
-    // attach the finished row to m_contentBox once. Attaching cells to an
-    // already-attached row (the old path) invalidated yoga layout for the whole
-    // growing tree on every cell - O(cells) relayouts that froze the UI for
-    // large libraries. Batching to one invalidation per row (as Vita_Suwayomi
-    // does) keeps setDataSource fast even for hundreds of items.
-    const size_t total = m_items.size();
-    const size_t cols = (size_t)std::max(1, m_columns);
-    for (size_t start = 0; start < total; start += cols) {
-        auto* row = new brls::Box();
-        row->setAxis(brls::Axis::ROW);
-        row->setJustifyContent(brls::JustifyContent::FLEX_START);
-        row->setMarginBottom(10);
+    // Build the whole grid into a fresh, PARENTLESS content box, then swap it
+    // in with one setContentView() at the end.
+    //
+    // Why: in this borealis fork View::invalidate() walks up to the root and
+    // runs YGNodeCalculateLayout over the ENTIRE app tree, and Box::addView()
+    // calls invalidate(). So attaching each row to the already-attached content
+    // box re-laid-out the whole app 172 times - O(n^2) that froze the UI ~11s
+    // for a 1000-item library. A parentless box has no parent to propagate to,
+    // so each addView lays out only the small (and yoga-cached) grid subtree;
+    // the single real layout happens once when we attach it below.
+    auto* newContent = new brls::Box();
+    newContent->setAxis(brls::Axis::COLUMN);
+    newContent->setPadding(10);
 
-        size_t end = std::min(start + cols, total);
-        for (size_t i = start; i < end; i++) {
-            MediaItemCell* cell = createCell(i);
-            row->addView(cell);          // detached row: no tree-wide relayout
-            m_cells.push_back(cell);
+    if (!m_items.empty()) {
+        const size_t total = m_items.size();
+        const size_t cols = (size_t)std::max(1, m_columns);
+        for (size_t start = 0; start < total; start += cols) {
+            auto* row = new brls::Box();
+            row->setAxis(brls::Axis::ROW);
+            row->setJustifyContent(brls::JustifyContent::FLEX_START);
+            row->setMarginBottom(10);
+
+            size_t end = std::min(start + cols, total);
+            for (size_t i = start; i < end; i++) {
+                MediaItemCell* cell = createCell(i);
+                row->addView(cell);
+                m_cells.push_back(cell);
+            }
+            newContent->addView(row);   // parentless: local subtree layout only
         }
-
-        m_contentBox->addView(row);      // one layout invalidation per row
+        m_renderedCount = total;
     }
 
-    m_renderedCount = total;
+    // Move focus off the old content before setContentView() deletes it, so
+    // Application::currentFocus can't be left dangling (crash next frame).
+    brls::View* focus = brls::Application::getCurrentFocus();
+    for (brls::View* v = focus; v; v = v->hasParent() ? v->getParent() : nullptr) {
+        if (v == m_contentBox) {
+            this->setFocusable(true);
+            brls::Application::giveFocus(this);
+            this->setFocusable(false);
+            break;
+        }
+    }
+
+    // Attach the finished grid in one shot (deletes the previous content box
+    // and its cells) — the only layout pass that touches the app root.
+    this->setContentView(newContent);
+    m_contentBox = newContent;
 
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - t0).count();
-    brls::Logger::info("RecyclingGrid: built {} cells ({} rows) in {}ms",
-                       (int)total, (int)((total + cols - 1) / cols), (long)ms);
+    brls::Logger::info("RecyclingGrid: built {} cells in {}ms",
+                       (int)m_cells.size(), (long)ms);
 }
 
 void RecyclingGrid::onItemClicked(int index) {

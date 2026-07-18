@@ -92,8 +92,16 @@ void Application::run() {
 
     if (!restoreTarget.empty()) {
         brls::Logger::info("Restoring saved session...");
-        // Connect to Music Assistant server
-        if (MAClient::instance().connect(restoreTarget, m_authToken)) {
+        // This runs BEFORE brls::Application::mainLoop() below, so main-thread
+        // (brls::sync) message dispatch can't run yet - and connect() blocks
+        // this thread waiting for the auth handshake. Deliver the socket's
+        // messages on the receive thread for the duration of the handshake so
+        // server_info -> auth resolves instead of deadlocking for 15s. Restore
+        // normal main-thread dispatch once connected.
+        MAClient::instance().setDispatchOnMainThread(false);
+        bool connected = MAClient::instance().connect(restoreTarget, m_authToken);
+        MAClient::instance().setDispatchOnMainThread(true);
+        if (connected) {
             brls::Logger::info("Connected to server");
             connectSendspin();
             resolveOwnPlayerId();

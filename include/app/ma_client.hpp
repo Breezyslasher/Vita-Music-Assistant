@@ -101,6 +101,13 @@ public:
     void disconnect();
     bool isConnected() const;
 
+    // Choose where the direct WebSocket delivers text messages: the main thread
+    // (default, via brls::sync) or the receive thread. The cold-start restore
+    // connect blocks the main thread before the borealis main loop runs, so its
+    // auth handshake must be delivered on the receive thread or it deadlocks
+    // until the timeout. Callers flip this off around that blocking connect.
+    void setDispatchOnMainThread(bool enable) { m_ws.setDispatchOnMainThread(enable); }
+
     // True when connected (or connecting) via WebRTC remote access
     bool isRemoteMode() const { return m_remoteMode.load(); }
     // True if the string looks like a Remote ID rather than a URL
