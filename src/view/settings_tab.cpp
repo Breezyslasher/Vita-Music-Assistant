@@ -430,7 +430,7 @@ void SettingsTab::loadPlayerList() {
             std::vector<std::string> options;
             options.push_back("This Vita (Local)");
             int selectedIndex = 0;
-            const auto& currentId = App::instance().getSettings().selectedPlayerId;
+            const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
             for (size_t i = 0; i < m_players.size(); i++) {
                 std::string label = m_players[i].name;

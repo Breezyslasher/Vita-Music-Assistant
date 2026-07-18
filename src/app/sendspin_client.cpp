@@ -3,6 +3,7 @@
 #include "app/ma_client.hpp"
 #include "player/mpv_player.hpp"
 #include "player/native_audio_player.hpp"
+#include "app/application.hpp"
 #include "app.h"
 #include <borealis.hpp>
 #include <cstring>
@@ -292,8 +293,8 @@ void SendspinClient::onTextMessage(const std::string& message) {
             m_format.codec_header.size());
 
         // Decide the audio path for this stream up front.
-        bool localOn = App::instance().getSettings().localPlayback;
-        m_useNativeAudio = localOn && App::instance().getSettings().nativeAudio;
+        bool localOn = Application::getInstance().getSettings().localPlayback;
+        m_useNativeAudio = localOn && Application::getInstance().getSettings().nativeAudio;
 
         if (m_useNativeAudio) {
             // Native path: decode + output directly, no HTTP server / mpv.
@@ -403,7 +404,7 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
                 // Skip if local playback is disabled in settings.
                 if (!m_mpvStarted && m_audioServer.hasInitialData()) {
                     m_mpvStarted = true;
-                    if (App::instance().getSettings().localPlayback) {
+                    if (Application::getInstance().getSettings().localPlayback) {
                         startMpvPlayback();
                     } else {
                         brls::Logger::info("Sendspin: local playback disabled, not starting MPV");
