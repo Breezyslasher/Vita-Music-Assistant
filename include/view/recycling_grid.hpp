@@ -49,6 +49,15 @@ private:
     // tree, so callers can add it to a DETACHED row box and batch yoga layout
     // (one invalidation per row instead of per cell - the Vita_Suwayomi trick).
     MediaItemCell* createCell(size_t index);
+
+    // Build rows [from .. ] into `into`, up to maxRows rows, returning the next
+    // unbuilt item index. Accumulates per-phase timing into m_buildCreateUs /
+    // m_buildAttachUs so we can see whether cell construction or addView layout
+    // dominates.
+    size_t buildRows(brls::Box* into, size_t fromIndex, size_t maxRows);
+    // Called each frame while m_building: builds a time-bounded batch of rows so
+    // a large library fills in over a few frames instead of freezing the UI.
+    void buildStep();
     // Prioritise loading covers for cells in/near the viewport (no unloading).
     void loadCoversForScrollPosition();
     // Hide off-screen rows (Visibility::INVISIBLE) so ScrollingFrame::draw skips
@@ -70,6 +79,13 @@ private:
 
     bool m_hasMore = false;
     bool m_loading = false;  // Prevents duplicate fetch requests
+
+    // Incremental (frame-sliced) grid build state, so building a large library
+    // never blocks the UI thread in one shot.
+    bool m_building = false;       // rows still left to build across frames
+    size_t m_buildNextIdx = 0;     // next item index to build
+    long long m_buildCreateUs = 0; // total us spent in createCell across the build
+    long long m_buildAttachUs = 0; // total us spent in addView across the build
 
     // Flat list of every cell, in item order, for cover loading.
     std::vector<MediaItemCell*> m_cells;
