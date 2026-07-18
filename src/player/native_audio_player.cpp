@@ -91,6 +91,7 @@ void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
     m_endOfStream.store(false);
     m_decodeDone.store(false);
     m_paused.store(false);
+    m_playedFrames.store(0);
     m_running.store(true);
 
 #ifdef __vita__
@@ -373,6 +374,7 @@ void NativeAudioPlayer::outputLoop() {
             std::memset(outBuf.data() + got, 0, (grainSamples - got) * sizeof(int16_t));
         }
         sceAudioOutOutput(port, outBuf.data());
+        m_playedFrames.fetch_add(GRAIN);  // one grain = GRAIN stereo frames
         if (drained) break;
     }
 

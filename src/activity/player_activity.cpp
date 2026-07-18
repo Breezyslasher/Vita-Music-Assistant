@@ -133,8 +133,7 @@ void PlayerActivity::onContentAvailable() {
             // Skip if this is a programmatic update (not user interaction)
             if (m_updatingSlider) return;
             resetControlsIdleTimer();
-            // Seek to position
-            MpvPlayer& player = MpvPlayer::getInstance();
+
             double duration = 0.0;
             // For music queue mode, prefer queue metadata duration (full track length)
             // over MPV duration which may only reflect buffered/demuxed portion
@@ -143,6 +142,22 @@ void PlayerActivity::onContentAvailable() {
                 if (track && track->duration > 0)
                     duration = (double)track->duration;
             }
+
+            // Native audio: seek on the server (which restreams from the new
+            // position) and flush the buffered audio so playback jumps at once.
+            auto& native = NativeAudioPlayer::instance();
+            if (native.isPlaying()) {
+                double target = duration * progress;
+                std::string queueId = getActivePlayerId();
+                if (!queueId.empty())
+                    MAClient::instance().queueSeek(queueId, (int)target);
+                m_nativePosBase = target;
+                native.stop();  // discard buffered audio; new stream starts at target
+                return;
+            }
+
+            // Seek to position
+            MpvPlayer& player = MpvPlayer::getInstance();
             if (duration <= 0)
                 duration = player.getDuration();
             player.seekTo(duration * progress);
@@ -678,6 +693,9 @@ void PlayerActivity::loadFromQueue() {
     brls::Logger::info("Playing '{}' via player_queues/play_media (player={})",
                        trackTitle, playerId);
 
+    // New track starts at 0 - clear any prior native-audio seek base.
+    m_nativePosBase = 0.0;
+
     client.playMedia(playerId, trackUri, "play",
         [this, trackTitle, alive](bool success, const Json& result) {
         if (!alive->load()) return;
@@ -903,6 +921,47 @@ void PlayerActivity::updateProgress() {
         return;
     }
 
+    // Native audio owns local playback (no mpv): drive the seek bar from the
+    // decoder's played-sample count plus any seek base.
+    {
+        auto& native = NativeAudioPlayer::instance();
+        if (native.isPlaying()) {
+            double position = m_nativePosBase + native.positionSeconds();
+            double duration = 0.0;
+            const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
+            if (track && track->duration > 0) duration = (double)track->duration;
+
+            if (duration > 0) {
+                if (position > duration) position = duration;
+                if (progressSlider) {
+                    m_updatingSlider = true;
+                    progressSlider->setProgress((float)(position / duration));
+                    m_updatingSlider = false;
+                }
+                int posMin = (int)position / 60, posSec = (int)position % 60;
+                int remaining = std::max(0, (int)(duration - position));
+                char elapsedStr[16], remainStr[16];
+                snprintf(elapsedStr, sizeof(elapsedStr), "%d:%02d", posMin, posSec);
+                snprintf(remainStr, sizeof(remainStr), "-%d:%02d", remaining / 60, remaining % 60);
+                if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
+                if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
+            }
+
+            // Keep the play/pause icon in sync with the native output state.
+            bool actuallyPlaying = !native.isPaused();
+            if (actuallyPlaying != m_isPlaying) {
+                m_isPlaying = actuallyPlaying;
+                updatePlayPauseLabel();
+            }
+
+            int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
+            if (autoHide > 0 && m_controlsVisible) {
+                if (++m_controlsIdleSeconds >= autoHide) hideControls();
+            }
+            return;
+        }
+    }
+
     // Deferred MPV initialization (Phase 1 of 2):
     // Create MPV and its GXM render context, but do NOT call loadUrl yet.
     // loadUrl spawns decoder threads that use the shared GXM context via
@@ -1110,6 +1169,22 @@ void PlayerActivity::updatePlayPauseLabel() {
 }
 
 void PlayerActivity::seek(int seconds) {
+    // Native audio: relative seek by restreaming from the new position.
+    auto& native = NativeAudioPlayer::instance();
+    if (native.isPlaying()) {
+        double target = m_nativePosBase + native.positionSeconds() + seconds;
+        if (target < 0) target = 0;
+        const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
+        if (track && track->duration > 0 && target > (double)track->duration)
+            target = (double)track->duration;
+        std::string queueId = getActivePlayerId();
+        if (!queueId.empty())
+            MAClient::instance().queueSeek(queueId, (int)target);
+        m_nativePosBase = target;
+        native.stop();  // discard buffered audio; new stream starts at target
+        return;
+    }
+
     MpvPlayer& player = MpvPlayer::getInstance();
     player.seekRelative(seconds);
 }

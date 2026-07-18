@@ -262,6 +262,11 @@ private:
     int m_remoteDuration = 0;             // Duration seconds of current track
     int m_remotePollCounter = 0;          // Counter for throttling remote polls
 
+    // Base position (seconds) for native-audio playback: the decoder's played
+    // frames count from 0 each stream, so a seek stores its target here and the
+    // displayed position is base + NativeAudioPlayer::positionSeconds().
+    double m_nativePosBase = 0.0;
+
     // Returns the player/queue ID for the currently selected player.
     // If a remote player is selected, returns its ID; otherwise returns the local Vita player ID.
     std::string getActivePlayerId() const;

@@ -49,6 +49,13 @@ public:
     bool isPlaying() const { return m_running.load(); }
     bool isPaused() const { return m_paused.load(); }
 
+    // Seconds of audio actually sent to the output since the current stream
+    // started (frozen while paused). Used to drive the player's seek bar.
+    double positionSeconds() const {
+        int sr = m_sampleRate > 0 ? m_sampleRate : 44100;
+        return (double)m_playedFrames.load() / (double)sr;
+    }
+
     // Forwarders for dr_flac's C callbacks (they only get a void* user
     // pointer). Public so the free functions in the .cpp can reach the ring.
     // Seek/tell operate on absolute stream positions so dr_flac can reposition
@@ -94,6 +101,7 @@ private:
     std::atomic<bool> m_paused{false};        // output stalled but stream intact
     std::atomic<bool> m_endOfStream{false};   // no more encoded data will arrive
     std::atomic<bool> m_decodeDone{false};    // decoder finished producing PCM
+    std::atomic<uint64_t> m_playedFrames{0};  // frames sent to sceAudioOut this stream
 
     // Encoded byte queue (network -> decoder)
     std::mutex m_mutex;
