@@ -45,6 +45,10 @@ private:
     void rebuildGrid();
     void onItemClicked(int index);
     void addCellForItem(brls::Box*& currentRow, int& itemsInRow, size_t index);
+    // Create a fully-wired cell for m_items[index] without attaching it to the
+    // tree, so callers can add it to a DETACHED row box and batch yoga layout
+    // (one invalidation per row instead of per cell - the Vita_Suwayomi trick).
+    MediaItemCell* createCell(size_t index);
     // Prioritise loading covers for cells in/near the viewport (no unloading).
     void loadCoversForScrollPosition();
     // Hide off-screen rows (Visibility::INVISIBLE) so ScrollingFrame::draw skips
