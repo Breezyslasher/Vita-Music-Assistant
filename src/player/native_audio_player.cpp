@@ -47,7 +47,8 @@ NativeAudioPlayer::~NativeAudioPlayer() {
 void NativeAudioPlayer::startStream(const std::string& codec, int sampleRate,
                                     int channels, int bitDepth,
                                     const std::vector<uint8_t>& codecHeader) {
-    stop();  // tear down any previous stream
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
+    stopLocked();  // tear down any previous stream
 
     m_codec = codec;
     m_sampleRate = sampleRate > 0 ? sampleRate : 44100;
@@ -128,6 +129,7 @@ void NativeAudioPlayer::pushAudio(const uint8_t* data, size_t len) {
 void NativeAudioPlayer::endStream() {
     // Let the decoder drain what's buffered, then the output thread finishes
     // playing the PCM ring and both threads exit.
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
     m_endOfStream.store(true);
     m_cv.notify_all();
     m_pcmCv.notify_all();
@@ -137,6 +139,11 @@ void NativeAudioPlayer::endStream() {
 }
 
 void NativeAudioPlayer::stop() {
+    std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
+    stopLocked();
+}
+
+void NativeAudioPlayer::stopLocked() {
     m_running.store(false);
     m_endOfStream.store(true);
     m_cv.notify_all();

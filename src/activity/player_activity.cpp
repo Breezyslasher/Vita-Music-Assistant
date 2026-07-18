@@ -8,6 +8,7 @@
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
 #include "player/mpv_player.hpp"
+#include "player/native_audio_player.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
 #include <algorithm>
@@ -1114,8 +1115,11 @@ void PlayerActivity::playNext() {
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playNext()) {
-        // Stop current playback
+        // Stop current playback. Flush native audio immediately so a skip
+        // doesn't play out the seconds of Sendspin audio already buffered
+        // ahead (that drain is what made skips take ~15s to change track).
         MpvPlayer::getInstance().stop();
+        NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
 
         // Load next track
@@ -1150,8 +1154,10 @@ void PlayerActivity::playPrevious() {
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playPrevious()) {
-        // Stop current playback
+        // Stop current playback and flush buffered native audio so the skip
+        // is immediate rather than draining the pre-buffered stream.
         player.stop();
+        NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
 
         // Load previous track

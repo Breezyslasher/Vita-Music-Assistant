@@ -64,6 +64,15 @@ private:
     void decodeLoop();
     void outputLoop();
 
+    // Immediate teardown assuming m_ctrlMutex is already held. Public stop()/
+    // startStream()/endStream() take the mutex so a UI-thread flush can never
+    // race the Sendspin thread's stream transitions on the same std::threads.
+    void stopLocked();
+
+    // Serializes startStream/endStream/stop across the Sendspin receive thread
+    // and any caller (e.g. a UI-thread flush on skip).
+    std::mutex m_ctrlMutex;
+
     // Blocking read from the encoded ring; returns bytes copied, or 0 at
     // end-of-stream / stop. Used as dr_flac's read callback and for raw PCM.
     size_t readEncoded(void* out, size_t bytes);
