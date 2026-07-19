@@ -454,6 +454,12 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     FILE resources/icons/book-arrow-down.png resources/icons/book-arrow-down.png
     FILE resources/icons/book-multiple.png resources/icons/book-multiple.png
     FILE resources/icons/book-open-page-variant.png resources/icons/book-open-page-variant.png
+    FILE resources/icons/cellphone.png resources/icons/cellphone.png
+    FILE resources/icons/sony-playstation.png resources/icons/sony-playstation.png
+    FILE resources/icons/speaker.png resources/icons/speaker.png
+    FILE resources/icons/television.png resources/icons/television.png
+    FILE resources/icons/cast.png resources/icons/cast.png
+    FILE resources/icons/plus.png resources/icons/plus.png
     FILE resources/icons/checkbox.png resources/icons/checkbox.png
     FILE resources/icons/checkbox_checked.png resources/icons/checkbox_checked.png
     FILE resources/icons/checkbox_crossed.png resources/icons/checkbox_crossed.png

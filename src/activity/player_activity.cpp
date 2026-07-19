@@ -2791,7 +2791,19 @@ public:
     bool isTranslucent() override { return true; }
 };
 
-enum class OutIcon { VITA, SPEAKER, TV, PLUS, EQ };
+enum class OutIcon { VITA, SPEAKER, TV, CAST, PLUS, EQ };
+
+// MDI icon resource for a device glyph (EQ is drawn, not an image).
+inline const char* outIconRes(OutIcon i) {
+    switch (i) {
+        case OutIcon::VITA:    return "icons/sony-playstation.png";
+        case OutIcon::SPEAKER: return "icons/speaker.png";
+        case OutIcon::TV:      return "icons/television.png";
+        case OutIcon::CAST:    return "icons/cast.png";
+        case OutIcon::PLUS:    return "icons/plus.png";
+        default:               return "icons/speaker.png";
+    }
+}
 
 // A Box that draws a line glyph (device icon / plus / equaliser bars) centered
 // in its bounds, on top of its normal background. Icons are line art on a
@@ -2915,17 +2927,18 @@ void PlayerActivity::showPlayerSwitcher() {
             // screen dims behind it; the panel sits above the "This Vita" pill.
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
-            // Colors (spec tokens).
-            const NVGcolor kScrim   = nvgRGBA(6, 8, 11, 115);      // rgba(6,8,11,.45)
-            const NVGcolor kPanel   = nvgRGB(21, 27, 35);          // #151b23
-            const NVGcolor kBorder  = nvgRGB(43, 51, 63);          // #2b333f
-            const NVGcolor kDim     = nvgRGB(107, 116, 132);       // #6b7684
-            const NVGcolor kText    = nvgRGB(238, 242, 246);       // #eef2f6
-            const NVGcolor kCyan    = nvgRGB(0, 188, 238);         // #00bcee
-            const NVGcolor kActiveBg = nvgRGBA(0, 188, 238, 26);   // rgba(0,188,238,.1)
-            const NVGcolor kTileActive = nvgRGBA(0, 188, 238, 41); // rgba(0,188,238,.16)
-            const NVGcolor kTileIdle = nvgRGB(27, 33, 43);         // #1b212b
-            const NVGcolor kLine    = nvgRGB(36, 45, 56);          // #242d38
+            // Colors — match the context-menu palette (popcol): grey panel with
+            // a gold accent, rather than the spec's dark/cyan scheme.
+            const NVGcolor kScrim   = nvgRGBA(10, 9, 14, 128);     // popcol::scrim
+            const NVGcolor kPanel   = nvgRGB(50, 50, 50);          // popcol::panel
+            const NVGcolor kBorder  = nvgRGB(67, 67, 74);          // popcol::line
+            const NVGcolor kDim     = nvgRGB(0x80, 0x7E, 0x8C);    // popcol::dim
+            const NVGcolor kText    = nvgRGB(255, 255, 255);       // popcol::text
+            const NVGcolor kAccent  = nvgRGB(0, 188, 238);         // MA blue #00bcee
+            const NVGcolor kActiveBg = nvgRGBA(0, 188, 238, 28);   // blue ~11%
+            const NVGcolor kTileActive = nvgRGBA(0, 188, 238, 45); // blue ~18%
+            const NVGcolor kTileIdle = nvgRGB(64, 64, 68);         // slightly lighter than panel
+            const NVGcolor kLine    = nvgRGB(67, 67, 74);          // popcol::line
 
             // Full-screen scrim; panel anchored bottom-center above the pill.
             auto* scrim = new brls::Box();
@@ -2960,7 +2973,6 @@ void PlayerActivity::showPlayerSwitcher() {
 
             brls::Box* defaultFocus = nullptr;
             brls::Box* firstRow = nullptr;
-            const NVGcolor kGlyphIdle = nvgRGB(169, 180, 192);  // #a9b4c0
 
             // Row factory: [icon tile][title / subtitle][eq?]. `active` tints the
             // row cyan and shows the equaliser; `cyan` just colors title+glyph
@@ -2980,12 +2992,20 @@ void PlayerActivity::showPlayerSwitcher() {
                 row->setFocusable(true);
                 if (active) row->setBackgroundColor(kActiveBg);
 
-                auto* tile = new GlyphBox(icon, hot ? kCyan : kGlyphIdle);
+                auto* tile = new brls::Box();
                 tile->setWidth(34.0f);
                 tile->setHeight(34.0f);
                 tile->setCornerRadius(9.0f);
                 tile->setMarginRight(12.0f);
+                tile->setJustifyContent(brls::JustifyContent::CENTER);
+                tile->setAlignItems(brls::AlignItems::CENTER);
                 tile->setBackgroundColor(active ? kTileActive : kTileIdle);
+                auto* icoImg = new brls::Image();
+                icoImg->setImageFromRes(outIconRes(icon));
+                icoImg->setWidth(20.0f);
+                icoImg->setHeight(20.0f);
+                icoImg->setScalingType(brls::ImageScalingType::FIT);
+                tile->addView(icoImg);
                 row->addView(tile);
 
                 auto* col = new brls::Box();
@@ -2995,21 +3015,21 @@ void PlayerActivity::showPlayerSwitcher() {
                 auto* t = new brls::Label();
                 t->setText(title);
                 t->setFontSize(14.0f);
-                t->setTextColor(hot ? kCyan : kText);
+                t->setTextColor(hot ? kAccent : kText);
                 t->setSingleLine(true);
                 col->addView(t);
                 if (!subtitle.empty()) {
                     auto* s = new brls::Label();
                     s->setText(subtitle);
                     s->setFontSize(11.0f);
-                    s->setTextColor(active ? kCyan : kDim);
+                    s->setTextColor(active ? kAccent : kDim);
                     s->setSingleLine(true);
                     col->addView(s);
                 }
                 row->addView(col);
 
                 if (active) {
-                    auto* eq = new GlyphBox(OutIcon::EQ, kCyan);
+                    auto* eq = new GlyphBox(OutIcon::EQ, kAccent);
                     eq->setWidth(22.0f);
                     eq->setHeight(34.0f);
                     eq->setMarginLeft(8.0f);
@@ -3031,8 +3051,10 @@ void PlayerActivity::showPlayerSwitcher() {
             auto iconFor = [](const std::string& type) -> OutIcon {
                 std::string t = type;
                 for (auto& c : t) c = (char)tolower((unsigned char)c);
-                if (t.find("cast") != std::string::npos || t.find("tv") != std::string::npos ||
-                    t.find("kodi") != std::string::npos || t.find("dlna") != std::string::npos)
+                if (t.find("cast") != std::string::npos || t.find("chromecast") != std::string::npos)
+                    return OutIcon::CAST;
+                if (t.find("tv") != std::string::npos || t.find("kodi") != std::string::npos ||
+                    t.find("dlna") != std::string::npos || t.find("airplay") != std::string::npos)
                     return OutIcon::TV;
                 return OutIcon::SPEAKER;
             };
