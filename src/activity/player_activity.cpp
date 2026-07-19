@@ -524,11 +524,12 @@ void PlayerActivity::loadFromQueue() {
         // Hide queue info since there's no queue
         if (queueLabel) queueLabel->setVisibility(brls::Visibility::GONE);
 
-        // Check if a remote player is selected — load its state
-        const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
-        if (!selectedId.empty()) {
-            loadRemotePlayerState();
-        }
+        // The local queue is empty, but the server may still have an active
+        // session for the active player — either a selected remote player, or
+        // our own Vita player after a cold restart (the server auto-resumes and
+        // streams to us over Sendspin). Pull the current track from the server
+        // so the UI shows what's actually playing instead of "No track playing".
+        loadRemotePlayerState();
         return;
     }
 
@@ -781,6 +782,9 @@ void PlayerActivity::updateProgress() {
             double duration = 0.0;
             const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
             if (track && track->duration > 0) duration = (double)track->duration;
+            // Cold-restart resume: no local queue entry, so fall back to the
+            // duration the server reported for the current track.
+            else if (m_remoteDuration > 0) duration = (double)m_remoteDuration;
 
             if (duration > 0) {
                 if (position > duration) position = duration;
@@ -2186,7 +2190,10 @@ bool PlayerActivity::isRemotePlayer() const {
 }
 
 void PlayerActivity::loadRemotePlayerState() {
-    const auto& playerId = Application::getInstance().getSettings().selectedPlayerId;
+    // Use the active player: a selected remote player, or - after a cold
+    // restart while the Vita was already playing - our own resolved player_id.
+    // Either way the server holds the authoritative current-track state.
+    std::string playerId = getActivePlayerId();
     if (playerId.empty()) return;
 
     auto& client = MAClient::instance();
@@ -2253,6 +2260,18 @@ void PlayerActivity::loadRemotePlayerState() {
             m_remoteElapsed = elapsed;
             m_remoteDuration = duration;
             m_remoteCurrentUri = currentUri;
+
+            // For our own player, native audio drives local playback while the
+            // server holds the authoritative elapsed time. Seed the native
+            // position base with (server elapsed - already-decoded seconds) so
+            // updateProgress()'s seek bar reflects the true track position.
+            if (!isRemotePlayer()) {
+                auto& native = NativeAudioPlayer::instance();
+                if (native.isPlaying()) {
+                    m_nativePosBase = (double)elapsed - native.positionSeconds();
+                    if (m_nativePosBase < 0.0) m_nativePosBase = 0.0;
+                }
+            }
 
             // Update play/pause button state
             bool isPlaying = (state == "playing");
