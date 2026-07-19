@@ -12,6 +12,7 @@
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 #include <sys/stat.h>
@@ -2789,6 +2790,93 @@ public:
     explicit OutputPopoverActivity(brls::Box* content) : brls::Activity(content) {}
     bool isTranslucent() override { return true; }
 };
+
+enum class OutIcon { VITA, SPEAKER, TV, PLUS, EQ };
+
+// A Box that draws a line glyph (device icon / plus / equaliser bars) centered
+// in its bounds, on top of its normal background. Icons are line art on a
+// 24-unit box, per the spec.
+class GlyphBox : public brls::Box {
+public:
+    GlyphBox(OutIcon icon, NVGcolor color) : m_icon(icon), m_color(color) {}
+    void draw(NVGcontext* vg, float x, float y, float w, float h,
+              brls::Style style, brls::FrameContext* ctx) override {
+        brls::Box::draw(vg, x, y, w, h, style, ctx);
+        const float u  = (std::min(w, h) * 0.62f) / 24.0f;   // glyph ~62% of tile
+        const float ox = x + (w - 24.0f * u) * 0.5f;
+        const float oy = y + (h - 24.0f * u) * 0.5f;
+        auto X = [&](float v) { return ox + v * u; };
+        auto Y = [&](float v) { return oy + v * u; };
+        nvgSave(vg);
+        nvgStrokeColor(vg, m_color);
+        nvgFillColor(vg, m_color);
+        nvgStrokeWidth(vg, 1.7f * u);
+        nvgLineCap(vg, NVG_ROUND);
+        nvgLineJoin(vg, NVG_ROUND);
+        switch (m_icon) {
+            case OutIcon::VITA:
+                nvgBeginPath(vg); nvgRoundedRect(vg, X(6), Y(2), 12*u, 20*u, 3*u); nvgStroke(vg);
+                nvgBeginPath(vg); nvgCircle(vg, X(12), Y(14), 4*u); nvgStroke(vg);
+                break;
+            case OutIcon::SPEAKER:
+                nvgBeginPath(vg); nvgRoundedRect(vg, X(5), Y(2), 14*u, 20*u, 3*u); nvgStroke(vg);
+                nvgBeginPath(vg); nvgCircle(vg, X(12), Y(9),  2*u); nvgStroke(vg);
+                nvgBeginPath(vg); nvgCircle(vg, X(12), Y(16), 3*u); nvgStroke(vg);
+                break;
+            case OutIcon::TV:
+                nvgBeginPath(vg); nvgRoundedRect(vg, X(3), Y(4), 18*u, 13*u, 2*u); nvgStroke(vg);
+                nvgBeginPath(vg); nvgMoveTo(vg, X(8),  Y(21)); nvgLineTo(vg, X(16), Y(21)); nvgStroke(vg);
+                nvgBeginPath(vg); nvgMoveTo(vg, X(12), Y(17)); nvgLineTo(vg, X(12), Y(21)); nvgStroke(vg);
+                break;
+            case OutIcon::PLUS:
+                nvgStrokeWidth(vg, 2.0f * u);
+                nvgBeginPath(vg); nvgMoveTo(vg, X(12), Y(5)); nvgLineTo(vg, X(12), Y(19)); nvgStroke(vg);
+                nvgBeginPath(vg); nvgMoveTo(vg, X(5), Y(12)); nvgLineTo(vg, X(19), Y(12)); nvgStroke(vg);
+                break;
+            case OutIcon::EQ: {
+                const float bw = 3.0f * u, gap = 3.0f * u, baseY = Y(20), startX = X(6);
+                const float hs[3] = { 8.0f, 14.0f, 6.0f };
+                for (int i = 0; i < 3; i++) {
+                    float bh = hs[i] * u;
+                    nvgBeginPath(vg);
+                    nvgRoundedRect(vg, startX + i * (bw + gap), baseY - bh, bw, bh, 1.0f * u);
+                    nvgFill(vg);
+                }
+                break;
+            }
+        }
+        nvgRestore(vg);
+    }
+private:
+    OutIcon  m_icon;
+    NVGcolor m_color;
+};
+
+// Downward caret (panel-colored triangle) pointing at the anchor pill.
+class CaretBox : public brls::Box {
+public:
+    CaretBox(NVGcolor fill, NVGcolor border) : m_fill(fill), m_border(border) {}
+    void draw(NVGcontext* vg, float x, float y, float w, float h,
+              brls::Style style, brls::FrameContext* ctx) override {
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x, y);
+        nvgLineTo(vg, x + w, y);
+        nvgLineTo(vg, x + w * 0.5f, y + h);
+        nvgClosePath(vg);
+        nvgFillColor(vg, m_fill);
+        nvgFill(vg);
+        // Stroke only the two slanted edges (the top meets the panel).
+        nvgBeginPath(vg);
+        nvgMoveTo(vg, x, y);
+        nvgLineTo(vg, x + w * 0.5f, y + h);
+        nvgLineTo(vg, x + w, y);
+        nvgStrokeColor(vg, m_border);
+        nvgStrokeWidth(vg, 1.0f);
+        nvgStroke(vg);
+    }
+private:
+    NVGcolor m_fill, m_border;
+};
 }  // namespace
 
 void PlayerActivity::showPlayerSwitcher() {
@@ -2861,7 +2949,6 @@ void PlayerActivity::showPlayerSwitcher() {
             panel->setCornerRadius(16.0f);
             panel->setPadding(9.0f, 9.0f, 9.0f, 9.0f);
             panel->setShadowType(brls::ShadowType::GENERIC);
-            panel->setMarginBottom(80.0f);  // clear the 22px-from-bottom pill
 
             auto* header = new brls::Label();
             header->setText("OUTPUT DEVICE");
@@ -2873,10 +2960,16 @@ void PlayerActivity::showPlayerSwitcher() {
 
             brls::Box* defaultFocus = nullptr;
             brls::Box* firstRow = nullptr;
+            const NVGcolor kGlyphIdle = nvgRGB(169, 180, 192);  // #a9b4c0
 
-            // Row factory: [icon tile][title / subtitle], active row tinted cyan.
-            auto addRow = [&](const std::string& title, const std::string& subtitle,
-                              bool active, std::function<void()> onSelect) -> brls::Box* {
+            // Row factory: [icon tile][title / subtitle][eq?]. `active` tints the
+            // row cyan and shows the equaliser; `cyan` just colors title+glyph
+            // (the Group row). Rows go into `parent` so device rows can live in a
+            // scroll frame while the group row stays fixed.
+            auto addRow = [&](brls::Box* parent, OutIcon icon, const std::string& title,
+                              const std::string& subtitle, bool active, bool cyan,
+                              std::function<void()> onSelect) -> brls::Box* {
+                bool hot = active || cyan;
                 auto* row = new brls::Box();
                 row->setAxis(brls::Axis::ROW);
                 row->setAlignItems(brls::AlignItems::CENTER);
@@ -2887,7 +2980,7 @@ void PlayerActivity::showPlayerSwitcher() {
                 row->setFocusable(true);
                 if (active) row->setBackgroundColor(kActiveBg);
 
-                auto* tile = new brls::Box();
+                auto* tile = new GlyphBox(icon, hot ? kCyan : kGlyphIdle);
                 tile->setWidth(34.0f);
                 tile->setHeight(34.0f);
                 tile->setCornerRadius(9.0f);
@@ -2902,7 +2995,7 @@ void PlayerActivity::showPlayerSwitcher() {
                 auto* t = new brls::Label();
                 t->setText(title);
                 t->setFontSize(14.0f);
-                t->setTextColor(active ? kCyan : kText);
+                t->setTextColor(hot ? kCyan : kText);
                 t->setSingleLine(true);
                 col->addView(t);
                 if (!subtitle.empty()) {
@@ -2915,6 +3008,14 @@ void PlayerActivity::showPlayerSwitcher() {
                 }
                 row->addView(col);
 
+                if (active) {
+                    auto* eq = new GlyphBox(OutIcon::EQ, kCyan);
+                    eq->setWidth(22.0f);
+                    eq->setHeight(34.0f);
+                    eq->setMarginLeft(8.0f);
+                    row->addView(eq);
+                }
+
                 auto sel = std::move(onSelect);
                 row->registerClickAction([sel](brls::View*) {
                     brls::Application::popActivity(brls::TransitionAnimation::FADE,
@@ -2922,16 +3023,33 @@ void PlayerActivity::showPlayerSwitcher() {
                     return true;
                 });
                 row->addGestureRecognizer(new brls::TapGestureRecognizer(row));
-                panel->addView(row);
+                parent->addView(row);
                 if (!firstRow) firstRow = row;
                 return row;
             };
 
+            auto iconFor = [](const std::string& type) -> OutIcon {
+                std::string t = type;
+                for (auto& c : t) c = (char)tolower((unsigned char)c);
+                if (t.find("cast") != std::string::npos || t.find("tv") != std::string::npos ||
+                    t.find("kodi") != std::string::npos || t.find("dlna") != std::string::npos)
+                    return OutIcon::TV;
+                return OutIcon::SPEAKER;
+            };
+
+            // Device rows live in a scroll frame capped to a few rows; the rest
+            // scroll. Header + group row stay fixed.
+            auto* rowsBox = new brls::Box();
+            rowsBox->setAxis(brls::Axis::COLUMN);
+
+            int deviceRowCount = 1;  // This Vita
+
             // This Vita (local). Active when no remote player is selected.
             {
                 bool active = currentId.empty();
-                auto* r = addRow("This Vita", active ? "Playing now" : "Local playback",
-                                 active, [this]() {
+                auto* r = addRow(rowsBox, OutIcon::VITA, "This Vita",
+                                 active ? "Playing now" : "Local playback", active, false,
+                                 [this]() {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId.clear();
                     Application::getInstance().saveSettings();
@@ -2949,9 +3067,10 @@ void PlayerActivity::showPlayerSwitcher() {
                 bool active = (p.playerId == currentId);
                 std::string sub = !p.available ? "Offline"
                                  : active ? "Playing now"
-                                 : (p.type.empty() ? "Speaker" : p.type);
+                                 : (p.type.empty() ? "player" : p.type);
                 std::string pid = p.playerId, pname = p.name;
-                auto* r = addRow(p.name, sub, active, [this, pid, pname]() {
+                auto* r = addRow(rowsBox, iconFor(p.type), p.name, sub, active, false,
+                                 [this, pid, pname]() {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;
                     Application::getInstance().saveSettings();
@@ -2960,7 +3079,17 @@ void PlayerActivity::showPlayerSwitcher() {
                     brls::Application::notify("Switched to " + pname);
                 });
                 if (active) defaultFocus = r;
+                deviceRowCount++;
             }
+
+            // Show at most ~4 device rows; scroll for the rest.
+            const float kRowPitch = 54.0f;
+            int visibleRows = std::min(deviceRowCount, 4);
+            auto* scroll = new brls::ScrollingFrame();
+            scroll->setContentView(rowsBox);
+            scroll->setAlignSelf(brls::AlignSelf::STRETCH);
+            scroll->setHeight(visibleRows * kRowPitch);
+            panel->addView(scroll);
 
             // Divider.
             auto* divider = new brls::Box();
@@ -2971,11 +3100,18 @@ void PlayerActivity::showPlayerSwitcher() {
             panel->addView(divider);
 
             // Group speakers (cyan). Multiroom grouping isn't built yet.
-            addRow("Group speakers\xE2\x80\xA6", "", false, []() {
+            addRow(panel, OutIcon::PLUS, "Group speakers\xE2\x80\xA6", "", false, true, []() {
                 brls::Application::notify("Speaker grouping coming soon");
             });
 
+            // Downward caret pointing at the pill.
+            auto* caret = new CaretBox(kPanel, kBorder);
+            caret->setWidth(18.0f);
+            caret->setHeight(9.0f);
+            caret->setMarginBottom(68.0f);  // lift the popover above the pill
+
             scrim->addView(panel);
+            scrim->addView(caret);
             brls::Application::pushActivity(new OutputPopoverActivity(scrim));
             if (!defaultFocus) defaultFocus = firstRow;
             if (defaultFocus) brls::Application::giveFocus(defaultFocus);
