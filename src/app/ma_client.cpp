@@ -109,7 +109,7 @@ Json Json::parseObject(const std::string& str, size_t& pos) {
         if (pos < str.size() && str[pos] == ':') pos++;
         skipWhitespace(str, pos);
 
-        obj.m_objMap[key] = parseValue(str, pos);
+        obj.m_objMap.emplace_back(std::move(key), parseValue(str, pos));
         skipWhitespace(str, pos);
         if (pos < str.size() && str[pos] == ',') pos++;
     }
@@ -225,18 +225,23 @@ std::string Json::dump() const {
 
 Json& Json::operator[](const std::string& key) {
     m_type = OBJECT;
-    return m_objMap[key];
+    for (auto& kv : m_objMap)
+        if (kv.first == key) return kv.second;
+    m_objMap.emplace_back(key, Json(NULL_TYPE));
+    return m_objMap.back().second;
 }
 
 const Json& Json::operator[](const std::string& key) const {
     static Json nullJson(NULL_TYPE);
-    auto it = m_objMap.find(key);
-    if (it != m_objMap.end()) return it->second;
+    for (const auto& kv : m_objMap)
+        if (kv.first == key) return kv.second;
     return nullJson;
 }
 
 bool Json::has(const std::string& key) const {
-    return m_objMap.find(key) != m_objMap.end();
+    for (const auto& kv : m_objMap)
+        if (kv.first == key) return true;
+    return false;
 }
 
 Json& Json::operator[](size_t index) {

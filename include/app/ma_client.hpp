@@ -3,6 +3,8 @@
 #include "app.h"
 #include "app/websocket_client.hpp"
 #include <string>
+#include <vector>
+#include <utility>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -65,7 +67,13 @@ private:
     std::string m_strVal;
     double m_numVal = 0;
     bool m_boolVal = false;
-    std::map<std::string, Json> m_objMap;
+    // Object members kept in insertion order as a flat vector rather than a
+    // std::map: parsing a large response allocated a red-black-tree node and
+    // copied a key string for every one of ~40k object fields, which dominated
+    // the ~9s parse of the 2.6 MB library response on Vita. Appending to a
+    // vector avoids the per-field tree allocation/rebalancing; lookups are
+    // linear but objects have only a handful of keys.
+    std::vector<std::pair<std::string, Json>> m_objMap;
     std::vector<Json> m_arrVec;
 
     static Json parseValue(const std::string& str, size_t& pos);
