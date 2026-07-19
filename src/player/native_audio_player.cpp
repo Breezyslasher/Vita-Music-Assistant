@@ -133,6 +133,11 @@ void NativeAudioPlayer::endStream() {
     // playing the PCM ring and both threads exit.
     std::lock_guard<std::mutex> ctrl(m_ctrlMutex);
     m_endOfStream.store(true);
+    // If the output thread is parked in the pause-wait, it only wakes on
+    // !m_paused || !m_running - neither of which endStream() changes. Clear the
+    // pause here so it can drain the ring and exit; otherwise the join() below
+    // blocks forever (and, holding m_ctrlMutex, deadlocks the whole player).
+    m_paused.store(false);
     m_cv.notify_all();
     m_pcmCv.notify_all();
     if (m_decodeThread.joinable()) m_decodeThread.join();

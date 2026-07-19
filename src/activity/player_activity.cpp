@@ -7,7 +7,6 @@
 #include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
 #include "app/music_queue.hpp"
-#include "player/mpv_player.hpp"
 #include "player/native_audio_player.hpp"
 #include "utils/image_loader.hpp"
 #include "utils/http_client.hpp"
@@ -32,15 +31,6 @@ PlayerActivity::PlayerActivity(const std::string& mediaKey)
     brls::Logger::debug("PlayerActivity created for media: {}", mediaKey);
 }
 
-
-PlayerActivity* PlayerActivity::createForStream(const std::string& streamUrl, const std::string& title) {
-    PlayerActivity* activity = new PlayerActivity("");
-    activity->m_isDirectFile = true;  // Use direct file path for stream URLs too
-    activity->m_directFilePath = streamUrl;
-    activity->m_streamTitle = title;
-    brls::Logger::info("PlayerActivity created for stream: {} ({})", title, streamUrl);
-    return activity;
-}
 
 PlayerActivity* PlayerActivity::createWithQueue(const std::vector<MusicItem>& tracks, int startIndex) {
     PlayerActivity* activity = new PlayerActivity("");
@@ -115,7 +105,7 @@ void PlayerActivity::onContentAvailable() {
         MusicQueue& existingQueue = MusicQueue::getInstance();
         if (!existingQueue.isEmpty()) {
             brls::Logger::info("PlayerActivity: Stopping background music for new playback");
-            MpvPlayer::getInstance().stop();
+            NativeAudioPlayer::instance().stop();
             existingQueue.clear();
         }
     }
@@ -154,14 +144,7 @@ void PlayerActivity::onContentAvailable() {
                     MAClient::instance().queueSeek(queueId, (int)target);
                 m_nativePosBase = target;
                 native.stop();  // discard buffered audio; new stream starts at target
-                return;
             }
-
-            // Seek to position
-            MpvPlayer& player = MpvPlayer::getInstance();
-            if (duration <= 0)
-                duration = player.getDuration();
-            player.seekTo(duration * progress);
         });
     }
 
@@ -489,43 +472,13 @@ void PlayerActivity::willDisappear(bool resetState) {
     // Stop update timer first
     m_updateTimer.stop();
 
-    // Clear any pending deferred init (user backed out before timer fired)
-    m_pendingPlayUrl.clear();
-    m_pendingPlayTitle.clear();
-
-    // Stop playback and save progress
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    // Only try to save progress if player is in a valid state
-    if (player.isInitialized() && (player.isPlaying() || player.isPaused())) {
-        double position = player.getPosition();
-        double duration = 0.0;
-
-        // For music queue mode, prefer queue metadata duration (full track length)
-        // over MPV duration which may only reflect buffered/demuxed portion
-        if (m_isQueueMode) {
-            const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
-            if (track && track->duration > 0) {
-                duration = (double)track->duration;
-            }
-        }
-        if (duration <= 0)
-            duration = player.getDuration();
-
-        if (position > 0) {
-            brls::Logger::info("PlayerActivity: Stopped at position {:.1f}s", position);
-        }
-    }
-
     // Save queue state
     if (m_isQueueMode) {
         MusicQueue::getInstance().saveState();
     }
 
-    // Stop playback (safe to call even if not playing)
-    if (player.isInitialized()) {
-        player.stop();
-    }
+    // Stop native audio playback (safe to call even if not playing)
+    NativeAudioPlayer::instance().stop();
 
     m_isPlaying = false;
 }
@@ -582,13 +535,12 @@ void PlayerActivity::loadFromQueue() {
     brls::Logger::info("PlayerActivity: Loading track from queue: {} - {}",
                       track->artist, track->title);
 
-    // If resuming and MPV is already playing/paused, just update the UI
+    // If resuming and native audio is already playing, just update the UI
     // without restarting the track (user pressed circle to return to player)
-    MpvPlayer& resumePlayer = MpvPlayer::getInstance();
-    if (m_isResuming && resumePlayer.isInitialized() &&
-        (resumePlayer.isPlaying() || resumePlayer.isPaused())) {
+    NativeAudioPlayer& resumePlayer = NativeAudioPlayer::instance();
+    if (m_isResuming && resumePlayer.isPlaying()) {
         brls::Logger::info("PlayerActivity: Resuming existing playback, skipping reload");
-        m_isPlaying = resumePlayer.isPlaying();
+        m_isPlaying = !resumePlayer.isPaused();
         m_mediaKey = track->ratingKey;
         m_isResuming = false;
 
@@ -712,48 +664,13 @@ void PlayerActivity::loadFromQueue() {
         }
 
         brls::Logger::info("Track '{}' queued for playback via Sendspin", trackTitle);
-        // Audio will arrive via Sendspin binary frames and be played by MPV
-        // through the audio pipe. No need to call loadFromQueueWithUrl.
+        // Audio arrives via Sendspin binary frames and is decoded by
+        // NativeAudioPlayer.
         brls::sync([this, alive]() {
             if (!alive->load()) return;
             m_loadingMedia = false;
         });
     });
-}
-
-void PlayerActivity::loadFromQueueWithUrl(const std::string& url, const std::string& trackTitle) {
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    // Set audio-only mode BEFORE initializing
-    player.setAudioOnly(true);
-
-    // Only clear image cache on first MPV init to free memory for the player.
-    // On subsequent track changes MPV is already allocated, and clearing the
-    // cache forces covers/queue thumbnails to be re-downloaded from the server.
-    if (!player.isInitialized()) {
-        ImageLoader::clearCache();
-    }
-
-    // Stream audio directly via MPV (transcode API returns mp3 stream or local file)
-    if (!player.isInitialized()) {
-        // Defer MPV init + load to after activity transition completes
-        m_pendingPlayUrl = url;
-        m_pendingPlayTitle = trackTitle;
-        m_pendingIsAudio = true;
-        m_isPlaying = true;
-        m_loadingMedia = false;
-        return;
-    }
-
-    // Player already initialized (track change) - load immediately
-    if (!player.loadUrl(url, trackTitle)) {
-        brls::Logger::error("Failed to load URL: {}", url);
-        m_loadingMedia = false;
-        return;
-    }
-
-    m_isPlaying = true;
-    m_loadingMedia = false;
 }
 
 void PlayerActivity::loadMedia() {
@@ -763,73 +680,6 @@ void PlayerActivity::loadMedia() {
         return;
     }
     m_loadingMedia = true;
-
-    // Handle direct file playback (debug/testing)
-    if (m_isDirectFile) {
-        brls::Logger::info("PlayerActivity: Playing direct file: {}", m_directFilePath);
-
-        // Use stream title if set, otherwise extract filename from path
-        std::string displayTitle;
-        if (!m_streamTitle.empty()) {
-            displayTitle = m_streamTitle;
-        } else {
-            size_t lastSlash = m_directFilePath.find_last_of("/\\");
-            displayTitle = (lastSlash != std::string::npos)
-                ? m_directFilePath.substr(lastSlash + 1)
-                : m_directFilePath;
-        }
-
-        if (titleLabel) {
-            titleLabel->setText(displayTitle);
-        }
-
-        // Detect if this is an audio file
-        std::string lowerPath = m_directFilePath;
-        for (auto& c : lowerPath) c = tolower(c);
-        bool isAudioFile = (lowerPath.find(".mp3") != std::string::npos ||
-                           lowerPath.find(".m4a") != std::string::npos ||
-                           lowerPath.find(".aac") != std::string::npos ||
-                           lowerPath.find(".flac") != std::string::npos ||
-                           lowerPath.find(".ogg") != std::string::npos ||
-                           lowerPath.find(".wav") != std::string::npos ||
-                           lowerPath.find(".wma") != std::string::npos);
-
-        brls::Logger::info("PlayerActivity: File type detection - audio: {}", isAudioFile);
-
-        // Pause image loading and free cache to reclaim memory for MPV
-        ImageLoader::setPaused(true);
-        ImageLoader::cancelAll();
-        ImageLoader::clearCache();
-
-        MpvPlayer& player = MpvPlayer::getInstance();
-
-        // Set audio-only mode BEFORE initializing (to skip render context)
-        player.setAudioOnly(isAudioFile);
-
-        if (!player.isInitialized()) {
-            // Defer MPV init + load to after activity transition completes.
-            // initRenderContext() creates GXM resources and loadUrl() spawns
-            // decoder threads that use the shared GXM context - both conflict
-            // with NanoVG drawing during the borealis show phase.
-            m_pendingPlayUrl = m_directFilePath;
-            m_pendingPlayTitle = m_streamTitle.empty() ? "Test File" : m_streamTitle;
-            m_pendingIsAudio = isAudioFile;
-            m_loadingMedia = false;
-            return;
-        }
-
-        // Player already initialized - load immediately
-        std::string loadTitle = m_streamTitle.empty() ? "Test File" : m_streamTitle;
-        if (!player.loadUrl(m_directFilePath, loadTitle)) {
-            brls::Logger::error("Failed to load direct file: {}", m_directFilePath);
-            m_loadingMedia = false;
-            return;
-        }
-
-        m_isPlaying = true;
-        m_loadingMedia = false;
-        return;
-    }
 
     // Remote playback from server - fetch track details and play via queue
     m_mediaType = MediaType::TRACK;
@@ -963,148 +813,8 @@ void PlayerActivity::updateProgress() {
         }
     }
 
-    // Deferred MPV initialization (Phase 1 of 2):
-    // Create MPV and its GXM render context, but do NOT call loadUrl yet.
-    // loadUrl spawns decoder threads that use the shared GXM context via
-    // hwdec=vita-copy. If the decoder thread starts before NanoVG has drawn
-    // at least one clean frame after initRenderContext(), the concurrent GXM
-    // access crashes. So we schedule loadUrl via brls::sync for the NEXT frame.
-    if (!m_pendingPlayUrl.empty()) {
-        std::string url = m_pendingPlayUrl;
-        std::string title = m_pendingPlayTitle;
-        bool isAudio = m_pendingIsAudio;
-        m_pendingPlayUrl.clear();
-        m_pendingPlayTitle.clear();
-
-        brls::Logger::info("PlayerActivity: Performing deferred MPV init (phase 1: create context)...");
-
-        MpvPlayer& player = MpvPlayer::getInstance();
-        player.setAudioOnly(isAudio);
-
-        if (!player.isInitialized()) {
-            if (!player.init()) {
-                brls::Logger::error("PlayerActivity: Deferred MPV init failed");
-                return;
-            }
-        }
-
-        // Phase 2: schedule loadUrl for the NEXT main-loop iteration.
-        // brls::sync callbacks execute between frames, so NanoVG will draw one
-        // complete frame with the freshly-created GXM state before the decoder
-        // thread gets a chance to touch the shared GXM context.
-        auto alive = m_alive;
-        brls::sync([this, url, title, isAudio, alive]() {
-            if (!alive->load() || m_destroying) return;
-
-            brls::Logger::info("PlayerActivity: Deferred MPV load (phase 2: loadUrl)...");
-
-            MpvPlayer& player = MpvPlayer::getInstance();
-
-            if (player.loadUrl(url, title)) {
-                m_isPlaying = true;
-                updatePlayPauseLabel();
-                brls::Logger::info("PlayerActivity: Deferred load started successfully");
-            } else {
-                brls::Logger::error("PlayerActivity: Deferred loadUrl failed");
-            }
-        });
-        return;
-    }
-
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    if (!player.isInitialized()) {
-        return;
-    }
-
-    // Always process MPV events to handle state transitions
-    player.update();
-
-    // Skip UI updates while MPV is still loading - be gentle on Vita's limited hardware
-    if (player.isLoading()) {
-        return;
-    }
-
-    // Handle pending seek when playback becomes ready
-    if (m_pendingSeek > 0.0 && player.isPlaying()) {
-        player.seekTo(m_pendingSeek);
-        m_pendingSeek = 0.0;
-    }
-
-    double position = player.getPosition();
-    double duration = 0.0;
-
-    // For music queue mode, prefer queue metadata duration (full track length)
-    // over MPV duration which may only reflect buffered/demuxed portion
-    if (m_isQueueMode) {
-        const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
-        if (track && track->duration > 0) {
-            duration = (double)track->duration;
-        }
-    }
-    if (duration <= 0)
-        duration = player.getDuration();
-
-    if (duration > 0) {
-        if (progressSlider) {
-            m_updatingSlider = true;
-            progressSlider->setProgress((float)(position / duration));
-            m_updatingSlider = false;
-        }
-
-        // Update time labels: elapsed on left, remaining on right
-        {
-            int posMin = (int)position / 60;
-            int posSec = (int)position % 60;
-            int remaining = std::max(0, (int)(duration - position));
-            int remMin = remaining / 60;
-            int remSec = remaining % 60;
-
-            char elapsedStr[16];
-            snprintf(elapsedStr, sizeof(elapsedStr), "%d:%02d", posMin, posSec);
-            char remainStr[16];
-            snprintf(remainStr, sizeof(remainStr), "-%d:%02d", remMin, remSec);
-
-            if (timeElapsedLabel) timeElapsedLabel->setText(elapsedStr);
-            if (timeRemainingLabel) timeRemainingLabel->setText(remainStr);
-        }
-    }
-
-    // Auto-hide controls after inactivity
-    int autoHide = Application::getInstance().getSettings().controlsAutoHideSeconds;
-    if (autoHide > 0 && m_controlsVisible) {
-        m_controlsIdleSeconds++;
-        if (m_controlsIdleSeconds >= autoHide) {
-            hideControls();
-        }
-    }
-
-    // Detect playback end: check hasEnded() regardless of m_isPlaying
-    // to avoid missing the event if m_isPlaying was synced to false
-    // in a previous frame before the ENDED state was set.
-    if (player.hasEnded() && !m_endHandled) {
-        m_endHandled = true;  // Prevent multiple triggers
-        m_isPlaying = false;
-        brls::Logger::info("PlayerActivity: Playback ended (mediaType={}, queueMode={})",
-            (int)m_mediaType, m_isQueueMode);
-
-        if (m_isQueueMode) {
-            // Notify queue that track ended - it will call onTrackEnded
-            MusicQueue::getInstance().onTrackEnded();
-        } else {
-            // Non-queue single track ended - just exit
-            brls::sync([this]() {
-                brls::Application::popActivity();
-            });
-        }
-    }
-
-    // Keep play/pause label in sync with actual player state
-    bool actuallyPlaying = player.isPlaying();
-    if (actuallyPlaying != m_isPlaying) {
-        m_isPlaying = actuallyPlaying;
-        updatePlayPauseLabel();
-    }
+    // Native audio (and remote polling) handle their own progress above; there
+    // is no other local player to service.
 }
 
 void PlayerActivity::togglePlayPause() {
@@ -1141,25 +851,6 @@ void PlayerActivity::togglePlayPause() {
         return;
     }
 
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    if (player.isPlaying()) {
-        player.pause();
-        m_isPlaying = false;
-        // Also pause on the server so the MA dashboard stays in sync
-        std::string queueId = getActivePlayerId();
-        if (!queueId.empty()) {
-            MAClient::instance().queuePause(queueId);
-        }
-    } else if (player.isPaused()) {
-        player.play();
-        m_isPlaying = true;
-        // Also resume on the server
-        std::string queueId = getActivePlayerId();
-        if (!queueId.empty()) {
-            MAClient::instance().queuePlay(queueId);
-        }
-    }
     updatePlayPauseLabel();
 }
 
@@ -1183,11 +874,7 @@ void PlayerActivity::seek(int seconds) {
             MAClient::instance().queueSeek(queueId, (int)target);
         m_nativePosBase = target;
         native.stop();  // discard buffered audio; new stream starts at target
-        return;
     }
-
-    MpvPlayer& player = MpvPlayer::getInstance();
-    player.seekRelative(seconds);
 }
 
 // Queue control methods
@@ -1209,10 +896,8 @@ void PlayerActivity::playNext() {
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playNext()) {
-        // Stop current playback. Flush native audio immediately so a skip
-        // doesn't play out the seconds of Sendspin audio already buffered
-        // ahead (that drain is what made skips take ~15s to change track).
-        MpvPlayer::getInstance().stop();
+        // Flush native audio immediately so a skip doesn't play out the seconds
+        // of Sendspin audio already buffered ahead.
         NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
 
@@ -1238,27 +923,23 @@ void PlayerActivity::playPrevious() {
 
     if (!m_isQueueMode) return;
 
-    MpvPlayer& player = MpvPlayer::getInstance();
-
-    // If we're more than 3 seconds in, restart current track
-    if (player.getPosition() > 3.0) {
-        player.seekTo(0);
+    // More than 3 s into the track: restart the current track (seek to 0)
+    // rather than skipping to the previous one.
+    auto& native = NativeAudioPlayer::instance();
+    double pos = m_nativePosBase + native.positionSeconds();
+    if (native.isPlaying() && pos > 3.0) {
+        seek(-(int)pos);  // relative seek back to the start
         return;
     }
 
     MusicQueue& queue = MusicQueue::getInstance();
     if (queue.playPrevious()) {
-        // Stop current playback and flush buffered native audio so the skip
-        // is immediate rather than draining the pre-buffered stream.
-        player.stop();
-        NativeAudioPlayer::instance().stop();
+        // Flush buffered native audio so the skip is immediate.
+        native.stop();
         m_isPlaying = false;
 
         // Load previous track
         loadFromQueue();
-    } else {
-        // Just restart current track
-        player.seekTo(0);
     }
 }
 
@@ -1278,8 +959,7 @@ void PlayerActivity::toggleShuffle() {
         MAClient::instance().queueShuffle(queueId, newState);
     }
 
-    MpvPlayer::getInstance().showOSD(
-        newState ? "Shuffle: ON" : "Shuffle: OFF", 1.5);
+    brls::Application::notify(newState ? "Shuffle: ON" : "Shuffle: OFF");
 }
 
 void PlayerActivity::toggleRepeat() {
@@ -1309,7 +989,7 @@ void PlayerActivity::toggleRepeat() {
         MAClient::instance().queueRepeat(queueId, modeServerStr);
     }
 
-    MpvPlayer::getInstance().showOSD(modeStr, 1.5);
+    brls::Application::notify(modeStr);
 }
 
 void PlayerActivity::updateShuffleIcon() {
@@ -1354,7 +1034,7 @@ void PlayerActivity::onTrackEnded(const QueueItem* nextTrack) {
             // Stop playback but keep player open so user can queue more songs
             m_isPlaying = false;
             updatePlayPauseLabel();
-            MpvPlayer::getInstance().showOSD("Queue ended", 2.0);
+            brls::Application::notify("Queue ended");
         });
     }
 }
@@ -2219,7 +1899,7 @@ void PlayerActivity::setQueueGrab(bool on) {
         animateGrabLift(on);
     }
     if (on) {
-        MpvPlayer::getInstance().showOSD("Moving track \xC2\xB7 Up/Down to move, OK to drop", 2.0);
+        brls::Application::notify("Moving track \xC2\xB7 Up/Down to move, OK to drop");
     }
 }
 
@@ -2271,7 +1951,7 @@ void PlayerActivity::clearUpcoming() {
     }
     m_queueSnapshot.resize(std::max(cur + 1, 0));
     populateQueueList();
-    MpvPlayer::getInstance().showOSD("Cleared up next", 1.5);
+    brls::Application::notify("Cleared up next");
 }
 
 void PlayerActivity::populateQueueBatch() {

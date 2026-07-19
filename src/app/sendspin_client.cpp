@@ -1,7 +1,6 @@
 #include "app/sendspin_client.hpp"
 #include "app/webrtc_client.hpp"
 #include "app/ma_client.hpp"
-#include "player/mpv_player.hpp"
 #include "player/native_audio_player.hpp"
 #include "app/application.hpp"
 #include "app.h"
@@ -41,15 +40,6 @@ bool SendspinClient::connectUrl(const std::string& wsUrl,
     setState(SendspinState::CONNECTING);
     brls::Logger::info("Sendspin: connecting to {}", wsUrl);
 
-    // Start the local HTTP audio stream server before connecting
-    if (!m_audioServer.isRunning()) {
-        if (!m_audioServer.start()) {
-            brls::Logger::error("Sendspin: failed to start audio stream server");
-            setState(SendspinState::ERROR);
-            return false;
-        }
-    }
-
     // Set up WebSocket callbacks
     m_ws.setOnMessage([this](const std::string& msg) {
         onTextMessage(msg);
@@ -85,15 +75,6 @@ bool SendspinClient::connectRemote(const std::string& clientId, const std::strin
 
     setState(SendspinState::CONNECTING);
     brls::Logger::info("Sendspin: connecting via remote-access data channel");
-
-    // Start the local HTTP audio stream server before connecting
-    if (!m_audioServer.isRunning()) {
-        if (!m_audioServer.start()) {
-            brls::Logger::error("Sendspin: failed to start audio stream server");
-            setState(SendspinState::ERROR);
-            return false;
-        }
-    }
 
     WebRTCClient& rtc = WebRTCClient::instance();
     rtc.setSendspinTextCallback([this](const std::string& msg) {
@@ -134,13 +115,11 @@ void SendspinClient::disconnect() {
     } else {
         m_ws.disconnect();
     }
-    m_audioServer.signalStreamEnd();
     NativeAudioPlayer::instance().stop();
     setState(SendspinState::DISCONNECTED);
 }
 
 void SendspinClient::stopStream() {
-    m_audioServer.signalStreamEnd();
     NativeAudioPlayer::instance().stop();
     if (m_state.load() == SendspinState::STREAMING ||
         m_state.load() == SendspinState::BUFFERING) {
@@ -229,8 +208,8 @@ void SendspinClient::onTextMessage(const std::string& message) {
         playerState["volume"] = Json(100);
         playerState["muted"] = Json(false);
         // Fixed output latency the server should compensate for: our audio
-        // path buffers through a local HTTP server into MPV before it reaches
-        // the speakers. Reported so the server can align playout timing.
+        // path buffers audio in the native decoder before it reaches the
+        // speakers. Reported so the server can align playout timing.
         playerState["static_delay_ms"] = Json(500);
         statePayload["player"] = playerState;
         stateMsg["payload"] = statePayload;
@@ -255,7 +234,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
 
         // Extract codec_header if provided (base64-encoded container header)
         // For FLAC this contains the fLaC magic + STREAMINFO metadata block
-        // that MPV needs for format detection.
+        // the decoder needs for format detection.
         m_format.codec_header.clear();
         if (player.has("codec_header")) {
             std::string b64 = player["codec_header"].str();
@@ -281,7 +260,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         }
 
         // If no codec_header was provided for FLAC, synthesize one.
-        // MPV needs the fLaC magic + STREAMINFO block for format probing.
+        // The decoder needs the fLaC magic + STREAMINFO block for format probing.
         if (m_format.codec == "flac" && m_format.codec_header.empty()) {
             m_format.codec_header = buildFlacHeader(
                 m_format.sample_rate, m_format.channels, m_format.bit_depth);
@@ -292,42 +271,26 @@ void SendspinClient::onTextMessage(const std::string& message) {
             m_format.codec, m_format.sample_rate, m_format.channels, m_format.bit_depth,
             m_format.codec_header.size());
 
-        // Decide the audio path for this stream up front.
-        bool localOn = Application::getInstance().getSettings().localPlayback;
-        m_useNativeAudio = localOn && Application::getInstance().getSettings().nativeAudio;
+        // Decide the audio path for this stream up front. Local playback now
+        // always decodes natively (dr_flac + sceAudioOut); when local playback
+        // is off we simply don't play audio locally.
+        m_localPlayback = Application::getInstance().getSettings().localPlayback;
 
-        if (m_useNativeAudio) {
-            // Native path: decode + output directly, no HTTP server / mpv.
+        if (m_localPlayback) {
+            // Native path: decode + output directly.
             NativeAudioPlayer::instance().startStream(
                 m_format.codec, m_format.sample_rate, m_format.channels,
                 m_format.bit_depth, m_format.codec_header);
-        } else {
-            // Reset the audio server for the new stream and set the codec
-            m_audioServer.resetStream();
-            m_audioServer.setCodec(m_format.codec);
-            // If we have a codec header, prepend it to the stream so MPV
-            // sees a valid container when it starts format probing.
-            if (!m_format.codec_header.empty()) {
-                m_audioServer.setCodecHeader(m_format.codec_header);
-            }
         }
 
         setState(SendspinState::BUFFERING);
-
-        // Don't start MPV yet - wait for initial audio data to buffer.
-        // MPV needs data available immediately for format probing.
-        // startMpvPlayback() will be called from onBinaryData() once
-        // enough audio has buffered.
-        m_mpvStarted = false;
         m_audioChunkCount = 0;
     }
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
         // Signal that no more data will arrive for this stream
-        if (m_useNativeAudio) {
+        if (m_localPlayback) {
             NativeAudioPlayer::instance().endStream();
-        } else {
-            m_audioServer.signalStreamEnd();
         }
 
         if (m_state.load() == SendspinState::STREAMING ||
@@ -337,15 +300,13 @@ void SendspinClient::onTextMessage(const std::string& message) {
     }
     else if (type == "stream/clear") {
         brls::Logger::info("Sendspin: stream/clear - clearing buffers");
-        if (m_useNativeAudio) {
+        if (m_localPlayback) {
             NativeAudioPlayer::instance().stop();
-        } else {
-            m_audioServer.resetStream();
         }
     }
     else if (type == "server/time") {
         // We do not do sample-accurate synchronized playout (audio is played
-        // best-effort through MPV / the native decoder), so the time channel
+        // best-effort through the native decoder), so the time channel
         // isn't used. It's optional in the protocol; ignore it.
     }
     else if (type == "server/command") {
@@ -373,7 +334,7 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
     // Only process audio data after stream/start has been received.
     // Without this guard, stale audio from a previous server queue
-    // leaks in and starts MPV before format info is available.
+    // leaks in and starts decoding before format info is available.
     auto state = m_state.load();
     if (state != SendspinState::BUFFERING && state != SendspinState::STREAMING) return;
 
@@ -391,25 +352,9 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
                 brls::Logger::debug("Sendspin: audio chunk #{} ({} bytes)", m_audioChunkCount, audioSize);
             }
 
-            if (m_useNativeAudio) {
+            if (m_localPlayback) {
                 // Native path: hand encoded bytes straight to the decoder.
                 NativeAudioPlayer::instance().pushAudio(audioData, audioSize);
-            } else {
-                // Push audio data to the local HTTP server's queue.
-                // MPV reads from the HTTP server on its own thread.
-                m_audioServer.pushAudioData(audioData, audioSize);
-
-                // Once enough audio has buffered, start MPV playback.
-                // This ensures MPV has data for format probing when it connects.
-                // Skip if local playback is disabled in settings.
-                if (!m_mpvStarted && m_audioServer.hasInitialData()) {
-                    m_mpvStarted = true;
-                    if (Application::getInstance().getSettings().localPlayback) {
-                        startMpvPlayback();
-                    } else {
-                        brls::Logger::info("Sendspin: local playback disabled, not starting MPV");
-                    }
-                }
             }
 
             // Transition from buffering to streaming
@@ -423,7 +368,6 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
 void SendspinClient::onClose(int code, const std::string& reason) {
     brls::Logger::info("Sendspin: connection closed ({}: {})", code, reason);
-    m_audioServer.signalStreamEnd();
     NativeAudioPlayer::instance().stop();
     setState(SendspinState::DISCONNECTED);
 }
@@ -435,10 +379,6 @@ void SendspinClient::setState(SendspinState state) {
             m_stateCallback(state);
         });
     }
-}
-
-std::string SendspinClient::getLocalStreamUrl() const {
-    return m_audioServer.getStreamUrl(m_format.codec);
 }
 
 std::vector<uint8_t> SendspinClient::buildFlacHeader(int sampleRate, int channels, int bitDepth) {
@@ -489,30 +429,6 @@ std::vector<uint8_t> SendspinClient::buildFlacHeader(int sampleRate, int channel
     // Bytes 26-41: MD5 signature = all zeros (unknown)
 
     return header;
-}
-
-void SendspinClient::startMpvPlayback() {
-    std::string url = getLocalStreamUrl();
-    brls::Logger::info("Sendspin: starting MPV with {}", url);
-
-    brls::sync([url]() {
-        auto& mpv = MpvPlayer::getInstance();
-        mpv.setAudioOnly(true);
-        if (!mpv.isInitialized()) {
-            mpv.init();
-        } else {
-            // Stop any existing playback to clear m_commandPending and
-            // reset MPV state. Without this, a stuck LOADING state from
-            // a previous failed stream blocks all future loads.
-            auto state = mpv.getState();
-            if (state != MpvPlayerState::IDLE) {
-                brls::Logger::info("Sendspin: stopping MPV (was in state {}) before new load",
-                    static_cast<int>(state));
-                mpv.stop();
-            }
-        }
-        mpv.loadUrl(url);
-    });
 }
 
 } // namespace vita_ma

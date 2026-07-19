@@ -25,7 +25,6 @@ public:
     PlayerActivity(const std::string& mediaKey);
 
     // Play a direct stream URL (e.g. radio)
-    static PlayerActivity* createForStream(const std::string& streamUrl, const std::string& title);
 
     // Play from queue (album, playlist, etc.)
     // Automatically creates a server-side play queue when online,
@@ -44,7 +43,6 @@ public:
 private:
     void loadMedia();
     void loadFromQueue();           // Load current track from queue
-    void loadFromQueueWithUrl(const std::string& url, const std::string& trackTitle);  // Continue after async URL fetch
     void updateProgress();
     void togglePlayPause();
     void seek(int seconds);
