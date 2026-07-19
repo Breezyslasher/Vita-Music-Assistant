@@ -313,13 +313,11 @@ set(APP_SOURCES
     src/view/queue_tab.cpp
 
     # Player
-    src/player/mpv_player.cpp
     src/player/native_audio_player.cpp
 
     # Utils
     src/utils/http_client.cpp
     src/utils/image_loader.cpp
-    src/utils/audio_stream_server.cpp
     src/utils/vita_stubs.c
 
     # Vita platform shims for libdatachannel deps
@@ -367,17 +365,11 @@ target_link_libraries(${PROJECT_NAME}
 
     # External libraries
     curl
-    mpv
     ass
     harfbuzz
     fribidi
     avfilter
-    avformat
-    avcodec
-    swscale
-    swresample
     avutil
-    avcodec
     archive
     zstd
     freetype

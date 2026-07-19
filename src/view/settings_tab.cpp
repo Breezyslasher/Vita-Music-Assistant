@@ -7,7 +7,6 @@
 #include "app/ma_client.hpp"
 #include "app/webrtc_client.hpp"
 #include "app/ma_types.hpp"
-#include "player/mpv_player.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/http_client.hpp"
 #include <set>
@@ -336,20 +335,6 @@ void SettingsTab::createPlayerSection() {
     localPlaybackInfo->setMarginTop(4);
     m_contentBox->addView(localPlaybackInfo);
 
-    m_nativeAudioToggle = new brls::BooleanCell();
-    m_nativeAudioToggle->init("Native Audio Decoder", settings.nativeAudio, [&settings](bool value) {
-        settings.nativeAudio = value;
-        Application::getInstance().saveSettings();
-    });
-    m_contentBox->addView(m_nativeAudioToggle);
-
-    auto* nativeAudioInfo = new brls::Label();
-    nativeAudioInfo->setText("Default: decode audio directly (dr_flac + sceAudioOut). Turn off to fall back to mpv. Takes effect on the next track.");
-    nativeAudioInfo->setFontSize(14);
-    nativeAudioInfo->setMarginLeft(16);
-    nativeAudioInfo->setMarginTop(4);
-    m_contentBox->addView(nativeAudioInfo);
-
     // Player name setting - opens on-screen keyboard for free-form input
     m_playerNameCell = new brls::DetailCell();
     m_playerNameCell->setText("Player Name");
@@ -605,16 +590,6 @@ void SettingsTab::createDebugSection() {
         return true;
     });
     m_contentBox->addView(networkTestCell);
-
-    // Test local playback button
-    auto* testLocalCell = new brls::DetailCell();
-    testLocalCell->setText("Test Local Playback");
-    testLocalCell->setDetailText("ux0:data/VitaMA/test.mp3");
-    testLocalCell->registerClickAction([this](brls::View* view) {
-        onTestLocalPlayback();
-        return true;
-    });
-    m_contentBox->addView(testLocalCell);
 
     // Info label
     auto* infoLabel = new brls::Label();
@@ -1087,43 +1062,6 @@ void SettingsTab::onNetworkTest() {
             dialog->open();
         });
     }).detach();
-}
-
-void SettingsTab::onTestLocalPlayback() {
-    brls::Logger::info("SettingsTab: Testing local playback...");
-
-    // Check for test files
-    const std::string basePath = "ux0:data/VitaMA/";
-    std::string testFile;
-
-    // Try mp4 first (to test video), then audio files
-    std::vector<std::string> testFiles = {
-        basePath + "test.mp4",
-        basePath + "test.mp3",
-        basePath + "test.ogg",
-        basePath + "test.wav"
-    };
-
-    for (const auto& file : testFiles) {
-        FILE* f = fopen(file.c_str(), "rb");
-        if (f) {
-            fclose(f);
-            testFile = file;
-            brls::Logger::info("SettingsTab: Found test file: {}", testFile);
-            break;
-        }
-    }
-
-    if (testFile.empty()) {
-        brls::Application::notify("No test file found in ux0:data/VitaMA/");
-        brls::Logger::error("SettingsTab: No test file found");
-        return;
-    }
-
-    // Push player activity with the test file
-    brls::Logger::info("SettingsTab: Pushing player activity for: {}", testFile);
-    PlayerActivity* activity = PlayerActivity::createForStream(testFile, "Local Test");
-    brls::Application::pushActivity(activity);
 }
 
 } // namespace vita_ma

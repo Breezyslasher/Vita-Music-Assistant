@@ -1,7 +1,6 @@
 #pragma once
 
 #include "app/websocket_client.hpp"
-#include "utils/audio_stream_server.hpp"
 #include <string>
 #include <functional>
 #include <mutex>
@@ -109,9 +108,6 @@ public:
     void setStateCallback(StreamStateCallback cb) { m_stateCallback = std::move(cb); }
     void setMetadataCallback(StreamMetadataCallback cb) { m_metadataCallback = std::move(cb); }
 
-    // Get the local HTTP stream URL for MPV
-    std::string getLocalStreamUrl() const;
-
     // Stop current stream playback (keeps connection alive)
     void stopStream();
 
@@ -126,13 +122,10 @@ private:
     std::string m_clientId;
     std::string m_clientName;
 
-    // Local HTTP server that bridges Sendspin audio to MPV
-    AudioStreamServer m_audioServer;
-    bool m_mpvStarted = false;  // Whether MPV has been started for current stream
     size_t m_audioChunkCount = 0;  // Audio chunks received in current stream (for logging)
-    // Snapshot of the "native audio" setting taken at stream/start: when true
-    // this stream decodes via NativeAudioPlayer (dr_flac + sceAudioOut) instead
-    // of the HTTP-server + mpv path.
+    // Whether local playback is enabled for the current stream (mirrors the
+    // localPlayback setting captured at stream/start). When true, audio decodes
+    // via NativeAudioPlayer (dr_flac + sceAudioOut); when false, no local audio.
     bool m_useNativeAudio = false;
 
     // Callbacks
@@ -147,9 +140,6 @@ private:
 
     // Handshake
     void sendClientHello();
-
-    // Start MPV playback from the local HTTP stream
-    void startMpvPlayback();
 
     // Build a minimal FLAC file header (fLaC + STREAMINFO) for format detection
     static std::vector<uint8_t> buildFlacHeader(int sampleRate, int channels, int bitDepth);
