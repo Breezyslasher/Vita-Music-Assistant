@@ -13,6 +13,8 @@
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 #include <thread>
+#include <memory>
+#include <atomic>
 
 #ifdef __vita__
 #include <psp2/kernel/threadmgr.h>
@@ -253,11 +255,14 @@ void MediaDetailView::loadMusicCategories() {
     asyncRun([this, itemId, provider, aliveWeak]() {
         MAClient& client = MAClient::instance();
 
-        // Fetch artist's albums via the new MA API
-        bool done = false;
-        std::vector<MusicItem> allAlbumItems;
+        // Fetch artist's albums via the new MA API. done/accumulator are heap
+        // shared_ptrs captured by value so the main-thread callback can't touch
+        // this worker's stack after a timeout (use-after-free / data abort).
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        auto allAlbumItemsPtr = std::make_shared<std::vector<MusicItem>>();
+        auto& allAlbumItems = *allAlbumItemsPtr;
 
-        client.getArtistAlbums(itemId, [&done, &allAlbumItems](bool success, const Json& result) {
+        client.getArtistAlbums(itemId, [done, allAlbumItemsPtr](bool success, const Json& result) {
             if (success && result.type() == Json::ARRAY) {
                 for (size_t i = 0; i < result.size(); i++) {
                     const Json& item = result[i];
@@ -288,16 +293,16 @@ void MediaDetailView::loadMusicCategories() {
                                      item["artists"][static_cast<size_t>(0)]["name"].str() : "" : "");
                     mi.provider = item.has("provider") ? item["provider"].str() : "";
                     mi.uri = item.has("uri") ? item["uri"].str() : "";
-                    allAlbumItems.push_back(mi);
+                    allAlbumItemsPtr->push_back(mi);
                 }
             }
-            done = true;
+            done->store(true);
         }, provider);
 
         // Wait for async response (simplified blocking wait for Vita)
         // TODO: Refactor to fully async callback chain
         int waitMs = 0;
-        while (!done && waitMs < 10000) {
+        while (!done->load() && waitMs < 10000) {
 #ifdef __vita__
             sceKernelDelayThread(50 * 1000);
 #else
@@ -407,10 +412,13 @@ void MediaDetailView::loadTrackList() {
     asyncRun([this, itemId, provider, aliveWeak, isPlaylist]() {
         MAClient& client = MAClient::instance();
 
-        bool done = false;
-        std::vector<MusicItem> tracks;
+        // Heap shared_ptrs captured by value so the main-thread callback never
+        // writes into this worker's stack after a timeout (data-abort UAF).
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        auto tracksPtr = std::make_shared<std::vector<MusicItem>>();
+        auto& tracks = *tracksPtr;
 
-        auto tracksCb = [&done, &tracks](bool success, const Json& result) {
+        auto tracksCb = [done, tracksPtr](bool success, const Json& result) {
             if (success && result.type() == Json::ARRAY) {
                 for (size_t i = 0; i < result.size(); i++) {
                     const Json& item = result[i];
@@ -442,10 +450,10 @@ void MediaDetailView::loadTrackList() {
                     mi.albumName = item.has("album") ? item["album"].str() : "";
                     mi.uri = item.has("uri") ? item["uri"].str() : "";
                     mi.provider = item.has("provider") ? item["provider"].str() : "";
-                    tracks.push_back(mi);
+                    tracksPtr->push_back(mi);
                 }
             }
-            done = true;
+            done->store(true);
         };
 
         if (isPlaylist) {
@@ -457,7 +465,7 @@ void MediaDetailView::loadTrackList() {
         // Wait for async response
         // TODO: Refactor to fully async callback chain
         int waitMs = 0;
-        while (!done && waitMs < 10000) {
+        while (!done->load() && waitMs < 10000) {
 #ifdef __vita__
             sceKernelDelayThread(50 * 1000);
 #else
@@ -875,10 +883,11 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
 
-            bool done = false;
-            std::vector<MusicItem> allTracks;
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto allTracksPtr = std::make_shared<std::vector<MusicItem>>();
+            auto& allTracks = *allTracksPtr;
 
-            client.getArtistTracks(capturedArtist.itemId, [&done, &allTracks, &capturedArtist](bool success, const Json& result) {
+            client.getArtistTracks(capturedArtist.itemId, [done, allTracksPtr, capturedArtist](bool success, const Json& result) {
                 if (success && result.type() == Json::ARRAY) {
                     for (size_t i = 0; i < result.size(); i++) {
                         const Json& item = result[i];
@@ -903,14 +912,14 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
                         mi.uri = item.has("uri") ? item["uri"].str() : "";
                         mi.artistName = capturedArtist.name;
-                        allTracks.push_back(mi);
+                        allTracksPtr->push_back(mi);
                     }
                 }
-                done = true;
+                done->store(true);
             }, capturedArtist.provider);
 
             int waitMs = 0;
-            while (!done && waitMs < 10000) {
+            while (!done->load() && waitMs < 10000) {
 #ifdef __vita__
                 sceKernelDelayThread(50 * 1000);
 #else
@@ -944,10 +953,11 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
         asyncRun([capturedArtist]() {
             MAClient& client = MAClient::instance();
 
-            bool done = false;
-            std::vector<MusicItem> allTracks;
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto allTracksPtr = std::make_shared<std::vector<MusicItem>>();
+            auto& allTracks = *allTracksPtr;
 
-            client.getArtistTracks(capturedArtist.itemId, [&done, &allTracks, &capturedArtist](bool success, const Json& result) {
+            client.getArtistTracks(capturedArtist.itemId, [done, allTracksPtr, capturedArtist](bool success, const Json& result) {
                 if (success && result.type() == Json::ARRAY) {
                     for (size_t i = 0; i < result.size(); i++) {
                         const Json& item = result[i];
@@ -972,14 +982,14 @@ void MediaDetailView::showArtistContextMenuStatic(const MusicItem& artist) {
                         mi.duration = item.has("duration") ? item["duration"].intVal() : 0;
                         mi.uri = item.has("uri") ? item["uri"].str() : "";
                         mi.artistName = capturedArtist.name;
-                        allTracks.push_back(mi);
+                        allTracksPtr->push_back(mi);
                     }
                 }
-                done = true;
+                done->store(true);
             }, capturedArtist.provider);
 
             int waitMs = 0;
-            while (!done && waitMs < 10000) {
+            while (!done->load() && waitMs < 10000) {
 #ifdef __vita__
                 sceKernelDelayThread(50 * 1000);
 #else
@@ -1017,10 +1027,16 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
         asyncRun([item, option]() {
             MAClient& client = MAClient::instance();
 
-            bool done = false;
-            std::vector<MusicItem> tracks;
+            // done/tracks are heap-allocated and captured BY VALUE (shared_ptr)
+            // so the response callback - which fires on the main thread - never
+            // touches this worker's stack. Capturing them by reference and then
+            // busy-waiting was a use-after-free: if the response arrived after
+            // the 10s timeout (e.g. a busy server), push_back wrote into a freed
+            // stack frame and the app crashed with a data abort.
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            auto tracks = std::make_shared<std::vector<MusicItem>>();
 
-            auto tracksCb = [&done, &tracks](bool success, const Json& result) {
+            auto tracksCb = [done, tracks](bool success, const Json& result) {
                 if (success && result.type() == Json::ARRAY) {
                     for (size_t i = 0; i < result.size(); i++) {
                         const Json& r = result[i];
@@ -1048,10 +1064,10 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                             (r.has("artists") && r["artists"].size() > 0 &&
                              r["artists"][static_cast<size_t>(0)].has("name") ?
                              r["artists"][static_cast<size_t>(0)]["name"].str() : "");
-                        tracks.push_back(mi);
+                        tracks->push_back(mi);
                     }
                 }
-                done = true;
+                done->store(true);
             };
 
             if (item.mediaType == MediaType::PLAYLIST) {
@@ -1061,7 +1077,7 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
             }
 
             int waitMs = 0;
-            while (!done && waitMs < 10000) {
+            while (!done->load() && waitMs < 10000) {
 #ifdef __vita__
                 sceKernelDelayThread(50 * 1000);
 #else
@@ -1070,9 +1086,9 @@ void MediaDetailView::showAlbumContextMenuStatic(const MusicItem& album) {
                 waitMs += 50;
             }
 
-            if (!tracks.empty()) {
+            if (!tracks->empty()) {
                 brls::sync([tracks, option]() {
-                    playTracksOnSelectedPlayer(tracks, option);
+                    playTracksOnSelectedPlayer(*tracks, option);
                 });
             }
         });
