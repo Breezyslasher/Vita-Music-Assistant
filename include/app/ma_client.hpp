@@ -3,6 +3,8 @@
 #include "app.h"
 #include "app/websocket_client.hpp"
 #include <string>
+#include <vector>
+#include <utility>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -24,6 +26,14 @@ public:
     Json(int n) : m_type(NUMBER), m_numVal(n) {}
     Json(double n) : m_type(NUMBER), m_numVal(n) {}
     Json(bool b) : m_type(BOOL), m_boolVal(b) {}
+
+    // Explicitly keep copies AND (noexcept) moves so building the parse tree
+    // moves subtrees instead of deep-copying them - and so std::vector<Json>
+    // reallocation uses the move ctor rather than the copy ctor.
+    Json(const Json&) = default;
+    Json& operator=(const Json&) = default;
+    Json(Json&&) noexcept = default;
+    Json& operator=(Json&&) noexcept = default;
 
     static Json parse(const std::string& str);
     std::string dump() const;
@@ -57,7 +67,13 @@ private:
     std::string m_strVal;
     double m_numVal = 0;
     bool m_boolVal = false;
-    std::map<std::string, Json> m_objMap;
+    // Object members kept in insertion order as a flat vector rather than a
+    // std::map: parsing a large response allocated a red-black-tree node and
+    // copied a key string for every one of ~40k object fields, which dominated
+    // the ~9s parse of the 2.6 MB library response on Vita. Appending to a
+    // vector avoids the per-field tree allocation/rebalancing; lookups are
+    // linear but objects have only a handful of keys.
+    std::vector<std::pair<std::string, Json>> m_objMap;
     std::vector<Json> m_arrVec;
 
     static Json parseValue(const std::string& str, size_t& pos);
@@ -258,6 +274,26 @@ public:
     void sendCommand(const std::string& command, const Json& kwargs,
                      MAResponseCallback cb = nullptr);
 
+    // Raw response variant: the callback receives the response's "result" value
+    // as a raw JSON substring instead of a parsed Json DOM. Used for very large
+    // list responses (the library) where building a full DOM of ~40k nodes
+    // costs ~8s on Vita; the caller extracts only the fields it needs directly
+    // from the string (the Vita_Suwayomi approach).
+    using MARawResponseCallback = std::function<void(bool success, const std::string& rawResult)>;
+    void sendCommandRaw(const std::string& command, const Json& kwargs,
+                        MARawResponseCallback cb);
+    // Fetch library items ("albums"/"artists"/"tracks"/"playlists") with the
+    // raw (DOM-free) response path.
+    void getLibraryItemsRaw(const std::string& mediaType, MARawResponseCallback cb,
+                            const std::string& search, int limit, int offset);
+
+    // DOM-free JSON helpers (shared by the raw response path). rawExtractField
+    // returns a key's value as a raw substring (string contents unquoted;
+    // objects/arrays returned whole, brace/bracket-aware). rawSplitArrayObjects
+    // splits a top-level JSON array of objects into per-object substrings.
+    static std::string rawExtractField(const std::string& json, const std::string& key);
+    static std::vector<std::string> rawSplitArrayObjects(const std::string& arrayJson);
+
 private:
     MAClient() = default;
     ~MAClient() = default;
@@ -283,6 +319,8 @@ private:
 
     // Pending commands (awaiting responses)
     std::map<std::string, MAResponseCallback> m_pendingCallbacks;
+    // Callbacks awaiting a raw (un-parsed) response, keyed by message_id.
+    std::map<std::string, MARawResponseCallback> m_pendingRawCallbacks;
     std::mutex m_callbackMutex;
 
     // Commands queued before auth completes

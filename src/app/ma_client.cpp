@@ -3,6 +3,7 @@
 #include <borealis.hpp>
 #include <cstring>
 #include <sstream>
+#include <chrono>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -24,7 +25,19 @@ std::string Json::parseString(const std::string& str, size_t& pos) {
     if (pos >= str.size() || str[pos] != '"') return "";
     pos++; // skip opening quote
 
-    std::string result;
+    // Fast path: most JSON strings have no escape sequences. Scan for the
+    // closing quote and copy the whole span in one substr() instead of
+    // appending 2 MB of characters one at a time (the parse hot spot).
+    size_t start = pos;
+    while (pos < str.size() && str[pos] != '"' && str[pos] != '\\') pos++;
+    if (pos < str.size() && str[pos] == '"') {
+        std::string result = str.substr(start, pos - start);
+        pos++; // skip closing quote
+        return result;
+    }
+
+    // Slow path: string contains escape(s). Resume from the first backslash.
+    std::string result = str.substr(start, pos - start);
     while (pos < str.size() && str[pos] != '"') {
         if (str[pos] == '\\' && pos + 1 < str.size()) {
             pos++;
@@ -74,9 +87,11 @@ Json Json::parseNumber(const std::string& str, size_t& pos) {
         while (pos < str.size() && str[pos] >= '0' && str[pos] <= '9') pos++;
     }
 
-    std::string numStr = str.substr(start, pos - start);
+    // strtod stops at the first non-numeric char, which is exactly where our
+    // scan ended - so parse straight off the buffer with no substr allocation.
     Json j(NUMBER);
-    j.m_numVal = strtod(numStr.c_str(), nullptr);
+    j.m_numVal = strtod(str.c_str() + start, nullptr);
+    (void)isFloat;
     return j;
 }
 
@@ -94,7 +109,7 @@ Json Json::parseObject(const std::string& str, size_t& pos) {
         if (pos < str.size() && str[pos] == ':') pos++;
         skipWhitespace(str, pos);
 
-        obj.m_objMap[key] = parseValue(str, pos);
+        obj.m_objMap.emplace_back(std::move(key), parseValue(str, pos));
         skipWhitespace(str, pos);
         if (pos < str.size() && str[pos] == ',') pos++;
     }
@@ -132,13 +147,13 @@ Json Json::parseValue(const std::string& str, size_t& pos) {
         case '{': return parseObject(str, pos);
         case '[': return parseArray(str, pos);
         case 't':
-            if (str.substr(pos, 4) == "true") { pos += 4; return Json(true); }
+            if (str.compare(pos, 4, "true") == 0) { pos += 4; return Json(true); }
             break;
         case 'f':
-            if (str.substr(pos, 5) == "false") { pos += 5; return Json(false); }
+            if (str.compare(pos, 5, "false") == 0) { pos += 5; return Json(false); }
             break;
         case 'n':
-            if (str.substr(pos, 4) == "null") { pos += 4; return Json(NULL_TYPE); }
+            if (str.compare(pos, 4, "null") == 0) { pos += 4; return Json(NULL_TYPE); }
             break;
         default:
             if (str[pos] == '-' || (str[pos] >= '0' && str[pos] <= '9')) {
@@ -210,18 +225,23 @@ std::string Json::dump() const {
 
 Json& Json::operator[](const std::string& key) {
     m_type = OBJECT;
-    return m_objMap[key];
+    for (auto& kv : m_objMap)
+        if (kv.first == key) return kv.second;
+    m_objMap.emplace_back(key, Json(NULL_TYPE));
+    return m_objMap.back().second;
 }
 
 const Json& Json::operator[](const std::string& key) const {
     static Json nullJson(NULL_TYPE);
-    auto it = m_objMap.find(key);
-    if (it != m_objMap.end()) return it->second;
+    for (const auto& kv : m_objMap)
+        if (kv.first == key) return kv.second;
     return nullJson;
 }
 
 bool Json::has(const std::string& key) const {
-    return m_objMap.find(key) != m_objMap.end();
+    for (const auto& kv : m_objMap)
+        if (kv.first == key) return true;
+    return false;
 }
 
 Json& Json::operator[](size_t index) {
@@ -245,6 +265,81 @@ size_t Json::size() const {
     if (m_type == ARRAY) return m_arrVec.size();
     if (m_type == OBJECT) return m_objMap.size();
     return 0;
+}
+
+// ============================================================================
+// DOM-free JSON extraction (Vita_Suwayomi style) for very large responses
+// ============================================================================
+
+std::string MAClient::rawExtractField(const std::string& json, const std::string& key) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return "";
+    size_t colon = json.find(':', keyPos + searchKey.size());
+    if (colon == std::string::npos) return "";
+    size_t vs = json.find_first_not_of(" \t\n\r", colon + 1);
+    if (vs == std::string::npos) return "";
+
+    char c = json[vs];
+    if (c == '"') {
+        // String value: copy contents, honoring escaped quotes.
+        size_t e = vs + 1;
+        while (e < json.size()) {
+            if (json[e] == '"' && json[e - 1] != '\\') break;
+            e++;
+        }
+        return json.substr(vs + 1, e - vs - 1);
+    } else if (c == '[' || c == '{') {
+        // Object/array: return the whole balanced span.
+        char open = c, close = (c == '[') ? ']' : '}';
+        int depth = 1;
+        bool inStr = false;
+        size_t e = vs + 1;
+        while (e < json.size() && depth > 0) {
+            char ch = json[e];
+            if (ch == '"' && json[e - 1] != '\\') inStr = !inStr;
+            else if (!inStr) { if (ch == open) depth++; else if (ch == close) depth--; }
+            e++;
+        }
+        return json.substr(vs, e - vs);
+    } else if (json.compare(vs, 4, "null") == 0) {
+        return "";
+    } else {
+        // Number / bool: up to the next delimiter.
+        size_t e = json.find_first_of(",}]", vs);
+        if (e == std::string::npos) return "";
+        std::string v = json.substr(vs, e - vs);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t' ||
+                              v.back() == '\n' || v.back() == '\r'))
+            v.pop_back();
+        return v;
+    }
+}
+
+std::vector<std::string> MAClient::rawSplitArrayObjects(const std::string& arrayJson) {
+    std::vector<std::string> out;
+    size_t s = arrayJson.find('[');
+    if (s == std::string::npos) return out;
+    size_t i = s + 1;
+    while (i < arrayJson.size()) {
+        while (i < arrayJson.size() && arrayJson[i] != '{') {
+            if (arrayJson[i] == ']') return out;
+            i++;
+        }
+        if (i >= arrayJson.size()) break;
+        size_t objStart = i;
+        int depth = 1;
+        bool inStr = false;
+        i++;
+        while (i < arrayJson.size() && depth > 0) {
+            char ch = arrayJson[i];
+            if (ch == '"' && arrayJson[i - 1] != '\\') inStr = !inStr;
+            else if (!inStr) { if (ch == '{') depth++; else if (ch == '}') depth--; }
+            i++;
+        }
+        out.push_back(arrayJson.substr(objStart, i - objStart));
+    }
+    return out;
 }
 
 // ============================================================================
@@ -366,7 +461,42 @@ bool MAClient::isConnected() const {
 }
 
 void MAClient::onMessage(const std::string& message) {
+    // Raw fast path: if this response matches a pending RAW callback, hand it
+    // the un-parsed "result" substring and skip building a Json DOM entirely
+    // (a 2.6 MB library response takes ~8s to DOM-parse on Vita). We only pull
+    // message_id from the head of the string, which is cheap.
+    {
+        std::string msgId = rawExtractField(message, "message_id");
+        if (!msgId.empty()) {
+            MARawResponseCallback rawCb;
+            {
+                std::lock_guard<std::mutex> lock(m_callbackMutex);
+                auto it = m_pendingRawCallbacks.find(msgId);
+                if (it != m_pendingRawCallbacks.end()) {
+                    rawCb = std::move(it->second);
+                    m_pendingRawCallbacks.erase(it);
+                }
+            }
+            if (rawCb) {
+                bool isError = message.find("\"error_code\"") != std::string::npos;
+                if (isError) rawCb(false, "");
+                else rawCb(true, rawExtractField(message, "result"));
+                return;
+            }
+        }
+    }
+
+    // Time the JSON parse for large responses so we can tell whether a slow
+    // library load is server/network (message arrives late) or on-device parse
+    // (message is big and parse is slow).
+    auto parseT0 = std::chrono::steady_clock::now();
     Json msg = Json::parse(message);
+    if (message.size() > 100000) {
+        auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - parseT0).count();
+        brls::Logger::info("MA: parsed {} KB response in {}ms",
+                           (long)(message.size() / 1024), (long)parseMs);
+    }
 
     // Check if this is the initial server info message
     if (msg.has("server_id")) {
@@ -639,6 +769,39 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
             m_pendingCallbacks.erase(msgId);
         }
     }
+}
+
+void MAClient::sendCommandRaw(const std::string& command, const Json& kwargs,
+                              MARawResponseCallback cb) {
+    std::string msgId = generateMessageId();
+
+    Json msg;
+    msg["message_id"] = Json(msgId);
+    msg["command"] = Json(command);
+    if (kwargs.type() == Json::OBJECT && kwargs.size() > 0) {
+        msg["args"] = kwargs;
+    }
+
+    if (cb) {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_pendingRawCallbacks[msgId] = std::move(cb);
+    }
+
+    std::string json = msg.dump();
+    if (!sendRaw(json)) {
+        brls::Logger::error("MA: failed to send raw command: {}", command);
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_pendingRawCallbacks.erase(msgId);
+    }
+}
+
+void MAClient::getLibraryItemsRaw(const std::string& mediaType, MARawResponseCallback cb,
+                                  const std::string& search, int limit, int offset) {
+    Json args;
+    if (!search.empty()) args["search"] = Json(search);
+    args["limit"] = Json(limit);
+    args["offset"] = Json(offset);
+    sendCommandRaw("music/" + mediaType + "/library_items", args, std::move(cb));
 }
 
 void MAClient::flushPreAuthQueue() {

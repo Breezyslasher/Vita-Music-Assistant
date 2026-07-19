@@ -200,6 +200,10 @@ void RecyclingGrid::addCellForItem(brls::Box*& currentRow, int& itemsInRow, size
 
 void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float height,
                           brls::Style style, brls::FrameContext* ctx) {
+    // Fill in remaining rows a time-bounded batch at a time so a large library
+    // never freezes the UI thread on load.
+    if (m_building) buildStep();
+
     // Cull off-screen rows BEFORE drawing so ScrollingFrame::draw() skips their
     // entire subtree (borealis short-circuits non-VISIBLE views in View::frame).
     updateRowVisibility();
@@ -406,50 +410,67 @@ void RecyclingGrid::updateScrollGating() {
     }
 }
 
+size_t RecyclingGrid::buildRows(brls::Box* into, size_t fromIndex, size_t maxRows) {
+    const size_t total = m_items.size();
+    const size_t cols = (size_t)std::max(1, m_columns);
+    size_t idx = fromIndex;
+    size_t builtRows = 0;
+
+    while (idx < total && builtRows < maxRows) {
+        auto tc = std::chrono::steady_clock::now();
+        auto* row = new brls::Box();
+        row->setAxis(brls::Axis::ROW);
+        row->setJustifyContent(brls::JustifyContent::FLEX_START);
+        row->setMarginBottom(10);
+
+        size_t end = std::min(idx + cols, total);
+        for (size_t i = idx; i < end; i++) {
+            MediaItemCell* cell = createCell(i);
+            row->addView(cell);
+            m_cells.push_back(cell);
+        }
+        auto tm = std::chrono::steady_clock::now();
+        into->addView(row);
+        auto te = std::chrono::steady_clock::now();
+
+        m_buildCreateUs += std::chrono::duration_cast<std::chrono::microseconds>(tm - tc).count();
+        m_buildAttachUs += std::chrono::duration_cast<std::chrono::microseconds>(te - tm).count();
+
+        idx = end;
+        builtRows++;
+    }
+
+    m_renderedCount = idx;
+    return idx;
+}
+
 void RecyclingGrid::rebuildGrid() {
     m_cells.clear();
     m_renderedCount = 0;
     m_cachedFirstVisible = -1;
     m_cachedLastVisible = -1;
+    m_buildCreateUs = 0;
+    m_buildAttachUs = 0;
+    m_building = false;
+    m_buildNextIdx = 0;
 
-    auto t0 = std::chrono::steady_clock::now();
+    // Build the first screenful synchronously into a fresh, parentless box (so
+    // there's immediately something to show and focus), attach it once, then
+    // let buildStep() fill in the rest a few rows per frame. Building all rows
+    // up front froze the UI ~11s for a 1000-item library because Box::addView()
+    // runs a yoga layout each time (see buildStep timing logs); slicing it keeps
+    // the UI responsive regardless of library size.
+    static constexpr size_t INITIAL_ROWS = 6;
 
-    // Build the whole grid into a fresh, PARENTLESS content box, then swap it
-    // in with one setContentView() at the end.
-    //
-    // Why: in this borealis fork View::invalidate() walks up to the root and
-    // runs YGNodeCalculateLayout over the ENTIRE app tree, and Box::addView()
-    // calls invalidate(). So attaching each row to the already-attached content
-    // box re-laid-out the whole app 172 times - O(n^2) that froze the UI ~11s
-    // for a 1000-item library. A parentless box has no parent to propagate to,
-    // so each addView lays out only the small (and yoga-cached) grid subtree;
-    // the single real layout happens once when we attach it below.
-    auto* newContent = new brls::Box();
-    newContent->setAxis(brls::Axis::COLUMN);
-    newContent->setPadding(10);
+    auto* fresh = new brls::Box();
+    fresh->setAxis(brls::Axis::COLUMN);
+    fresh->setPadding(10);
 
-    if (!m_items.empty()) {
-        const size_t total = m_items.size();
-        const size_t cols = (size_t)std::max(1, m_columns);
-        for (size_t start = 0; start < total; start += cols) {
-            auto* row = new brls::Box();
-            row->setAxis(brls::Axis::ROW);
-            row->setJustifyContent(brls::JustifyContent::FLEX_START);
-            row->setMarginBottom(10);
+    size_t idx = 0;
+    if (!m_items.empty())
+        idx = buildRows(fresh, 0, INITIAL_ROWS);
 
-            size_t end = std::min(start + cols, total);
-            for (size_t i = start; i < end; i++) {
-                MediaItemCell* cell = createCell(i);
-                row->addView(cell);
-                m_cells.push_back(cell);
-            }
-            newContent->addView(row);   // parentless: local subtree layout only
-        }
-        m_renderedCount = total;
-    }
-
-    // Move focus off the old content before setContentView() deletes it, so
-    // Application::currentFocus can't be left dangling (crash next frame).
+    // Move focus off the old content before setContentView() deletes it.
     brls::View* focus = brls::Application::getCurrentFocus();
     for (brls::View* v = focus; v; v = v->hasParent() ? v->getParent() : nullptr) {
         if (v == m_contentBox) {
@@ -460,15 +481,42 @@ void RecyclingGrid::rebuildGrid() {
         }
     }
 
-    // Attach the finished grid in one shot (deletes the previous content box
-    // and its cells) — the only layout pass that touches the app root.
-    this->setContentView(newContent);
-    m_contentBox = newContent;
+    this->setContentView(fresh);
+    m_contentBox = fresh;
 
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - t0).count();
-    brls::Logger::info("RecyclingGrid: built {} cells in {}ms",
-                       (int)m_cells.size(), (long)ms);
+    m_buildNextIdx = idx;
+    m_building = (idx < m_items.size());
+    if (!m_building) {
+        brls::Logger::info("RecyclingGrid: built {} cells (create {}ms, attach {}ms)",
+                           (int)m_cells.size(), (long)(m_buildCreateUs / 1000),
+                           (long)(m_buildAttachUs / 1000));
+    }
+}
+
+void RecyclingGrid::buildStep() {
+    if (!m_building) return;
+
+    auto frameStart = std::chrono::steady_clock::now();
+    // Build rows until we've spent our per-frame budget, so no single frame
+    // stalls. Later rows cost more (addView lays out the growing tree), so the
+    // budget naturally builds fewer rows per frame near the end.
+    while (m_buildNextIdx < m_items.size()) {
+        m_buildNextIdx = buildRows(m_contentBox, m_buildNextIdx, 1);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - frameStart).count();
+        if (elapsed >= 6) break;  // ~6ms/frame budget keeps us near 60 FPS
+    }
+
+    if (m_buildNextIdx >= m_items.size()) {
+        m_building = false;
+        // Force a fresh visibility pass now that every row exists.
+        m_cachedFirstVisible = -1;
+        m_cachedLastVisible = -1;
+        m_allCoversQueued = false;  // ensure covers get queued for the late rows
+        brls::Logger::info("RecyclingGrid: built {} cells (create {}ms, attach {}ms)",
+                           (int)m_cells.size(), (long)(m_buildCreateUs / 1000),
+                           (long)(m_buildAttachUs / 1000));
+    }
 }
 
 void RecyclingGrid::onItemClicked(int index) {
