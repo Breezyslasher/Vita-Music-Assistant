@@ -304,11 +304,9 @@ set(APP_SOURCES
     src/view/media_detail_view.cpp
     src/view/media_item_cell.cpp
     src/view/recycling_grid.cpp
-    src/view/now_playing_view.cpp
     src/view/progress_dialog.cpp
     src/view/overlay_dialog.cpp
     src/view/horizontal_scroll_row.cpp
-    src/view/queue_tab.cpp
 
     # Player
     src/player/native_audio_player.cpp
