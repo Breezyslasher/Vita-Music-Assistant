@@ -205,7 +205,7 @@ static MediaType categoryMediaTypeEnum(MusicCategory category) {
     return MediaType::UNKNOWN;
 }
 
-LibraryTab::LibraryTab(MusicCategory category, bool showSwitcher) {
+LibraryTab::LibraryTab(MusicCategory category) {
     this->setAxis(brls::Axis::COLUMN);
     this->setJustifyContent(brls::JustifyContent::FLEX_START);
     this->setAlignItems(brls::AlignItems::STRETCH);
@@ -217,79 +217,10 @@ LibraryTab::LibraryTab(MusicCategory category, bool showSwitcher) {
 
     // Title
     m_titleLabel = new brls::Label();
-    m_titleLabel->setText(showSwitcher ? "Library" : m_currentCategoryName);
+    m_titleLabel->setText(m_currentCategoryName);
     m_titleLabel->setFontSize(28);
     m_titleLabel->setMarginBottom(20);
     this->addView(m_titleLabel);
-
-    // The category switcher + view-mode chips only belong to the combined
-    // "Library" tab. The per-category sidebar entries pass showSwitcher=false;
-    // we skip building the chips entirely there so they can't be focused (a
-    // GONE view still left focusable rows behind).
-    if (showSwitcher) {
-        // Category buttons row (replaces Plex library sections scroll)
-        m_sectionsScroll = new brls::HScrollingFrame();
-        m_sectionsScroll->setHeight(50);
-        m_sectionsScroll->setMarginBottom(15);
-
-        m_sectionsBox = new brls::Box();
-        m_sectionsBox->setAxis(brls::Axis::ROW);
-        m_sectionsBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-        m_sectionsBox->setAlignItems(brls::AlignItems::CENTER);
-
-        m_sectionsScroll->setContentView(m_sectionsBox);
-        this->addView(m_sectionsScroll);
-
-        // Create category buttons: Artists, Albums, Tracks, Playlists
-        auto addCategoryButton = [this](const char* label, MusicCategory cat) {
-            auto* btn = new brls::Button();
-            btn->setText(label);
-            btn->setMarginRight(10);
-            styleButton(btn, false);
-            btn->registerClickAction([this, cat, btn](brls::View* view) {
-                m_activeSectionBtn = btn;
-                updateSectionButtonStyles();
-                onCategorySelected(cat);
-                return true;
-            });
-            m_sectionsBox->addView(btn);
-        };
-
-        addCategoryButton("Artists",   MusicCategory::ARTISTS);
-        addCategoryButton("Albums",    MusicCategory::ALBUMS);
-        addCategoryButton("Tracks",    MusicCategory::TRACKS);
-        addCategoryButton("Playlists", MusicCategory::PLAYLISTS);
-
-        // View mode buttons (All / < Back for filtered views)
-        m_viewModeBox = new brls::Box();
-        m_viewModeBox->setAxis(brls::Axis::ROW);
-        m_viewModeBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-        m_viewModeBox->setAlignItems(brls::AlignItems::CENTER);
-        m_viewModeBox->setMarginBottom(15);
-
-        m_allBtn = new brls::Button();
-        m_allBtn->setText("All");
-        m_allBtn->setMarginRight(10);
-        styleButton(m_allBtn, true);
-        m_allBtn->registerClickAction([this](brls::View* view) {
-            showAllItems();
-            return true;
-        });
-        m_viewModeBox->addView(m_allBtn);
-
-        m_backBtn = new brls::Button();
-        m_backBtn->setText("< Back");
-        m_backBtn->setVisibility(brls::Visibility::GONE);
-        styleButton(m_backBtn, false);
-        m_backBtn->setBackgroundColor(nvgRGBA(80, 60, 50, 200));
-        m_backBtn->registerClickAction([this](brls::View* view) {
-            showAllItems();
-            return true;
-        });
-        m_viewModeBox->addView(m_backBtn);
-
-        this->addView(m_viewModeBox);
-    }
 
     // Content grid
     m_contentGrid = new RecyclingGrid();
@@ -302,18 +233,7 @@ LibraryTab::LibraryTab(MusicCategory category, bool showSwitcher) {
     });
     this->addView(m_contentGrid);
 
-    // Load the requested category (Albums by default).
     brls::Logger::debug("LibraryTab: Initializing with {} category", m_currentCategoryName);
-    if (showSwitcher) {
-        // Highlight the matching switcher button.
-        auto& children = m_sectionsBox->getChildren();
-        int idx = static_cast<int>(category);
-        if (idx >= 0 && idx < static_cast<int>(children.size()))
-            m_activeSectionBtn = dynamic_cast<brls::Button*>(children[idx]);
-        else if (!children.empty())
-            m_activeSectionBtn = dynamic_cast<brls::Button*>(children[0]);
-        updateSectionButtonStyles();
-    }
     onCategorySelected(category);
 }
 
@@ -336,54 +256,10 @@ void LibraryTab::onFocusGained() {
     }
 }
 
-void LibraryTab::styleButton(brls::Button* btn, bool active) {
-    btn->setCornerRadius(16);
-    btn->setHighlightCornerRadius(16);
-    btn->setPadding(6, 16, 6, 16);
-    if (active) {
-        btn->setBackgroundColor(nvgRGBA(70, 90, 210, 220));
-        btn->setBorderColor(nvgRGBA(120, 160, 255, 200));
-        btn->setBorderThickness(1.5f);
-    } else {
-        btn->setBackgroundColor(nvgRGBA(60, 60, 70, 180));
-        btn->setBorderColor(nvgRGBA(0, 0, 0, 0));
-        btn->setBorderThickness(0);
-    }
-}
-
-void LibraryTab::updateSectionButtonStyles() {
-    if (!m_sectionsBox) return;
-    for (auto* child : m_sectionsBox->getChildren()) {
-        auto* btn = dynamic_cast<brls::Button*>(child);
-        if (btn) {
-            styleButton(btn, btn == m_activeSectionBtn);
-        }
-    }
-}
-
-void LibraryTab::updateViewModeButtons() {
-    // The per-category sidebar tabs don't build the view-mode chips.
-    if (!m_allBtn || !m_backBtn) return;
-
-    bool inFilteredView = (m_viewMode == LibraryTabViewMode::FILTERED);
-    m_backBtn->setVisibility(inFilteredView ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
-
-    bool showModeButtons = (m_viewMode != LibraryTabViewMode::FILTERED);
-    m_allBtn->setVisibility(showModeButtons ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
-
-    if (showModeButtons) {
-        styleButton(m_allBtn, m_viewMode == LibraryTabViewMode::ALL_ITEMS);
-    }
-}
-
 void LibraryTab::onCategorySelected(MusicCategory category) {
     m_currentCategory = static_cast<int>(category);
     m_currentCategoryName = categoryName(category);
-    m_titleLabel->setText(std::string("Library - ") + m_currentCategoryName);
-
-    // Reset view mode
-    m_viewMode = LibraryTabViewMode::ALL_ITEMS;
-    updateViewModeButtons();
+    m_titleLabel->setText(m_currentCategoryName);
 
     loadCategoryContent(category);
 }
@@ -441,14 +317,10 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
 
                 if (m_items.empty()) {
                     m_items = items;
-                    if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                        m_contentGrid->setDataSource(m_items);
-                    }
+                    m_contentGrid->setDataSource(m_items);
                 } else {
                     m_items.insert(m_items.end(), items.begin(), items.end());
-                    if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                        m_contentGrid->appendItems(items);
-                    }
+                    m_contentGrid->appendItems(items);
                 }
 
                 m_contentGrid->setHasMore(m_hasMore);
@@ -510,9 +382,7 @@ void LibraryTab::loadNextPage() {
             m_loadingPage = false;
 
             m_items.insert(m_items.end(), items.begin(), items.end());
-            if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                m_contentGrid->appendItems(items);
-            }
+            m_contentGrid->appendItems(items);
             m_contentGrid->setHasMore(m_hasMore);
 
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -526,14 +396,6 @@ void LibraryTab::loadNextPage() {
     };
 
     client.getLibraryItemsRaw(categoryMediaType(category), onResponse, "", PAGE_SIZE, m_offset);
-}
-
-void LibraryTab::showAllItems() {
-    m_viewMode = LibraryTabViewMode::ALL_ITEMS;
-    m_titleLabel->setText(std::string("Library - ") + m_currentCategoryName);
-    m_contentGrid->setDataSource(m_items);
-    m_contentGrid->setHasMore(m_hasMore);
-    updateViewModeButtons();
 }
 
 void LibraryTab::onItemSelected(const MusicItem& item) {

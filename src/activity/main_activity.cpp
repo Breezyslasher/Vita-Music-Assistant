@@ -87,13 +87,13 @@ void MainActivity::onContentAvailable() {
                     tabFrame->addTab("Home", []() { return new HomeTab(); });
                 } else if (item == "library") {
                     // One sidebar entry per library category (no wrapper tab).
-                    tabFrame->addTab("Artists",    []() { return new LibraryTab(MusicCategory::ARTISTS, false); });
-                    tabFrame->addTab("Albums",     []() { return new LibraryTab(MusicCategory::ALBUMS, false); });
-                    tabFrame->addTab("Tracks",     []() { return new LibraryTab(MusicCategory::TRACKS, false); });
-                    tabFrame->addTab("Playlists",  []() { return new LibraryTab(MusicCategory::PLAYLISTS, false); });
-                    tabFrame->addTab("Podcasts",   []() { return new LibraryTab(MusicCategory::PODCASTS, false); });
-                    tabFrame->addTab("Audiobooks", []() { return new LibraryTab(MusicCategory::AUDIOBOOKS, false); });
-                    tabFrame->addTab("Radio",      []() { return new LibraryTab(MusicCategory::RADIOS, false); });
+                    tabFrame->addTab("Artists",    []() { return new LibraryTab(MusicCategory::ARTISTS); });
+                    tabFrame->addTab("Albums",     []() { return new LibraryTab(MusicCategory::ALBUMS); });
+                    tabFrame->addTab("Tracks",     []() { return new LibraryTab(MusicCategory::TRACKS); });
+                    tabFrame->addTab("Playlists",  []() { return new LibraryTab(MusicCategory::PLAYLISTS); });
+                    tabFrame->addTab("Podcasts",   []() { return new LibraryTab(MusicCategory::PODCASTS); });
+                    tabFrame->addTab("Audiobooks", []() { return new LibraryTab(MusicCategory::AUDIOBOOKS); });
+                    tabFrame->addTab("Radio",      []() { return new LibraryTab(MusicCategory::RADIOS); });
                 } else if (item == "search") {
                     tabFrame->addTab("Search", []() { return new SearchTab(); });
                 }
