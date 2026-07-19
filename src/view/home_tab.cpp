@@ -36,16 +36,7 @@ HomeTab::HomeTab() {
     m_titleLabel->setMarginBottom(20);
     m_scrollContent->addView(m_titleLabel);
 
-    // Recently Added Music section
-    auto* musicLabel = new brls::Label();
-    musicLabel->setText("Recently Added Music");
-    musicLabel->setFontSize(22);
-    musicLabel->setMarginBottom(10);
-    musicLabel->setMarginTop(15);
-    m_scrollContent->addView(musicLabel);
-
-    m_musicRow = createMediaRow();
-    m_scrollContent->addView(m_musicRow);
+    // Section rows are built dynamically from music/recommendations in loadContent().
 
     m_scrollView->setContentView(m_scrollContent);
     this->addView(m_scrollView);
@@ -145,68 +136,109 @@ void HomeTab::onFocusGained() {
 void HomeTab::loadContent() {
     brls::Logger::debug("HomeTab::loadContent - Starting async load");
 
-    // Load recently played music using MA async API
-    MAClient::instance().getRecentlyPlayed(
-        [this, aliveWeak = std::weak_ptr<bool>(m_alive)](bool success, const Json& result) {
+    // Parse one MA media item object into a MusicItem.
+    auto parseItem = [](const Json& obj) -> MusicItem {
+        MusicItem item;
+        item.itemId   = obj.has("item_id") ? obj["item_id"].str() : "";
+        item.name     = obj.has("name")    ? obj["name"].str()    : "";
+        item.uri      = obj.has("uri")     ? obj["uri"].str()     : "";
+        item.provider = obj.has("provider")? obj["provider"].str(): "";
+
+        if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
+            item.imageUrl = MAClient::imageRefFromJson(obj["image"]);
+            if (obj["image"].has("provider")) item.imageProvider = obj["image"]["provider"].str();
+        } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
+            item.imageUrl = obj["image"].str();
+        } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
+            const Json& meta = obj["metadata"];
+            if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
+                const Json& img = meta["images"][static_cast<size_t>(0)];
+                item.imageUrl = MAClient::imageRefFromJson(img);
+                if (img.has("provider")) item.imageProvider = img["provider"].str();
+            }
+        }
+
+        std::string mt = obj.has("media_type") ? obj["media_type"].str() : "";
+        if      (mt == "track")    item.mediaType = MediaType::TRACK;
+        else if (mt == "album")    item.mediaType = MediaType::ALBUM;
+        else if (mt == "artist")   item.mediaType = MediaType::ARTIST;
+        else if (mt == "playlist") item.mediaType = MediaType::PLAYLIST;
+        else if (mt == "radio")    item.mediaType = MediaType::RADIO;
+        else                       item.mediaType = MediaType::TRACK;
+
+        if (obj.has("artist_name")) item.artistName = obj["artist_name"].str();
+        if (obj.has("album_name"))  item.albumName  = obj["album_name"].str();
+        if (obj.has("duration"))    item.duration   = obj["duration"].intVal();
+        return item;
+    };
+
+    // MA's home content comes from music/recommendations: an array of folders,
+    // each with a display name and a nested "items" array. (The previous code
+    // called music/recently_played_items, which doesn't exist on this server,
+    // so the home tab was always empty.)
+    MAClient::instance().getRecommendations(
+        [this, aliveWeak = std::weak_ptr<bool>(m_alive), parseItem](bool success, const Json& result) {
             if (!success) {
-                brls::Logger::error("HomeTab: Failed to fetch recently played music");
+                brls::Logger::error("HomeTab: recommendations request failed");
                 return;
             }
 
-            std::vector<MusicItem> music;
-
+            std::vector<std::pair<std::string, std::vector<MusicItem>>> sections;
             if (result.type() == Json::ARRAY) {
                 for (size_t i = 0; i < result.size(); i++) {
-                    const Json& obj = result[i];
-                    MusicItem item;
-                    item.itemId    = obj.has("item_id")   ? obj["item_id"].str()   : "";
-                    item.name      = obj.has("name")      ? obj["name"].str()      : "";
-                    item.uri       = obj.has("uri")        ? obj["uri"].str()       : "";
-                    item.provider  = obj.has("provider")   ? obj["provider"].str()  : "";
-
-                    // Extract image URL: try image object, then metadata.images array
-                    if (obj.has("image") && obj["image"].type() == Json::OBJECT && obj["image"].has("path")) {
-                        item.imageUrl = MAClient::imageRefFromJson(obj["image"]);
-                        if (obj["image"].has("provider")) item.imageProvider = obj["image"]["provider"].str();
-                    } else if (obj.has("image") && obj["image"].type() == Json::STRING) {
-                        item.imageUrl = obj["image"].str();
-                    } else if (obj.has("metadata") && obj["metadata"].type() == Json::OBJECT) {
-                        const Json& meta = obj["metadata"];
-                        if (meta.has("images") && meta["images"].type() == Json::ARRAY && meta["images"].size() > 0) {
-                            const Json& img = meta["images"][static_cast<size_t>(0)];
-                            item.imageUrl = MAClient::imageRefFromJson(img);
-                            if (img.has("provider")) item.imageProvider = img["provider"].str();
-                        }
+                    const Json& folder = result[i];
+                    std::string title = folder.has("name") ? folder["name"].str() : "";
+                    std::vector<MusicItem> items;
+                    if (folder.has("items") && folder["items"].type() == Json::ARRAY) {
+                        const Json& arr = folder["items"];
+                        for (size_t j = 0; j < arr.size(); j++) items.push_back(parseItem(arr[j]));
+                    } else if (folder.has("item_id")) {
+                        // Not a folder — a bare media item; group under "Recommended".
+                        items.push_back(parseItem(folder));
                     }
-
-                    // Determine media type from uri or media_type field
-                    std::string mediaTypeStr = obj.has("media_type") ? obj["media_type"].str() : "";
-                    if (mediaTypeStr == "track")         item.mediaType = MediaType::TRACK;
-                    else if (mediaTypeStr == "album")    item.mediaType = MediaType::ALBUM;
-                    else if (mediaTypeStr == "artist")   item.mediaType = MediaType::ARTIST;
-                    else if (mediaTypeStr == "playlist") item.mediaType = MediaType::PLAYLIST;
-                    else if (mediaTypeStr == "radio")    item.mediaType = MediaType::RADIO;
-                    else                                 item.mediaType = MediaType::TRACK;
-
-                    // Track fields
-                    if (obj.has("artist_name"))  item.artistName  = obj["artist_name"].str();
-                    if (obj.has("album_name"))   item.albumName   = obj["album_name"].str();
-                    if (obj.has("duration"))     item.duration     = obj["duration"].intVal();
-
-                    music.push_back(item);
+                    if (!items.empty())
+                        sections.emplace_back(title.empty() ? "Recommended" : title, std::move(items));
                 }
             }
 
-            brls::Logger::info("HomeTab: Got {} recently played music items", music.size());
+            brls::Logger::info("HomeTab: recommendations -> {} sections", sections.size());
 
-            brls::sync([this, music, aliveWeak]() {
+            brls::sync([this, sections, aliveWeak]() {
                 auto alive = aliveWeak.lock();
                 if (!alive || !*alive) return;
 
-                m_recentMusic = music;
-                populateRow(m_musicRow, m_recentMusic);
+                // Rebuild the scroll content: title + one labeled row per folder.
+                m_scrollContent->clearViews();
+                m_musicRow = nullptr;
+
+                m_titleLabel = new brls::Label();
+                m_titleLabel->setText("Home");
+                m_titleLabel->setFontSize(28);
+                m_titleLabel->setMarginBottom(20);
+                m_scrollContent->addView(m_titleLabel);
+
+                if (sections.empty()) {
+                    auto* empty = new brls::Label();
+                    empty->setText("Nothing to show yet");
+                    empty->setFontSize(16);
+                    m_scrollContent->addView(empty);
+                    return;
+                }
+
+                for (const auto& sec : sections) {
+                    auto* lbl = new brls::Label();
+                    lbl->setText(sec.first);
+                    lbl->setFontSize(22);
+                    lbl->setMarginBottom(10);
+                    lbl->setMarginTop(15);
+                    m_scrollContent->addView(lbl);
+
+                    auto* row = createMediaRow();
+                    m_scrollContent->addView(row);
+                    populateRow(row, sec.second, false);
+                }
             });
-        }, 20);
+        });
 
     m_loaded = true;
     brls::Logger::debug("HomeTab: Async content loading started");

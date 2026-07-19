@@ -262,7 +262,7 @@
                     id="player/player_switch_icon"
                     width="22"
                     height="22"
-                    image="@res/icons/speaker-multiple.png"
+                    image="@res/icons/sony-playstation.png"
                     scalingType="fit"/>
                 <brls:Label
                     id="player/player_name_label"
