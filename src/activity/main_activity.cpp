@@ -87,6 +87,7 @@ void MainActivity::onContentAvailable() {
                     tabFrame->addTab("Home", []() { return new HomeTab(); });
                 } else if (item == "library") {
                     // One sidebar entry per library category (no wrapper tab).
+                    tabFrame->addTab("Artists",    []() { return new LibraryTab(MusicCategory::ARTISTS, false); });
                     tabFrame->addTab("Albums",     []() { return new LibraryTab(MusicCategory::ALBUMS, false); });
                     tabFrame->addTab("Tracks",     []() { return new LibraryTab(MusicCategory::TRACKS, false); });
                     tabFrame->addTab("Playlists",  []() { return new LibraryTab(MusicCategory::PLAYLISTS, false); });
