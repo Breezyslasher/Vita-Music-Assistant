@@ -140,10 +140,11 @@ struct AppSettings {
     int seekInterval = 10;  // seconds
     int controlsAutoHideSeconds = 5;
     bool localPlayback = true;  // Play audio locally on Vita via Sendspin
-    // Experimental: decode Sendspin audio natively (dr_flac + sceAudioOut)
-    // instead of routing it through the local HTTP server into mpv. Lighter
-    // and lower-latency; off by default until proven on-device.
-    bool nativeAudio = false;
+    // Decode Sendspin audio natively (dr_flac + sceAudioOut) instead of routing
+    // it through the local HTTP server into mpv. Lighter and lower-latency, and
+    // now the default path; mpv remains an automatic fallback for the time being
+    // (to be removed once native audio is proven as the sole decoder).
+    bool nativeAudio = true;
 
     // Player Settings
     std::string sendspinPlayerName = "PS Vita";  // Name shown in Music Assistant
