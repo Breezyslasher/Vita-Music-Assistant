@@ -524,11 +524,12 @@ void PlayerActivity::loadFromQueue() {
         // Hide queue info since there's no queue
         if (queueLabel) queueLabel->setVisibility(brls::Visibility::GONE);
 
-        // Check if a remote player is selected — load its state
-        const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
-        if (!selectedId.empty()) {
-            loadRemotePlayerState();
-        }
+        // The local queue is empty, but the server may still have an active
+        // session for the active player — either a selected remote player, or
+        // our own Vita player after a cold restart (the server auto-resumes and
+        // streams to us over Sendspin). Pull the current track from the server
+        // so the UI shows what's actually playing instead of "No track playing".
+        loadRemotePlayerState();
         return;
     }
 
@@ -766,11 +767,12 @@ void PlayerActivity::updateProgress() {
     // Don't update if destroying
     if (m_destroying) return;
 
-    // For remote players, poll state periodically instead of local MPV updates
-    if (isRemotePlayer()) {
-        pollRemotePlayerState();
-        return;
-    }
+    // Poll the server for authoritative now-playing metadata (track changes,
+    // play state) for whichever player is active. For a remote player this also
+    // drives the progress bar and we're done; for our own player the poll only
+    // corrects metadata and native audio drives the smooth bar below.
+    pollRemotePlayerState();
+    if (isRemotePlayer()) return;
 
     // Native audio owns local playback (no mpv): drive the seek bar from the
     // decoder's played-sample count plus any seek base.
@@ -781,6 +783,9 @@ void PlayerActivity::updateProgress() {
             double duration = 0.0;
             const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
             if (track && track->duration > 0) duration = (double)track->duration;
+            // Cold-restart resume: no local queue entry, so fall back to the
+            // duration the server reported for the current track.
+            else if (m_remoteDuration > 0) duration = (double)m_remoteDuration;
 
             if (duration > 0) {
                 if (position > duration) position = duration;
@@ -851,6 +856,24 @@ void PlayerActivity::togglePlayPause() {
         return;
     }
 
+    // Nothing is decoding locally. On a cold-restart resume the server session
+    // was paused (so no Sendspin stream is arriving) even though it still has a
+    // current track. Drive playback through the server for our own player - it
+    // will (re)start streaming to us over Sendspin, which spins up native audio.
+    std::string queueId = getActivePlayerId();
+    if (!queueId.empty()) {
+        if (m_isPlaying) {
+            MAClient::instance().queuePause(queueId);
+            m_isPlaying = false;
+        } else {
+            // Resuming a cold-restart-paused session: the server restreams from
+            // its elapsed position, so seed the seek-bar base to match before
+            // native audio starts counting from zero.
+            m_nativePosBase = (double)m_remoteElapsed;
+            MAClient::instance().queuePlay(queueId);
+            m_isPlaying = true;
+        }
+    }
     updatePlayPauseLabel();
 }
 
@@ -861,86 +884,81 @@ void PlayerActivity::updatePlayPauseLabel() {
 }
 
 void PlayerActivity::seek(int seconds) {
+    std::string queueId = getActivePlayerId();
+    if (queueId.empty()) return;
+
     // Native audio: relative seek by restreaming from the new position.
     auto& native = NativeAudioPlayer::instance();
     if (native.isPlaying()) {
         double target = m_nativePosBase + native.positionSeconds() + seconds;
         if (target < 0) target = 0;
         const QueueItem* track = MusicQueue::getInstance().getCurrentTrack();
-        if (track && track->duration > 0 && target > (double)track->duration)
-            target = (double)track->duration;
-        std::string queueId = getActivePlayerId();
-        if (!queueId.empty())
-            MAClient::instance().queueSeek(queueId, (int)target);
+        double dur = (track && track->duration > 0) ? (double)track->duration
+                   : (m_remoteDuration > 0 ? (double)m_remoteDuration : 0.0);
+        if (dur > 0 && target > dur) target = dur;
+        MAClient::instance().queueSeek(queueId, (int)target);
         m_nativePosBase = target;
         native.stop();  // discard buffered audio; new stream starts at target
+        return;
     }
+
+    // Cold-restart resume with the server session paused: nothing is decoding
+    // locally, so base the seek on the server's reported elapsed time.
+    double target = (double)m_remoteElapsed + seconds;
+    if (target < 0) target = 0;
+    if (m_remoteDuration > 0 && target > (double)m_remoteDuration)
+        target = (double)m_remoteDuration;
+    m_remoteElapsed = (int)target;
+    m_nativePosBase = target;
+    MAClient::instance().queueSeek(queueId, (int)target);
 }
 
 // Queue control methods
 
 void PlayerActivity::playNext() {
-    if (isRemotePlayer()) {
-        std::string queueId = getActivePlayerId();
-        MAClient::instance().queueNext(queueId, [this](bool success, const Json&) {
-            if (success) {
-                brls::sync([this]() {
-                    if (m_alive && m_alive->load()) loadRemotePlayerState();
-                });
-            }
-        });
-        return;
-    }
+    // The server owns the queue (we're a Sendspin player), so next is always a
+    // server op: it advances the queue and restreams the new track to us. For
+    // our own player we also flush the local decoder so the skip is immediate
+    // instead of playing out the seconds of Sendspin audio already buffered.
+    std::string queueId = getActivePlayerId();
+    if (queueId.empty()) return;
 
-    if (!m_isQueueMode) return;
-
-    MusicQueue& queue = MusicQueue::getInstance();
-    if (queue.playNext()) {
-        // Flush native audio immediately so a skip doesn't play out the seconds
-        // of Sendspin audio already buffered ahead.
+    if (!isRemotePlayer()) {
         NativeAudioPlayer::instance().stop();
         m_isPlaying = false;
-
-        // Load next track
-        loadFromQueue();
-    } else {
-        brls::Logger::info("PlayerActivity: No next track");
     }
+    MAClient::instance().queueNext(queueId, [this](bool success, const Json&) {
+        if (success) brls::sync([this]() {
+            if (m_alive && m_alive->load()) loadRemotePlayerState();
+        });
+    });
 }
 
 void PlayerActivity::playPrevious() {
-    if (isRemotePlayer()) {
-        std::string queueId = getActivePlayerId();
-        MAClient::instance().queuePrevious(queueId, [this](bool success, const Json&) {
-            if (success) {
-                brls::sync([this]() {
-                    if (m_alive && m_alive->load()) loadRemotePlayerState();
-                });
-            }
-        });
-        return;
-    }
-
-    if (!m_isQueueMode) return;
+    std::string queueId = getActivePlayerId();
+    if (queueId.empty()) return;
 
     // More than 3 s into the track: restart the current track (seek to 0)
     // rather than skipping to the previous one.
     auto& native = NativeAudioPlayer::instance();
-    double pos = m_nativePosBase + native.positionSeconds();
-    if (native.isPlaying() && pos > 3.0) {
-        seek(-(int)pos);  // relative seek back to the start
-        return;
+    if (!isRemotePlayer() && native.isPlaying()) {
+        double pos = m_nativePosBase + native.positionSeconds();
+        if (pos > 3.0) {
+            seek(-(int)pos);  // relative seek back to the start
+            return;
+        }
     }
 
-    MusicQueue& queue = MusicQueue::getInstance();
-    if (queue.playPrevious()) {
-        // Flush buffered native audio so the skip is immediate.
+    // Otherwise step back on the server, which restreams the previous track.
+    if (!isRemotePlayer()) {
         native.stop();
         m_isPlaying = false;
-
-        // Load previous track
-        loadFromQueue();
     }
+    MAClient::instance().queuePrevious(queueId, [this](bool success, const Json&) {
+        if (success) brls::sync([this]() {
+            if (m_alive && m_alive->load()) loadRemotePlayerState();
+        });
+    });
 }
 
 void PlayerActivity::toggleShuffle() {
@@ -2185,8 +2203,21 @@ bool PlayerActivity::isRemotePlayer() const {
     return !Application::getInstance().getSettings().selectedPlayerId.empty();
 }
 
+// current_media.image_url may be a full http(s) URL (newer servers) or a
+// provider/proxy path. Full URLs must be loaded directly: routing them through
+// getThumbnailUrl()'s legacy "/imageproxy?path=" form is rejected by newer
+// servers, so the player cover never loads on cold-restart resume.
+static std::string resolvePlayerImageUrl(const std::string& imageUrl) {
+    if (imageUrl.rfind("http://", 0) == 0 || imageUrl.rfind("https://", 0) == 0)
+        return imageUrl;
+    return MAClient::instance().getThumbnailUrl(imageUrl, 300, 300, "");
+}
+
 void PlayerActivity::loadRemotePlayerState() {
-    const auto& playerId = Application::getInstance().getSettings().selectedPlayerId;
+    // Use the active player: a selected remote player, or - after a cold
+    // restart while the Vita was already playing - our own resolved player_id.
+    // Either way the server holds the authoritative current-track state.
+    std::string playerId = getActivePlayerId();
     if (playerId.empty()) return;
 
     auto& client = MAClient::instance();
@@ -2254,6 +2285,18 @@ void PlayerActivity::loadRemotePlayerState() {
             m_remoteDuration = duration;
             m_remoteCurrentUri = currentUri;
 
+            // For our own player, native audio drives local playback while the
+            // server holds the authoritative elapsed time. Seed the native
+            // position base with (server elapsed - already-decoded seconds) so
+            // updateProgress()'s seek bar reflects the true track position.
+            if (!isRemotePlayer()) {
+                auto& native = NativeAudioPlayer::instance();
+                if (native.isPlaying()) {
+                    m_nativePosBase = (double)elapsed - native.positionSeconds();
+                    if (m_nativePosBase < 0.0) m_nativePosBase = 0.0;
+                }
+            }
+
             // Update play/pause button state
             bool isPlaying = (state == "playing");
             if (isPlaying != m_isPlaying) {
@@ -2309,28 +2352,32 @@ void PlayerActivity::loadRemotePlayerState() {
 
             // Load album art from image_url
             if (albumArt && !currentImageUrl.empty()) {
-                MAClient& client = MAClient::instance();
-                // image_url from current_media is already a full URL or provider path
-                std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, "");
+                std::string thumbUrl = resolvePlayerImageUrl(currentImageUrl);
                 ImageLoader::setPaused(false);
                 ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                     img->setVisibility(brls::Visibility::VISIBLE);
                 }, albumArt, m_alive);
                 ImageLoader::setPaused(true);
+                albumArt->setVisibility(brls::Visibility::VISIBLE);
             }
         });
     });
 }
 
 void PlayerActivity::pollRemotePlayerState() {
-    if (!isRemotePlayer()) return;
+    // The server owns the queue for both a selected remote player and our own
+    // Sendspin player, so poll it in both cases to catch track changes (server
+    // auto-advance, or another controller). For our own player native audio
+    // still drives the sub-second progress bar - the poll only corrects
+    // now-playing metadata and the play/pause state on change.
 
     // Only poll every 3 seconds (called from 1-second updateProgress timer)
     m_remotePollCounter++;
     if (m_remotePollCounter < 3) return;
     m_remotePollCounter = 0;
 
-    const auto& playerId = Application::getInstance().getSettings().selectedPlayerId;
+    std::string playerId = getActivePlayerId();
+    if (playerId.empty()) return;
     auto& client = MAClient::instance();
     if (!client.isConnected()) return;
 
@@ -2378,8 +2425,16 @@ void PlayerActivity::pollRemotePlayerState() {
             bool trackChanged = (!currentUri.empty() && currentUri != m_remoteCurrentUri);
             if (trackChanged) {
                 m_remoteCurrentUri = currentUri;
-                brls::Logger::info("PlayerActivity: Remote track changed: {} - {} [{}]",
+                brls::Logger::info("PlayerActivity: Active player track changed: {} - {} [{}]",
                                  currentArtist, currentName, state);
+                // Our own player: the server restreamed a new track, so native
+                // audio restarted near 0. Re-seed the seek-bar base from the
+                // server's elapsed so the bar tracks the new track correctly.
+                if (!isRemotePlayer()) {
+                    auto& native = NativeAudioPlayer::instance();
+                    m_nativePosBase = (double)elapsed - native.positionSeconds();
+                    if (m_nativePosBase < 0.0) m_nativePosBase = 0.0;
+                }
             }
 
             // Update title/artist if track changed or on first poll
@@ -2395,18 +2450,21 @@ void PlayerActivity::pollRemotePlayerState() {
                 }
                 // Load new album art
                 if (albumArt && !currentImageUrl.empty()) {
-                    MAClient& client = MAClient::instance();
-                    std::string thumbUrl = client.getThumbnailUrl(currentImageUrl, 300, 300, "");
+                    std::string thumbUrl = resolvePlayerImageUrl(currentImageUrl);
                     ImageLoader::setPaused(false);
                     ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
                         img->setVisibility(brls::Visibility::VISIBLE);
                     }, albumArt, m_alive);
                     ImageLoader::setPaused(true);
+                    albumArt->setVisibility(brls::Visibility::VISIBLE);
                 }
             }
 
-            // Update progress bar and time labels
-            if (duration > 0) {
+            // Update progress bar and time labels from the server's elapsed
+            // time. For our own player the smooth bar is driven by native audio
+            // in updateProgress(); overwriting it here every poll would make it
+            // stutter, so only the remote player uses the server's elapsed.
+            if (duration > 0 && isRemotePlayer()) {
                 m_updatingSlider = true;
                 if (progressSlider) progressSlider->setProgress((float)elapsed / (float)duration);
                 m_updatingSlider = false;

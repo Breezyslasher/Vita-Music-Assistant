@@ -34,10 +34,7 @@ public:
     // Push encoded (FLAC) or raw interleaved little-endian S16 (PCM) bytes.
     void pushAudio(const uint8_t* data, size_t len);
 
-    // No more data will arrive; drain what's buffered, then stop.
-    void endStream();
-
-    // Hard stop: tear down output immediately.
+    // Hard stop: tear down output immediately, discarding any buffered audio.
     void stop();
 
     // Pause/resume the audio output without tearing down the stream. The
@@ -79,12 +76,12 @@ private:
     void outputLoop();
 
     // Immediate teardown assuming m_ctrlMutex is already held. Public stop()/
-    // startStream()/endStream() take the mutex so a UI-thread flush can never
-    // race the Sendspin thread's stream transitions on the same std::threads.
+    // startStream() take the mutex so a UI-thread flush can never race the
+    // Sendspin thread's stream transitions on the same std::threads.
     void stopLocked();
 
-    // Serializes startStream/endStream/stop across the Sendspin receive thread
-    // and any caller (e.g. a UI-thread flush on skip).
+    // Serializes startStream/stop across the Sendspin receive thread and any
+    // caller (e.g. a UI-thread flush on skip).
     std::mutex m_ctrlMutex;
 
     // Blocking read from the encoded ring; returns bytes copied, or 0 at

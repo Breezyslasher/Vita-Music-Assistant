@@ -23,18 +23,10 @@ enum class MusicCategory {
     RADIOS
 };
 
-// View mode for library tab browsing
-enum class LibraryTabViewMode {
-    ALL_ITEMS,
-    FILTERED
-};
-
 class LibraryTab : public brls::Box {
 public:
-    // showSwitcher=false makes this a single-category browser (one sidebar tab
-    // per category); the top category-switch row is hidden.
-    explicit LibraryTab(MusicCategory category = MusicCategory::ALBUMS,
-                        bool showSwitcher = true);
+    // Single-category browser: one sidebar tab per category.
+    explicit LibraryTab(MusicCategory category = MusicCategory::ALBUMS);
     ~LibraryTab();
 
     void onFocusGained() override;
@@ -45,29 +37,13 @@ private:
     void loadCategoryContent(MusicCategory category);
     void onItemSelected(const MusicItem& item);
     void showAlbumContextMenu(const MusicItem& album);
-    void showAllItems();
-    void updateViewModeButtons();
-
-    // Button styling
-    void styleButton(brls::Button* btn, bool active);
-    void updateSectionButtonStyles();
-    brls::Button* m_activeSectionBtn = nullptr;
 
     brls::Label* m_titleLabel = nullptr;
-    brls::HScrollingFrame* m_sectionsScroll = nullptr;
-    brls::Box* m_sectionsBox = nullptr;
-
-    // View mode buttons
-    brls::Box* m_viewModeBox = nullptr;
-    brls::Button* m_allBtn = nullptr;
-    brls::Button* m_backBtn = nullptr;
-
     RecyclingGrid* m_contentGrid = nullptr;
 
     std::vector<MusicItem> m_items;
     int m_currentCategory = 1; // default to Albums (MusicCategory::ALBUMS)
     std::string m_currentCategoryName = "Albums";
-    LibraryTabViewMode m_viewMode = LibraryTabViewMode::ALL_ITEMS;
     bool m_loaded = false;
 
     // Fetch state. Music Assistant's */library_items commands don't cap the

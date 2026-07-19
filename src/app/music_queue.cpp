@@ -32,7 +32,6 @@ void MusicQueue::clear() {
     m_shuffleOrder.clear();
     m_currentIndex = -1;
     m_shufflePosition = -1;
-    m_playQueueID = 0;  // Clear server sync
     notifyQueueChanged();
 }
 
@@ -48,20 +47,6 @@ QueueItem MusicQueue::mediaItemToQueueItem(const MusicItem& item, int index) {
     qi.duration = item.duration;  // Already in seconds
     qi.index = index;
     return qi;
-}
-
-void MusicQueue::addTrack(const MusicItem& item) {
-    int index = (int)m_queue.size();
-    m_queue.push_back(mediaItemToQueueItem(item, index));
-
-    // Update shuffle order if shuffling
-    if (m_shuffleEnabled) {
-        // Insert new track at random position in remaining shuffle order
-        int insertPos = m_shufflePosition + 1 + (m_rng() % (m_shuffleOrder.size() - m_shufflePosition));
-        m_shuffleOrder.insert(m_shuffleOrder.begin() + insertPos, index);
-    }
-
-    notifyQueueChanged();
 }
 
 void MusicQueue::insertTrackAfterCurrent(const MusicItem& item) {
@@ -119,102 +104,6 @@ void MusicQueue::addTracks(const std::vector<MusicItem>& items) {
     notifyQueueChanged();
 }
 
-void MusicQueue::removeTrack(int index) {
-    if (index < 0 || index >= (int)m_queue.size()) return;
-
-    m_queue.erase(m_queue.begin() + index);
-
-    // Update indices for remaining items
-    for (int i = index; i < (int)m_queue.size(); i++) {
-        m_queue[i].index = i;
-    }
-
-    // Adjust current index if needed
-    if (m_currentIndex >= (int)m_queue.size()) {
-        m_currentIndex = m_queue.empty() ? -1 : (int)m_queue.size() - 1;
-    } else if (m_currentIndex > index) {
-        m_currentIndex--;
-    }
-
-    // Update shuffle order incrementally: remove the entry and adjust indices
-    if (m_shuffleEnabled) {
-        // Find and remove the deleted index from shuffle order
-        for (auto it = m_shuffleOrder.begin(); it != m_shuffleOrder.end(); ++it) {
-            if (*it == index) {
-                int pos = (int)(it - m_shuffleOrder.begin());
-                m_shuffleOrder.erase(it);
-                // Adjust shuffle position if the removed entry was before it
-                if (pos < m_shufflePosition) {
-                    m_shufflePosition--;
-                } else if (pos == m_shufflePosition && m_shufflePosition >= (int)m_shuffleOrder.size()) {
-                    m_shufflePosition = (int)m_shuffleOrder.size() - 1;
-                }
-                break;
-            }
-        }
-        // Decrement all indices > removed index
-        for (auto& idx : m_shuffleOrder) {
-            if (idx > index) idx--;
-        }
-    }
-
-    notifyQueueChanged();
-}
-
-void MusicQueue::moveTrack(int fromIndex, int toIndex) {
-    if (fromIndex < 0 || fromIndex >= (int)m_queue.size()) return;
-    if (toIndex < 0 || toIndex >= (int)m_queue.size()) return;
-    if (fromIndex == toIndex) return;
-
-    QueueItem item = m_queue[fromIndex];
-    m_queue.erase(m_queue.begin() + fromIndex);
-    m_queue.insert(m_queue.begin() + toIndex, item);
-
-    // Update indices
-    for (int i = 0; i < (int)m_queue.size(); i++) {
-        m_queue[i].index = i;
-    }
-
-    // Adjust current index
-    if (m_currentIndex == fromIndex) {
-        m_currentIndex = toIndex;
-    } else if (fromIndex < m_currentIndex && toIndex >= m_currentIndex) {
-        m_currentIndex--;
-    } else if (fromIndex > m_currentIndex && toIndex <= m_currentIndex) {
-        m_currentIndex++;
-    }
-
-    notifyQueueChanged();
-}
-
-void MusicQueue::moveInPlayOrder(int fromPlayPos, int toPlayPos) {
-    if (!m_shuffleEnabled) {
-        // Play order == queue order; reuse the absolute-index move.
-        moveTrack(fromPlayPos, toPlayPos);
-        return;
-    }
-    if (fromPlayPos < 0 || fromPlayPos >= (int)m_shuffleOrder.size()) return;
-    if (toPlayPos < 0 || toPlayPos >= (int)m_shuffleOrder.size()) return;
-    if (fromPlayPos == toPlayPos) return;
-
-    // Reorder the shuffle order only — m_queue (and the absolute indices the UI
-    // rows hold) stays put, so each row keeps showing the same track.
-    int v = m_shuffleOrder[fromPlayPos];
-    m_shuffleOrder.erase(m_shuffleOrder.begin() + fromPlayPos);
-    m_shuffleOrder.insert(m_shuffleOrder.begin() + toPlayPos, v);
-
-    // Keep the current play position pointing at the same (current) track.
-    if (m_shufflePosition == fromPlayPos) {
-        m_shufflePosition = toPlayPos;
-    } else if (fromPlayPos < m_shufflePosition && toPlayPos >= m_shufflePosition) {
-        m_shufflePosition--;
-    } else if (fromPlayPos > m_shufflePosition && toPlayPos <= m_shufflePosition) {
-        m_shufflePosition++;
-    }
-
-    notifyQueueChanged();
-}
-
 void MusicQueue::setQueue(const std::vector<MusicItem>& items, int startIndex) {
     clear();
 
@@ -243,27 +132,6 @@ void MusicQueue::setQueue(const std::vector<MusicItem>& items, int startIndex) {
     notifyQueueChanged();
     brls::Logger::info("MusicQueue: Set queue with {} tracks, starting at {}",
                        m_queue.size(), m_currentIndex);
-}
-
-bool MusicQueue::playTrack(int index) {
-    if (index < 0 || index >= (int)m_queue.size()) {
-        return false;
-    }
-
-    m_currentIndex = index;
-
-    // Update shuffle position if shuffling
-    if (m_shuffleEnabled) {
-        for (size_t i = 0; i < m_shuffleOrder.size(); i++) {
-            if (m_shuffleOrder[i] == index) {
-                m_shufflePosition = (int)i;
-                break;
-            }
-        }
-    }
-
-    brls::Logger::info("MusicQueue: Playing track {} - {}", index, m_queue[index].title);
-    return true;
 }
 
 bool MusicQueue::playNext() {
@@ -337,26 +205,6 @@ bool MusicQueue::playPrevious() {
     m_currentIndex = prevIndex;
     brls::Logger::info("MusicQueue: Previous track {} - {}", m_currentIndex, m_queue[m_currentIndex].title);
     return true;
-}
-
-bool MusicQueue::hasNext() const {
-    if (m_queue.empty()) return false;
-    if (m_repeatMode == RepeatMode::ONE || m_repeatMode == RepeatMode::ALL) return true;
-
-    if (m_shuffleEnabled) {
-        return m_shufflePosition < (int)m_shuffleOrder.size() - 1;
-    }
-    return m_currentIndex < (int)m_queue.size() - 1;
-}
-
-bool MusicQueue::hasPrevious() const {
-    if (m_queue.empty()) return false;
-    if (m_repeatMode == RepeatMode::ALL) return true;
-
-    if (m_shuffleEnabled) {
-        return m_shufflePosition > 0;
-    }
-    return m_currentIndex > 0;
 }
 
 const QueueItem* MusicQueue::getCurrentTrack() const {
@@ -466,7 +314,6 @@ void MusicQueue::onTrackEnded() {
 }
 
 void MusicQueue::notifyQueueChanged() {
-    ++m_version;
     if (m_queueChangedCallback) {
         m_queueChangedCallback();
     }
@@ -494,58 +341,6 @@ void MusicQueue::saveState() {
     brls::Logger::debug("MusicQueue: State saved");
 }
 
-void MusicQueue::loadState() {
-    std::ifstream file(QUEUE_STATE_FILE);
-    if (!file.is_open()) {
-        return;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-
-        std::string key = line.substr(0, eq);
-        std::string value = line.substr(eq + 1);
-
-        if (key == "shuffle") {
-            m_shuffleEnabled = (value == "1");
-        } else if (key == "repeat") {
-            m_repeatMode = static_cast<RepeatMode>(std::stoi(value));
-        } else if (key == "current") {
-            m_currentIndex = std::stoi(value);
-        }
-        // Note: We don't restore the actual tracks here - that would require
-        // fetching metadata from the server. The queue is typically rebuilt when
-        // playing an album or playlist.
-    }
-
-    file.close();
-    brls::Logger::debug("MusicQueue: State loaded (shuffle={}, repeat={})",
-                       m_shuffleEnabled, (int)m_repeatMode);
-}
-
-// ============================================================================
-// Server-side play queue sync
-// ============================================================================
-
-void MusicQueue::syncToServer(int playQueueID) {
-    m_playQueueID = playQueueID;
-    brls::Logger::info("MusicQueue: Synced to server play queue {}", playQueueID);
-}
-
-void MusicQueue::clearServerSync() {
-    m_playQueueID = 0;
-    brls::Logger::info("MusicQueue: Cleared server sync");
-}
-
-int MusicQueue::getCurrentPlayQueueItemID() const {
-    const QueueItem* track = getCurrentTrack();
-    if (track) return track->playQueueItemID;
-    return 0;
-}
-
-// NOTE: setFromPlayQueue has been removed pending a new PlayQueue type definition.
 // See the TODO in music_queue.hpp.
 
 } // namespace vita_ma
