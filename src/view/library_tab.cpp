@@ -222,70 +222,74 @@ LibraryTab::LibraryTab(MusicCategory category, bool showSwitcher) {
     m_titleLabel->setMarginBottom(20);
     this->addView(m_titleLabel);
 
-    // Category buttons row (replaces Plex library sections scroll)
-    m_sectionsScroll = new brls::HScrollingFrame();
-    m_sectionsScroll->setHeight(50);
-    m_sectionsScroll->setMarginBottom(15);
+    // The category switcher + view-mode chips only belong to the combined
+    // "Library" tab. The per-category sidebar entries pass showSwitcher=false;
+    // we skip building the chips entirely there so they can't be focused (a
+    // GONE view still left focusable rows behind).
+    if (showSwitcher) {
+        // Category buttons row (replaces Plex library sections scroll)
+        m_sectionsScroll = new brls::HScrollingFrame();
+        m_sectionsScroll->setHeight(50);
+        m_sectionsScroll->setMarginBottom(15);
 
-    m_sectionsBox = new brls::Box();
-    m_sectionsBox->setAxis(brls::Axis::ROW);
-    m_sectionsBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-    m_sectionsBox->setAlignItems(brls::AlignItems::CENTER);
+        m_sectionsBox = new brls::Box();
+        m_sectionsBox->setAxis(brls::Axis::ROW);
+        m_sectionsBox->setJustifyContent(brls::JustifyContent::FLEX_START);
+        m_sectionsBox->setAlignItems(brls::AlignItems::CENTER);
 
-    m_sectionsScroll->setContentView(m_sectionsBox);
-    this->addView(m_sectionsScroll);
-    if (!showSwitcher) m_sectionsScroll->setVisibility(brls::Visibility::GONE);
+        m_sectionsScroll->setContentView(m_sectionsBox);
+        this->addView(m_sectionsScroll);
 
-    // Create category buttons: Artists, Albums, Tracks, Playlists
-    auto addCategoryButton = [this](const char* label, MusicCategory cat) {
-        auto* btn = new brls::Button();
-        btn->setText(label);
-        btn->setMarginRight(10);
-        styleButton(btn, false);
-        btn->registerClickAction([this, cat, btn](brls::View* view) {
-            m_activeSectionBtn = btn;
-            updateSectionButtonStyles();
-            onCategorySelected(cat);
+        // Create category buttons: Artists, Albums, Tracks, Playlists
+        auto addCategoryButton = [this](const char* label, MusicCategory cat) {
+            auto* btn = new brls::Button();
+            btn->setText(label);
+            btn->setMarginRight(10);
+            styleButton(btn, false);
+            btn->registerClickAction([this, cat, btn](brls::View* view) {
+                m_activeSectionBtn = btn;
+                updateSectionButtonStyles();
+                onCategorySelected(cat);
+                return true;
+            });
+            m_sectionsBox->addView(btn);
+        };
+
+        addCategoryButton("Artists",   MusicCategory::ARTISTS);
+        addCategoryButton("Albums",    MusicCategory::ALBUMS);
+        addCategoryButton("Tracks",    MusicCategory::TRACKS);
+        addCategoryButton("Playlists", MusicCategory::PLAYLISTS);
+
+        // View mode buttons (All / < Back for filtered views)
+        m_viewModeBox = new brls::Box();
+        m_viewModeBox->setAxis(brls::Axis::ROW);
+        m_viewModeBox->setJustifyContent(brls::JustifyContent::FLEX_START);
+        m_viewModeBox->setAlignItems(brls::AlignItems::CENTER);
+        m_viewModeBox->setMarginBottom(15);
+
+        m_allBtn = new brls::Button();
+        m_allBtn->setText("All");
+        m_allBtn->setMarginRight(10);
+        styleButton(m_allBtn, true);
+        m_allBtn->registerClickAction([this](brls::View* view) {
+            showAllItems();
             return true;
         });
-        m_sectionsBox->addView(btn);
-    };
+        m_viewModeBox->addView(m_allBtn);
 
-    addCategoryButton("Artists",   MusicCategory::ARTISTS);
-    addCategoryButton("Albums",    MusicCategory::ALBUMS);
-    addCategoryButton("Tracks",    MusicCategory::TRACKS);
-    addCategoryButton("Playlists", MusicCategory::PLAYLISTS);
+        m_backBtn = new brls::Button();
+        m_backBtn->setText("< Back");
+        m_backBtn->setVisibility(brls::Visibility::GONE);
+        styleButton(m_backBtn, false);
+        m_backBtn->setBackgroundColor(nvgRGBA(80, 60, 50, 200));
+        m_backBtn->registerClickAction([this](brls::View* view) {
+            showAllItems();
+            return true;
+        });
+        m_viewModeBox->addView(m_backBtn);
 
-    // View mode buttons (All / < Back for filtered views)
-    m_viewModeBox = new brls::Box();
-    m_viewModeBox->setAxis(brls::Axis::ROW);
-    m_viewModeBox->setJustifyContent(brls::JustifyContent::FLEX_START);
-    m_viewModeBox->setAlignItems(brls::AlignItems::CENTER);
-    m_viewModeBox->setMarginBottom(15);
-
-    m_allBtn = new brls::Button();
-    m_allBtn->setText("All");
-    m_allBtn->setMarginRight(10);
-    styleButton(m_allBtn, true);
-    m_allBtn->registerClickAction([this](brls::View* view) {
-        showAllItems();
-        return true;
-    });
-    m_viewModeBox->addView(m_allBtn);
-
-    m_backBtn = new brls::Button();
-    m_backBtn->setText("< Back");
-    m_backBtn->setVisibility(brls::Visibility::GONE);
-    styleButton(m_backBtn, false);
-    m_backBtn->setBackgroundColor(nvgRGBA(80, 60, 50, 200));
-    m_backBtn->registerClickAction([this](brls::View* view) {
-        showAllItems();
-        return true;
-    });
-    m_viewModeBox->addView(m_backBtn);
-
-    this->addView(m_viewModeBox);
-    if (!showSwitcher) m_viewModeBox->setVisibility(brls::Visibility::GONE);
+        this->addView(m_viewModeBox);
+    }
 
     // Content grid
     m_contentGrid = new RecyclingGrid();
@@ -358,6 +362,9 @@ void LibraryTab::updateSectionButtonStyles() {
 }
 
 void LibraryTab::updateViewModeButtons() {
+    // The per-category sidebar tabs don't build the view-mode chips.
+    if (!m_allBtn || !m_backBtn) return;
+
     bool inFilteredView = (m_viewMode == LibraryTabViewMode::FILTERED);
     m_backBtn->setVisibility(inFilteredView ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
 

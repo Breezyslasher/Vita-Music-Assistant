@@ -245,6 +245,12 @@ void LoginActivity::updateUIForMode() {
     if (fieldsRemote)
         fieldsRemote->setVisibility(remote ? brls::Visibility::VISIBLE
                                            : brls::Visibility::GONE);
+    // A GONE section still leaves its interactive rows in the focus chain, so
+    // the Remote ID field / QR-scan button stayed reachable on the MA and HA
+    // login screens. Toggle focusability with the mode so they can't be focused
+    // unless Remote mode is active.
+    if (remoteField)      remoteField->setFocusable(remote);
+    if (remoteScanButton) remoteScanButton->setFocusable(remote);
 
     if (connectLabel) connectLabel->setText(remote ? "Connect" : "Log In");
 
