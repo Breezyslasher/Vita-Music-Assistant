@@ -123,10 +123,11 @@ private:
     std::string m_clientName;
 
     size_t m_audioChunkCount = 0;  // Audio chunks received in current stream (for logging)
-    // Whether local playback is enabled for the current stream (mirrors the
-    // localPlayback setting captured at stream/start). When true, audio decodes
-    // via NativeAudioPlayer (dr_flac + sceAudioOut); when false, no local audio.
-    bool m_useNativeAudio = false;
+    // Whether the Vita plays this stream locally (mirrors the localPlayback
+    // setting captured at stream/start). When true, audio decodes via
+    // NativeAudioPlayer (dr_flac + sceAudioOut); when false the Vita is acting
+    // as a remote controller and plays no local audio.
+    bool m_localPlayback = false;
 
     // Callbacks
     StreamStateCallback m_stateCallback;

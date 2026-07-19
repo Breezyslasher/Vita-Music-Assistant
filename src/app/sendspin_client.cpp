@@ -208,8 +208,8 @@ void SendspinClient::onTextMessage(const std::string& message) {
         playerState["volume"] = Json(100);
         playerState["muted"] = Json(false);
         // Fixed output latency the server should compensate for: our audio
-        // path buffers through a local HTTP server into MPV before it reaches
-        // the speakers. Reported so the server can align playout timing.
+        // path buffers audio in the native decoder before it reaches the
+        // speakers. Reported so the server can align playout timing.
         playerState["static_delay_ms"] = Json(500);
         statePayload["player"] = playerState;
         stateMsg["payload"] = statePayload;
@@ -234,7 +234,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
 
         // Extract codec_header if provided (base64-encoded container header)
         // For FLAC this contains the fLaC magic + STREAMINFO metadata block
-        // that MPV needs for format detection.
+        // the decoder needs for format detection.
         m_format.codec_header.clear();
         if (player.has("codec_header")) {
             std::string b64 = player["codec_header"].str();
@@ -260,7 +260,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
         }
 
         // If no codec_header was provided for FLAC, synthesize one.
-        // MPV needs the fLaC magic + STREAMINFO block for format probing.
+        // The decoder needs the fLaC magic + STREAMINFO block for format probing.
         if (m_format.codec == "flac" && m_format.codec_header.empty()) {
             m_format.codec_header = buildFlacHeader(
                 m_format.sample_rate, m_format.channels, m_format.bit_depth);
@@ -274,9 +274,9 @@ void SendspinClient::onTextMessage(const std::string& message) {
         // Decide the audio path for this stream up front. Local playback now
         // always decodes natively (dr_flac + sceAudioOut); when local playback
         // is off we simply don't play audio locally.
-        m_useNativeAudio = Application::getInstance().getSettings().localPlayback;
+        m_localPlayback = Application::getInstance().getSettings().localPlayback;
 
-        if (m_useNativeAudio) {
+        if (m_localPlayback) {
             // Native path: decode + output directly.
             NativeAudioPlayer::instance().startStream(
                 m_format.codec, m_format.sample_rate, m_format.channels,
@@ -289,7 +289,7 @@ void SendspinClient::onTextMessage(const std::string& message) {
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
         // Signal that no more data will arrive for this stream
-        if (m_useNativeAudio) {
+        if (m_localPlayback) {
             NativeAudioPlayer::instance().endStream();
         }
 
@@ -300,13 +300,13 @@ void SendspinClient::onTextMessage(const std::string& message) {
     }
     else if (type == "stream/clear") {
         brls::Logger::info("Sendspin: stream/clear - clearing buffers");
-        if (m_useNativeAudio) {
+        if (m_localPlayback) {
             NativeAudioPlayer::instance().stop();
         }
     }
     else if (type == "server/time") {
         // We do not do sample-accurate synchronized playout (audio is played
-        // best-effort through MPV / the native decoder), so the time channel
+        // best-effort through the native decoder), so the time channel
         // isn't used. It's optional in the protocol; ignore it.
     }
     else if (type == "server/command") {
@@ -334,7 +334,7 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
 
     // Only process audio data after stream/start has been received.
     // Without this guard, stale audio from a previous server queue
-    // leaks in and starts MPV before format info is available.
+    // leaks in and starts decoding before format info is available.
     auto state = m_state.load();
     if (state != SendspinState::BUFFERING && state != SendspinState::STREAMING) return;
 
@@ -352,7 +352,7 @@ void SendspinClient::onBinaryData(const uint8_t* data, size_t size) {
                 brls::Logger::debug("Sendspin: audio chunk #{} ({} bytes)", m_audioChunkCount, audioSize);
             }
 
-            if (m_useNativeAudio) {
+            if (m_localPlayback) {
                 // Native path: hand encoded bytes straight to the decoder.
                 NativeAudioPlayer::instance().pushAudio(audioData, audioSize);
             }
