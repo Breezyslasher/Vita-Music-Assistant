@@ -344,7 +344,7 @@ void SettingsTab::createPlayerSection() {
     m_contentBox->addView(m_nativeAudioToggle);
 
     auto* nativeAudioInfo = new brls::Label();
-    nativeAudioInfo->setText("Experimental: decode audio directly (dr_flac + sceAudioOut) instead of mpv. Takes effect on the next track.");
+    nativeAudioInfo->setText("Default: decode audio directly (dr_flac + sceAudioOut). Turn off to fall back to mpv. Takes effect on the next track.");
     nativeAudioInfo->setFontSize(14);
     nativeAudioInfo->setMarginLeft(16);
     nativeAudioInfo->setMarginTop(4);

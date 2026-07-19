@@ -18,20 +18,17 @@
 
 namespace vita_ma {
 
-// Music library categories (replaces Plex library sections)
-enum class MusicCategory {
-    ARTISTS,
-    ALBUMS,
-    TRACKS,
-    PLAYLISTS
-};
+// MusicCategory is defined in library_tab.hpp.
 
 static const char* categoryName(MusicCategory cat) {
     switch (cat) {
-        case MusicCategory::ARTISTS:   return "Artists";
-        case MusicCategory::ALBUMS:    return "Albums";
-        case MusicCategory::TRACKS:    return "Tracks";
-        case MusicCategory::PLAYLISTS: return "Playlists";
+        case MusicCategory::ARTISTS:    return "Artists";
+        case MusicCategory::ALBUMS:     return "Albums";
+        case MusicCategory::TRACKS:     return "Tracks";
+        case MusicCategory::PLAYLISTS:  return "Playlists";
+        case MusicCategory::PODCASTS:   return "Podcasts";
+        case MusicCategory::AUDIOBOOKS: return "Audiobooks";
+        case MusicCategory::RADIOS:     return "Radio";
     }
     return "Unknown";
 }
@@ -183,24 +180,44 @@ static std::vector<MusicItem> parseMusicItemsRaw(const std::string& rawArray,
 
 static const char* categoryMediaType(MusicCategory category) {
     switch (category) {
-        case MusicCategory::ARTISTS:   return "artists";
-        case MusicCategory::ALBUMS:    return "albums";
-        case MusicCategory::TRACKS:    return "tracks";
-        case MusicCategory::PLAYLISTS: return "playlists";
+        case MusicCategory::ARTISTS:    return "artists";
+        case MusicCategory::ALBUMS:     return "albums";
+        case MusicCategory::TRACKS:     return "tracks";
+        case MusicCategory::PLAYLISTS:  return "playlists";
+        case MusicCategory::PODCASTS:   return "podcasts";
+        case MusicCategory::AUDIOBOOKS: return "audiobooks";
+        case MusicCategory::RADIOS:     return "radios";
     }
     return "albums";
 }
 
-LibraryTab::LibraryTab() {
+// Media type each category's items should be tagged with.
+static MediaType categoryMediaTypeEnum(MusicCategory category) {
+    switch (category) {
+        case MusicCategory::ARTISTS:    return MediaType::ARTIST;
+        case MusicCategory::ALBUMS:     return MediaType::ALBUM;
+        case MusicCategory::TRACKS:     return MediaType::TRACK;
+        case MusicCategory::PLAYLISTS:  return MediaType::PLAYLIST;
+        case MusicCategory::PODCASTS:   return MediaType::PODCAST;
+        case MusicCategory::AUDIOBOOKS: return MediaType::AUDIOBOOK;
+        case MusicCategory::RADIOS:     return MediaType::RADIO;
+    }
+    return MediaType::UNKNOWN;
+}
+
+LibraryTab::LibraryTab(MusicCategory category, bool showSwitcher) {
     this->setAxis(brls::Axis::COLUMN);
     this->setJustifyContent(brls::JustifyContent::FLEX_START);
     this->setAlignItems(brls::AlignItems::STRETCH);
     this->setPadding(20);
     this->setGrow(1.0f);
 
+    m_currentCategory = static_cast<int>(category);
+    m_currentCategoryName = categoryName(category);
+
     // Title
     m_titleLabel = new brls::Label();
-    m_titleLabel->setText("Library");
+    m_titleLabel->setText(showSwitcher ? "Library" : m_currentCategoryName);
     m_titleLabel->setFontSize(28);
     m_titleLabel->setMarginBottom(20);
     this->addView(m_titleLabel);
@@ -217,6 +234,7 @@ LibraryTab::LibraryTab() {
 
     m_sectionsScroll->setContentView(m_sectionsBox);
     this->addView(m_sectionsScroll);
+    if (!showSwitcher) m_sectionsScroll->setVisibility(brls::Visibility::GONE);
 
     // Create category buttons: Artists, Albums, Tracks, Playlists
     auto addCategoryButton = [this](const char* label, MusicCategory cat) {
@@ -267,6 +285,7 @@ LibraryTab::LibraryTab() {
     m_viewModeBox->addView(m_backBtn);
 
     this->addView(m_viewModeBox);
+    if (!showSwitcher) m_viewModeBox->setVisibility(brls::Visibility::GONE);
 
     // Content grid
     m_contentGrid = new RecyclingGrid();
@@ -279,16 +298,19 @@ LibraryTab::LibraryTab() {
     });
     this->addView(m_contentGrid);
 
-    // Default to Albums category
-    brls::Logger::debug("LibraryTab: Initializing with Albums category");
-    auto& children = m_sectionsBox->getChildren();
-    if (children.size() > 1) {
-        m_activeSectionBtn = dynamic_cast<brls::Button*>(children[1]);
-    } else if (!children.empty()) {
-        m_activeSectionBtn = dynamic_cast<brls::Button*>(children[0]);
+    // Load the requested category (Albums by default).
+    brls::Logger::debug("LibraryTab: Initializing with {} category", m_currentCategoryName);
+    if (showSwitcher) {
+        // Highlight the matching switcher button.
+        auto& children = m_sectionsBox->getChildren();
+        int idx = static_cast<int>(category);
+        if (idx >= 0 && idx < static_cast<int>(children.size()))
+            m_activeSectionBtn = dynamic_cast<brls::Button*>(children[idx]);
+        else if (!children.empty())
+            m_activeSectionBtn = dynamic_cast<brls::Button*>(children[0]);
+        updateSectionButtonStyles();
     }
-    updateSectionButtonStyles();
-    onCategorySelected(MusicCategory::ALBUMS);
+    onCategorySelected(category);
 }
 
 LibraryTab::~LibraryTab() {
@@ -383,13 +405,7 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
             return;
         }
 
-        MediaType expectedType = MediaType::UNKNOWN;
-        switch (category) {
-            case MusicCategory::ARTISTS:   expectedType = MediaType::ARTIST;   break;
-            case MusicCategory::ALBUMS:    expectedType = MediaType::ALBUM;    break;
-            case MusicCategory::TRACKS:    expectedType = MediaType::TRACK;    break;
-            case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
-        }
+        MediaType expectedType = categoryMediaTypeEnum(category);
 
         // Parse off the UI thread - even the raw extraction takes a few seconds
         // for a 1000+ item library, and this callback runs on the main thread.
@@ -469,13 +485,7 @@ void LibraryTab::loadNextPage() {
             return;
         }
 
-        MediaType expectedType = MediaType::UNKNOWN;
-        switch (category) {
-            case MusicCategory::ARTISTS:   expectedType = MediaType::ARTIST;   break;
-            case MusicCategory::ALBUMS:    expectedType = MediaType::ALBUM;    break;
-            case MusicCategory::TRACKS:    expectedType = MediaType::TRACK;    break;
-            case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
-        }
+        MediaType expectedType = categoryMediaTypeEnum(category);
 
         std::vector<MusicItem> items = parseMusicItemsRaw(rawResult, expectedType);
         int count = (int)items.size();
