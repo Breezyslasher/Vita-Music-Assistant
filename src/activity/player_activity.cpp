@@ -2782,6 +2782,15 @@ void PlayerActivity::onRemoteQueueEvent(const Json& data) {
     }
 }
 
+namespace {
+// Translucent so the now-playing screen shows (dimmed) behind the popover.
+class OutputPopoverActivity : public brls::Activity {
+public:
+    explicit OutputPopoverActivity(brls::Box* content) : brls::Activity(content) {}
+    bool isTranslucent() override { return true; }
+};
+}  // namespace
+
 void PlayerActivity::showPlayerSwitcher() {
     auto& client = MAClient::instance();
     if (!client.isConnected()) {
@@ -2814,65 +2823,162 @@ void PlayerActivity::showPlayerSwitcher() {
                 App::instance().setPlayerId(m_ownPlayerId);
             }
 
-            auto* dialog = new brls::Dialog("Switch Player");
-            auto* box = new brls::Box();
-            box->setAxis(brls::Axis::COLUMN);
-            box->setPadding(16);
-
+            // Anchored output-device popover (spec: Player 2c). The now-playing
+            // screen dims behind it; the panel sits above the "This Vita" pill.
             const auto& currentId = Application::getInstance().getSettings().selectedPlayerId;
 
-            // "This Vita" (local playback via Sendspin). Selecting it clears the
-            // remote selection so controls run on the instant local path.
+            // Colors (spec tokens).
+            const NVGcolor kScrim   = nvgRGBA(6, 8, 11, 115);      // rgba(6,8,11,.45)
+            const NVGcolor kPanel   = nvgRGB(21, 27, 35);          // #151b23
+            const NVGcolor kBorder  = nvgRGB(43, 51, 63);          // #2b333f
+            const NVGcolor kDim     = nvgRGB(107, 116, 132);       // #6b7684
+            const NVGcolor kText    = nvgRGB(238, 242, 246);       // #eef2f6
+            const NVGcolor kCyan    = nvgRGB(0, 188, 238);         // #00bcee
+            const NVGcolor kActiveBg = nvgRGBA(0, 188, 238, 26);   // rgba(0,188,238,.1)
+            const NVGcolor kTileActive = nvgRGBA(0, 188, 238, 41); // rgba(0,188,238,.16)
+            const NVGcolor kTileIdle = nvgRGB(27, 33, 43);         // #1b212b
+            const NVGcolor kLine    = nvgRGB(36, 45, 56);          // #242d38
+
+            // Full-screen scrim; panel anchored bottom-center above the pill.
+            auto* scrim = new brls::Box();
+            scrim->setAxis(brls::Axis::COLUMN);
+            scrim->setWidthPercentage(100.0f);
+            scrim->setHeightPercentage(100.0f);
+            scrim->setJustifyContent(brls::JustifyContent::FLEX_END);
+            scrim->setAlignItems(brls::AlignItems::CENTER);
+            scrim->setBackgroundColor(kScrim);
+            scrim->addGestureRecognizer(new brls::TapGestureRecognizer(scrim,
+                []() { brls::Application::popActivity(); }));
+            scrim->registerAction("Back", brls::ControllerButton::BUTTON_B,
+                [](brls::View*) { brls::Application::popActivity(); return true; });
+
+            auto* panel = new brls::Box();
+            panel->setAxis(brls::Axis::COLUMN);
+            panel->setWidth(340.0f);
+            panel->setBackgroundColor(kPanel);
+            panel->setBorderColor(kBorder);
+            panel->setBorderThickness(1.0f);
+            panel->setCornerRadius(16.0f);
+            panel->setPadding(9.0f, 9.0f, 9.0f, 9.0f);
+            panel->setShadowType(brls::ShadowType::GENERIC);
+            panel->setMarginBottom(80.0f);  // clear the 22px-from-bottom pill
+
+            auto* header = new brls::Label();
+            header->setText("OUTPUT DEVICE");
+            header->setFontSize(11.0f);
+            header->setTextColor(kDim);
+            header->setSingleLine(true);
+            header->setMargins(8.0f, 12.0f, 6.0f, 12.0f);
+            panel->addView(header);
+
+            brls::Box* defaultFocus = nullptr;
+            brls::Box* firstRow = nullptr;
+
+            // Row factory: [icon tile][title / subtitle], active row tinted cyan.
+            auto addRow = [&](const std::string& title, const std::string& subtitle,
+                              bool active, std::function<void()> onSelect) -> brls::Box* {
+                auto* row = new brls::Box();
+                row->setAxis(brls::Axis::ROW);
+                row->setAlignItems(brls::AlignItems::CENTER);
+                row->setHeight(52.0f);
+                row->setPadding(8.0f, 12.0f, 8.0f, 10.0f);
+                row->setCornerRadius(11.0f);
+                row->setMarginBottom(2.0f);
+                row->setFocusable(true);
+                if (active) row->setBackgroundColor(kActiveBg);
+
+                auto* tile = new brls::Box();
+                tile->setWidth(34.0f);
+                tile->setHeight(34.0f);
+                tile->setCornerRadius(9.0f);
+                tile->setMarginRight(12.0f);
+                tile->setBackgroundColor(active ? kTileActive : kTileIdle);
+                row->addView(tile);
+
+                auto* col = new brls::Box();
+                col->setAxis(brls::Axis::COLUMN);
+                col->setGrow(1.0f);
+                col->setJustifyContent(brls::JustifyContent::CENTER);
+                auto* t = new brls::Label();
+                t->setText(title);
+                t->setFontSize(14.0f);
+                t->setTextColor(active ? kCyan : kText);
+                t->setSingleLine(true);
+                col->addView(t);
+                if (!subtitle.empty()) {
+                    auto* s = new brls::Label();
+                    s->setText(subtitle);
+                    s->setFontSize(11.0f);
+                    s->setTextColor(active ? kCyan : kDim);
+                    s->setSingleLine(true);
+                    col->addView(s);
+                }
+                row->addView(col);
+
+                auto sel = std::move(onSelect);
+                row->registerClickAction([sel](brls::View*) {
+                    brls::Application::popActivity(brls::TransitionAnimation::FADE,
+                        [sel]() { if (sel) sel(); });
+                    return true;
+                });
+                row->addGestureRecognizer(new brls::TapGestureRecognizer(row));
+                panel->addView(row);
+                if (!firstRow) firstRow = row;
+                return row;
+            };
+
+            // This Vita (local). Active when no remote player is selected.
             {
-                auto* btn = new brls::Button();
-                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string label = "This Vita";
-                if (currentId.empty()) label += "  *";
-                btn->setText(label);
-                btn->setMarginBottom(4);
-                btn->registerClickAction([this, dialog](brls::View*) {
+                bool active = currentId.empty();
+                auto* r = addRow("This Vita", active ? "Playing now" : "Local playback",
+                                 active, [this]() {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId.clear();
                     Application::getInstance().saveSettings();
-                    dialog->close();
                     updatePlayerNameLabel();
                     brls::Application::notify("Switched to This Vita");
-                    return true;
                 });
-                box->addView(btn);
+                if (active) defaultFocus = r;
             }
 
-            // Remote players. Skip our own registered player - it's already
-            // represented by the "This Vita" entry above, so it never shows twice.
+            // Remote players (skip our own — it's the "This Vita" row).
             for (size_t i = 0; i < m_availablePlayers.size(); i++) {
-                if (!m_ownPlayerId.empty() && m_availablePlayers[i].playerId == m_ownPlayerId)
-                    continue;
+                const auto& p = m_availablePlayers[i];
+                if (!m_ownPlayerId.empty() && p.playerId == m_ownPlayerId) continue;
 
-                auto* btn = new brls::Button();
-                btn->setStyle(&brls::BUTTONSTYLE_BORDERLESS);
-                std::string label = m_availablePlayers[i].name;
-                if (!m_availablePlayers[i].available) label += " (offline)";
-                if (m_availablePlayers[i].playerId == currentId) label += "  *";
-                btn->setText(label);
-                btn->setMarginBottom(4);
-                std::string pid = m_availablePlayers[i].playerId;
-                std::string pname = m_availablePlayers[i].name;
-                btn->registerClickAction([this, dialog, pid, pname](brls::View*) {
+                bool active = (p.playerId == currentId);
+                std::string sub = !p.available ? "Offline"
+                                 : active ? "Playing now"
+                                 : (p.type.empty() ? "Speaker" : p.type);
+                std::string pid = p.playerId, pname = p.name;
+                auto* r = addRow(p.name, sub, active, [this, pid, pname]() {
                     auto& settings = Application::getInstance().getSettings();
                     settings.selectedPlayerId = pid;
                     Application::getInstance().saveSettings();
-                    dialog->close();
                     updatePlayerNameLabel();
                     loadRemotePlayerState();
                     brls::Application::notify("Switched to " + pname);
-                    return true;
                 });
-                box->addView(btn);
+                if (active) defaultFocus = r;
             }
 
-            dialog->addView(box);
-            dialog->addButton("Cancel", []() {});
-            dialog->open();
+            // Divider.
+            auto* divider = new brls::Box();
+            divider->setHeight(1.0f);
+            divider->setAlignSelf(brls::AlignSelf::STRETCH);
+            divider->setMargins(5.0f, 10.0f, 5.0f, 10.0f);
+            divider->setBackgroundColor(kLine);
+            panel->addView(divider);
+
+            // Group speakers (cyan). Multiroom grouping isn't built yet.
+            addRow("Group speakers\xE2\x80\xA6", "", false, []() {
+                brls::Application::notify("Speaker grouping coming soon");
+            });
+
+            scrim->addView(panel);
+            brls::Application::pushActivity(new OutputPopoverActivity(scrim));
+            if (!defaultFocus) defaultFocus = firstRow;
+            if (defaultFocus) brls::Application::giveFocus(defaultFocus);
         });
     });
 }
