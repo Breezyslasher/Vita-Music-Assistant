@@ -2437,22 +2437,41 @@ void PlayerActivity::hideControls() {
     }
 }
 
+// Packaged device icon for the pill / popover. Local = the Vita itself.
+static const char* outputIconRes(const std::string& type, bool isLocal) {
+    if (isLocal) return "icons/sony-playstation.png";
+    std::string t = type;
+    for (auto& c : t) c = (char)tolower((unsigned char)c);
+    if (t.find("cast") != std::string::npos) return "icons/cast.png";
+    if (t.find("tv") != std::string::npos || t.find("kodi") != std::string::npos ||
+        t.find("dlna") != std::string::npos || t.find("airplay") != std::string::npos)
+        return "icons/television.png";
+    return "icons/speaker.png";
+}
+
 void PlayerActivity::updatePlayerNameLabel() {
     if (!playerNameLabel) return;
     const auto& selectedId = Application::getInstance().getSettings().selectedPlayerId;
+    auto setIcon = [this](const char* res) {
+        if (playerSwitchIcon) playerSwitchIcon->setImageFromRes(res);
+    };
+
     if (selectedId.empty() || (!m_ownPlayerId.empty() && selectedId == m_ownPlayerId)) {
         playerNameLabel->setText("This Vita");
+        setIcon(outputIconRes("", true));
         return;
     }
     // Look up the player name from cached list
     for (const auto& p : m_availablePlayers) {
         if (p.playerId == selectedId) {
             playerNameLabel->setText(p.name);
+            setIcon(outputIconRes(p.type, false));
             return;
         }
     }
     // Fallback: show truncated ID
     playerNameLabel->setText(selectedId.substr(0, 16));
+    setIcon(outputIconRes("", false));
 }
 
 std::string PlayerActivity::getActivePlayerId() const {
