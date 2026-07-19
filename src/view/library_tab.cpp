@@ -14,6 +14,7 @@
 #include "utils/async.hpp"
 #include <chrono>
 #include <cstdlib>
+#include <thread>
 
 namespace vita_ma {
 
@@ -371,53 +372,52 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
             case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
         }
 
-        auto parseT0 = std::chrono::steady_clock::now();
-        std::vector<MusicItem> items = parseMusicItemsRaw(rawResult, expectedType);
-        int count = (int)items.size();
-        auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - parseT0).count();
-        brls::Logger::info("LibraryTab: Got {} {} items (offset {}) - parseMusicItemsRaw {}ms",
-                           count, categoryName(category), m_offset, (long)parseMs);
+        // Parse off the UI thread - even the raw extraction takes a few seconds
+        // for a 1000+ item library, and this callback runs on the main thread.
+        // rawResult is a temporary that won't outlive this call, so copy it for
+        // the worker; apply the parsed items back on the main thread.
+        std::string raw = rawResult;
+        std::thread([this, raw = std::move(raw), expectedType, category, aliveWeak, loadGen]() {
+            auto parseT0 = std::chrono::steady_clock::now();
+            std::vector<MusicItem> items = parseMusicItemsRaw(raw, expectedType);
+            int count = (int)items.size();
+            auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - parseT0).count();
+            brls::Logger::info("LibraryTab: Got {} {} items - parseMusicItemsRaw {}ms (worker)",
+                               count, categoryName(category), (long)parseMs);
 
-        brls::sync([this, items, count, aliveWeak, loadGen]() {
-            auto alive = aliveWeak.lock();
-            if (!alive || !*alive) return;
-            if (loadGen != m_loadGen) return;  // category changed while loading
+            brls::sync([this, items = std::move(items), count, aliveWeak, loadGen]() {
+                auto alive = aliveWeak.lock();
+                if (!alive || !*alive) return;
+                if (loadGen != m_loadGen) return;  // category changed while loading
 
-            auto t0 = std::chrono::steady_clock::now();
+                auto t0 = std::chrono::steady_clock::now();
 
-            m_offset += count;
-            m_hasMore = (count >= PAGE_SIZE);  // If we got a full page, there may be more
-            m_loadingPage = false;
+                m_offset += count;
+                m_hasMore = (count >= PAGE_SIZE);  // full page => there may be more
+                m_loadingPage = false;
 
-            if (m_items.empty()) {
-                // First page - set as data source
-                m_items = items;
-                if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                    m_contentGrid->setDataSource(m_items);
+                if (m_items.empty()) {
+                    m_items = items;
+                    if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
+                        m_contentGrid->setDataSource(m_items);
+                    }
+                } else {
+                    m_items.insert(m_items.end(), items.begin(), items.end());
+                    if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
+                        m_contentGrid->appendItems(items);
+                    }
                 }
-            } else {
-                // Subsequent pages - append
-                m_items.insert(m_items.end(), items.begin(), items.end());
-                if (m_viewMode == LibraryTabViewMode::ALL_ITEMS) {
-                    m_contentGrid->appendItems(items);
-                }
-            }
 
-            m_contentGrid->setHasMore(m_hasMore);
-            m_loaded = true;
+                m_contentGrid->setHasMore(m_hasMore);
+                m_loaded = true;
 
-            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - t0).count();
-            brls::Logger::info("LibraryTab: applied page ({} items, total {}) on UI thread in {}ms",
-                               count, (int)m_items.size(), (long)ms);
-
-            // NOTE: pages now load lazily as the user scrolls (RecyclingGrid's
-            // onLoadMore -> loadNextPage). We no longer chain loadNextPage() here
-            // to eagerly pull the whole category, which kept the UI thread and
-            // network saturated and made controls (e.g. pause) unresponsive
-            // until the entire library finished loading.
-        });
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - t0).count();
+                brls::Logger::info("LibraryTab: applied page ({} items, total {}) on UI thread in {}ms",
+                                   count, (int)m_items.size(), (long)ms);
+            });
+        }).detach();
     };
 
     // Set up pagination callback
