@@ -75,20 +75,24 @@ void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>
         });
         cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
 
-        // Register START button context menus for artists and albums
-        if (capturedItem.mediaType == MediaType::ARTIST) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showArtistContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::ALBUM) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showAlbumContextMenuStatic(capturedItem);
-                    return true;
-                });
-        }
+        // START opens a context menu for every item, dispatched by type (the
+        // same mapping LibraryTab uses). Previously only artists and albums got
+        // a menu, so tracks/playlists/stations had no Options action at all.
+        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+            [capturedItem](brls::View* view) {
+                switch (capturedItem.mediaType) {
+                    case MediaType::ARTIST:
+                        MediaDetailView::showArtistContextMenuStatic(capturedItem);
+                        break;
+                    case MediaType::TRACK:
+                        MediaDetailView::performTrackActionStatic(capturedItem);
+                        break;
+                    default:  // albums, playlists, stations, podcasts, audiobooks
+                        MediaDetailView::showAlbumContextMenuStatic(capturedItem);
+                        break;
+                }
+                return true;
+            });
 
         row->addView(cell);
     }
@@ -245,13 +249,16 @@ void HomeTab::loadContent() {
 }
 
 void HomeTab::onItemSelected(const MusicItem& item) {
-    // For tracks, play directly instead of showing detail view
-    if (item.mediaType == MediaType::TRACK) {
+    // Tracks and radio stations play immediately. A station has no track list,
+    // so opening a MediaDetailView for it (which fetches album/artist/playlist
+    // tracks) showed an empty/broken page - play it instead.
+    if (item.mediaType == MediaType::TRACK || item.mediaType == MediaType::RADIO) {
         Application::getInstance().pushPlayerActivity(item.itemId);
         return;
     }
 
-    // Show media detail view for other types (artists, albums)
+    // Show media detail view for browsable types (artists, albums, playlists,
+    // podcasts, audiobooks).
     auto* detailView = new MediaDetailView(item);
     brls::Application::pushActivity(new brls::Activity(detailView));
 }
