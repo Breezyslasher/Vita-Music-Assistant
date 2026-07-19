@@ -31,7 +31,6 @@ struct QueueItem {
     std::string thumbProvider; // MA provider instance ID for imageproxy
     int duration = 0;         // Duration in seconds
     int index = 0;            // Position in original queue (for unshuffle)
-    int playQueueItemID = 0;  // Server-side play queue item ID (0 = offline/unsynced)
 };
 
 /**
@@ -44,24 +43,15 @@ public:
 
     // Queue management
     void clear();
-    void addTrack(const MusicItem& item);           // Add to end of queue
     void addTracks(const std::vector<MusicItem>& items);
     void insertTrackAfterCurrent(const MusicItem& item);  // Insert after current track (play next)
-    void removeTrack(int index);
-    void moveTrack(int fromIndex, int toIndex);
-    // Move by PLAY-order position: reorders the shuffle order when shuffling
-    // (m_queue untouched), falls back to moveTrack otherwise.
-    void moveInPlayOrder(int fromPlayPos, int toPlayPos);
 
     // Set queue from album/playlist (clears existing queue)
     void setQueue(const std::vector<MusicItem>& items, int startIndex = 0);
 
     // Playback control
-    bool playTrack(int index);          // Play specific track in queue
     bool playNext();                    // Play next track (respects repeat/shuffle)
     bool playPrevious();                // Play previous track
-    bool hasNext() const;               // Check if there's a next track
-    bool hasPrevious() const;           // Check if there's a previous track
 
     // Current state
     int getCurrentIndex() const { return m_currentIndex; }
@@ -74,7 +64,6 @@ public:
     void setShuffle(bool enabled);
     bool isShuffleEnabled() const { return m_shuffleEnabled; }
     void reshuffle();  // Re-randomize shuffle order
-    const std::vector<int>& getShuffleOrder() const { return m_shuffleOrder; }
     int getShufflePosition() const { return m_shufflePosition; }
 
     // Repeat mode
@@ -93,25 +82,8 @@ public:
     using QueueChangedCallback = std::function<void()>;
     void setQueueChangedCallback(QueueChangedCallback callback) { m_queueChangedCallback = callback; }
 
-    // Save/load queue state (for persistence across sessions)
+    // Save queue state (for persistence across sessions)
     void saveState();
-    void loadState();
-
-    // Version counter - incremented on every queue mutation (add/remove/reorder/set/clear)
-    uint32_t getVersion() const { return m_version; }
-
-    // Server-side play queue sync
-    // Creates a server play queue from the current queue state.
-    // When synced, shuffle/move/add/remove operations are mirrored to server.
-    void syncToServer(int playQueueID);
-    void clearServerSync();
-    bool isServerSynced() const { return m_playQueueID > 0; }
-    int getPlayQueueID() const { return m_playQueueID; }
-    // Get the playQueueItemID for the current track (for timeline reports)
-    int getCurrentPlayQueueItemID() const;
-
-    // TODO: Set queue from server play queue response (replaces local state)
-    // void setFromPlayQueue(...) - removed pending PlayQueueContainer type definition
 
 private:
     MusicQueue();
@@ -134,11 +106,7 @@ private:
     TrackEndedCallback m_trackEndedCallback;
     QueueChangedCallback m_queueChangedCallback;
 
-    uint32_t m_version = 0;  // Incremented on every queue mutation
     std::mt19937 m_rng;  // Random number generator for shuffle
-
-    // Server-side play queue state
-    int m_playQueueID = 0;  // 0 = offline/not synced
 };
 
 } // namespace vita_ma
