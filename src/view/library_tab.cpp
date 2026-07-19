@@ -13,6 +13,7 @@
 #include "utils/image_loader.hpp"
 #include "utils/async.hpp"
 #include <chrono>
+#include <cstdlib>
 
 namespace vita_ma {
 
@@ -35,7 +36,7 @@ static const char* categoryName(MusicCategory cat) {
 }
 
 // Helper to parse a JSON array of music items into MusicItem vector
-static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expectedType) {
+[[maybe_unused]] static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expectedType) {
     std::vector<MusicItem> items;
 
     if (result.type() != Json::ARRAY) {
@@ -90,6 +91,80 @@ static std::vector<MusicItem> parseMusicItems(const Json& result, MediaType expe
     }
 
     return items;
+}
+
+// DOM-free variant: parse library items straight from the raw JSON array
+// substring (no Json DOM), the way Vita_Suwayomi does. Building a full DOM of a
+// 2.6 MB / ~40k-node response cost ~8s on Vita; this pulls only the handful of
+// fields we need per object and runs in a fraction of that.
+static std::vector<MusicItem> parseMusicItemsRaw(const std::string& rawArray,
+                                                 MediaType expectedType) {
+    std::vector<MusicItem> items;
+    std::vector<std::string> objs = MAClient::rawSplitArrayObjects(rawArray);
+    items.reserve(objs.size());
+
+    auto applyImage = [](const std::string& io, MusicItem& item) -> bool {
+        if (io.empty()) return false;
+        std::string proxy = MAClient::rawExtractField(io, "proxy_id");
+        if (!proxy.empty()) {
+            item.imageUrl = "proxyid:" + proxy;
+        } else {
+            std::string path = MAClient::rawExtractField(io, "path");
+            if (path.empty()) return false;
+            item.imageUrl = path;
+        }
+        std::string prov = MAClient::rawExtractField(io, "provider");
+        if (!prov.empty()) item.imageProvider = prov;
+        return true;
+    };
+
+    for (const auto& o : objs) {
+        MusicItem item;
+        item.itemId    = MAClient::rawExtractField(o, "item_id");
+        item.name      = MAClient::rawExtractField(o, "name");
+        item.sortName  = MAClient::rawExtractField(o, "sort_name");
+        item.uri       = MAClient::rawExtractField(o, "uri");
+        item.mediaType = expectedType;
+
+        // Image: prefer a top-level "image" object, else metadata.images[0].
+        if (!applyImage(MAClient::rawExtractField(o, "image"), item)) {
+            std::string meta = MAClient::rawExtractField(o, "metadata");
+            if (!meta.empty()) {
+                std::string imagesArr = MAClient::rawExtractField(meta, "images");
+                if (!imagesArr.empty()) {
+                    auto imgs = MAClient::rawSplitArrayObjects(imagesArr);
+                    if (!imgs.empty()) applyImage(imgs[0], item);
+                }
+            }
+        }
+
+        std::string s;
+        s = MAClient::rawExtractField(o, "artist_name");  if (!s.empty()) item.artistName = s;
+        s = MAClient::rawExtractField(o, "album_name");   if (!s.empty()) item.albumName = s;
+        s = MAClient::rawExtractField(o, "track_number"); if (!s.empty()) item.trackNumber = atoi(s.c_str());
+        s = MAClient::rawExtractField(o, "disc_number");  if (!s.empty()) item.discNumber = atoi(s.c_str());
+        s = MAClient::rawExtractField(o, "duration");     if (!s.empty()) item.duration = atoi(s.c_str());
+        s = MAClient::rawExtractField(o, "year");         if (!s.empty()) item.year = atoi(s.c_str());
+        s = MAClient::rawExtractField(o, "version");      if (!s.empty()) item.version = s;
+        s = MAClient::rawExtractField(o, "item_count");   if (!s.empty()) item.itemCount = atoi(s.c_str());
+        s = MAClient::rawExtractField(o, "is_editable");  if (!s.empty()) item.isEditable = (s == "true");
+        s = MAClient::rawExtractField(o, "favorite");     if (!s.empty()) item.favorite = (s == "true");
+        s = MAClient::rawExtractField(o, "provider");     if (!s.empty()) item.provider = s;
+
+        items.push_back(std::move(item));
+    }
+
+    return items;
+}
+
+static const char* categoryMediaType(MusicCategory category) {
+    switch (category) {
+        case MusicCategory::ARTISTS:   return "artists";
+        case MusicCategory::ALBUMS:    return "albums";
+        case MusicCategory::TRACKS:    return "tracks";
+        case MusicCategory::PLAYLISTS: return "playlists";
+    }
+    return "albums";
 }
 
 LibraryTab::LibraryTab() {
@@ -273,7 +348,7 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
     MAClient& client = MAClient::instance();
     auto aliveWeak = std::weak_ptr<bool>(m_alive);
 
-    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const Json& result) {
+    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const std::string& rawResult) {
         if (!success) {
             brls::Logger::error("LibraryTab: Failed to load {} content", categoryName(category));
             brls::sync([aliveWeak]() {
@@ -293,11 +368,11 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
         }
 
         auto parseT0 = std::chrono::steady_clock::now();
-        std::vector<MusicItem> items = parseMusicItems(result, expectedType);
+        std::vector<MusicItem> items = parseMusicItemsRaw(rawResult, expectedType);
         int count = (int)items.size();
         auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - parseT0).count();
-        brls::Logger::info("LibraryTab: Got {} {} items (offset {}) - parseMusicItems {}ms",
+        brls::Logger::info("LibraryTab: Got {} {} items (offset {}) - parseMusicItemsRaw {}ms",
                            count, categoryName(category), m_offset, (long)parseMs);
 
         brls::sync([this, items, count, aliveWeak, loadGen]() {
@@ -344,20 +419,8 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
     // Set up pagination callback
     m_contentGrid->setOnLoadMore([this]() { loadNextPage(); });
 
-    switch (category) {
-        case MusicCategory::ARTISTS:
-            client.getLibraryArtists(onResponse, "", PAGE_SIZE, 0);
-            break;
-        case MusicCategory::ALBUMS:
-            client.getLibraryAlbums(onResponse, "", PAGE_SIZE, 0);
-            break;
-        case MusicCategory::TRACKS:
-            client.getLibraryTracks(onResponse, "", PAGE_SIZE, 0);
-            break;
-        case MusicCategory::PLAYLISTS:
-            client.getLibraryPlaylists(onResponse, "", PAGE_SIZE, 0);
-            break;
-    }
+    // Raw (DOM-free) fetch: the response is parsed directly from the string.
+    client.getLibraryItemsRaw(categoryMediaType(category), onResponse, "", PAGE_SIZE, 0);
 }
 
 void LibraryTab::loadNextPage() {
@@ -371,7 +434,7 @@ void LibraryTab::loadNextPage() {
     MAClient& client = MAClient::instance();
     auto aliveWeak = std::weak_ptr<bool>(m_alive);
 
-    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const Json& result) {
+    auto onResponse = [this, category, aliveWeak, loadGen](bool success, const std::string& rawResult) {
         if (!success) {
             brls::sync([this, aliveWeak, loadGen]() {
                 auto alive = aliveWeak.lock();
@@ -391,7 +454,7 @@ void LibraryTab::loadNextPage() {
             case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
         }
 
-        std::vector<MusicItem> items = parseMusicItems(result, expectedType);
+        std::vector<MusicItem> items = parseMusicItemsRaw(rawResult, expectedType);
         int count = (int)items.size();
         brls::Logger::info("LibraryTab: Got {} more {} items (offset {})", count, categoryName(category), m_offset);
 
@@ -422,20 +485,7 @@ void LibraryTab::loadNextPage() {
         });
     };
 
-    switch (category) {
-        case MusicCategory::ARTISTS:
-            client.getLibraryArtists(onResponse, "", PAGE_SIZE, m_offset);
-            break;
-        case MusicCategory::ALBUMS:
-            client.getLibraryAlbums(onResponse, "", PAGE_SIZE, m_offset);
-            break;
-        case MusicCategory::TRACKS:
-            client.getLibraryTracks(onResponse, "", PAGE_SIZE, m_offset);
-            break;
-        case MusicCategory::PLAYLISTS:
-            client.getLibraryPlaylists(onResponse, "", PAGE_SIZE, m_offset);
-            break;
-    }
+    client.getLibraryItemsRaw(categoryMediaType(category), onResponse, "", PAGE_SIZE, m_offset);
 }
 
 void LibraryTab::showAllItems() {

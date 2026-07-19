@@ -274,6 +274,26 @@ public:
     void sendCommand(const std::string& command, const Json& kwargs,
                      MAResponseCallback cb = nullptr);
 
+    // Raw response variant: the callback receives the response's "result" value
+    // as a raw JSON substring instead of a parsed Json DOM. Used for very large
+    // list responses (the library) where building a full DOM of ~40k nodes
+    // costs ~8s on Vita; the caller extracts only the fields it needs directly
+    // from the string (the Vita_Suwayomi approach).
+    using MARawResponseCallback = std::function<void(bool success, const std::string& rawResult)>;
+    void sendCommandRaw(const std::string& command, const Json& kwargs,
+                        MARawResponseCallback cb);
+    // Fetch library items ("albums"/"artists"/"tracks"/"playlists") with the
+    // raw (DOM-free) response path.
+    void getLibraryItemsRaw(const std::string& mediaType, MARawResponseCallback cb,
+                            const std::string& search, int limit, int offset);
+
+    // DOM-free JSON helpers (shared by the raw response path). rawExtractField
+    // returns a key's value as a raw substring (string contents unquoted;
+    // objects/arrays returned whole, brace/bracket-aware). rawSplitArrayObjects
+    // splits a top-level JSON array of objects into per-object substrings.
+    static std::string rawExtractField(const std::string& json, const std::string& key);
+    static std::vector<std::string> rawSplitArrayObjects(const std::string& arrayJson);
+
 private:
     MAClient() = default;
     ~MAClient() = default;
@@ -299,6 +319,8 @@ private:
 
     // Pending commands (awaiting responses)
     std::map<std::string, MAResponseCallback> m_pendingCallbacks;
+    // Callbacks awaiting a raw (un-parsed) response, keyed by message_id.
+    std::map<std::string, MARawResponseCallback> m_pendingRawCallbacks;
     std::mutex m_callbackMutex;
 
     // Commands queued before auth completes

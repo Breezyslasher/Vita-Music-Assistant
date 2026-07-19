@@ -268,6 +268,81 @@ size_t Json::size() const {
 }
 
 // ============================================================================
+// DOM-free JSON extraction (Vita_Suwayomi style) for very large responses
+// ============================================================================
+
+std::string MAClient::rawExtractField(const std::string& json, const std::string& key) {
+    std::string searchKey = "\"" + key + "\"";
+    size_t keyPos = json.find(searchKey);
+    if (keyPos == std::string::npos) return "";
+    size_t colon = json.find(':', keyPos + searchKey.size());
+    if (colon == std::string::npos) return "";
+    size_t vs = json.find_first_not_of(" \t\n\r", colon + 1);
+    if (vs == std::string::npos) return "";
+
+    char c = json[vs];
+    if (c == '"') {
+        // String value: copy contents, honoring escaped quotes.
+        size_t e = vs + 1;
+        while (e < json.size()) {
+            if (json[e] == '"' && json[e - 1] != '\\') break;
+            e++;
+        }
+        return json.substr(vs + 1, e - vs - 1);
+    } else if (c == '[' || c == '{') {
+        // Object/array: return the whole balanced span.
+        char open = c, close = (c == '[') ? ']' : '}';
+        int depth = 1;
+        bool inStr = false;
+        size_t e = vs + 1;
+        while (e < json.size() && depth > 0) {
+            char ch = json[e];
+            if (ch == '"' && json[e - 1] != '\\') inStr = !inStr;
+            else if (!inStr) { if (ch == open) depth++; else if (ch == close) depth--; }
+            e++;
+        }
+        return json.substr(vs, e - vs);
+    } else if (json.compare(vs, 4, "null") == 0) {
+        return "";
+    } else {
+        // Number / bool: up to the next delimiter.
+        size_t e = json.find_first_of(",}]", vs);
+        if (e == std::string::npos) return "";
+        std::string v = json.substr(vs, e - vs);
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t' ||
+                              v.back() == '\n' || v.back() == '\r'))
+            v.pop_back();
+        return v;
+    }
+}
+
+std::vector<std::string> MAClient::rawSplitArrayObjects(const std::string& arrayJson) {
+    std::vector<std::string> out;
+    size_t s = arrayJson.find('[');
+    if (s == std::string::npos) return out;
+    size_t i = s + 1;
+    while (i < arrayJson.size()) {
+        while (i < arrayJson.size() && arrayJson[i] != '{') {
+            if (arrayJson[i] == ']') return out;
+            i++;
+        }
+        if (i >= arrayJson.size()) break;
+        size_t objStart = i;
+        int depth = 1;
+        bool inStr = false;
+        i++;
+        while (i < arrayJson.size() && depth > 0) {
+            char ch = arrayJson[i];
+            if (ch == '"' && arrayJson[i - 1] != '\\') inStr = !inStr;
+            else if (!inStr) { if (ch == '{') depth++; else if (ch == '}') depth--; }
+            i++;
+        }
+        out.push_back(arrayJson.substr(objStart, i - objStart));
+    }
+    return out;
+}
+
+// ============================================================================
 // MAClient Implementation
 // ============================================================================
 
@@ -386,6 +461,31 @@ bool MAClient::isConnected() const {
 }
 
 void MAClient::onMessage(const std::string& message) {
+    // Raw fast path: if this response matches a pending RAW callback, hand it
+    // the un-parsed "result" substring and skip building a Json DOM entirely
+    // (a 2.6 MB library response takes ~8s to DOM-parse on Vita). We only pull
+    // message_id from the head of the string, which is cheap.
+    {
+        std::string msgId = rawExtractField(message, "message_id");
+        if (!msgId.empty()) {
+            MARawResponseCallback rawCb;
+            {
+                std::lock_guard<std::mutex> lock(m_callbackMutex);
+                auto it = m_pendingRawCallbacks.find(msgId);
+                if (it != m_pendingRawCallbacks.end()) {
+                    rawCb = std::move(it->second);
+                    m_pendingRawCallbacks.erase(it);
+                }
+            }
+            if (rawCb) {
+                bool isError = message.find("\"error_code\"") != std::string::npos;
+                if (isError) rawCb(false, "");
+                else rawCb(true, rawExtractField(message, "result"));
+                return;
+            }
+        }
+    }
+
     // Time the JSON parse for large responses so we can tell whether a slow
     // library load is server/network (message arrives late) or on-device parse
     // (message is big and parse is slow).
@@ -669,6 +769,39 @@ void MAClient::sendCommand(const std::string& command, const Json& kwargs,
             m_pendingCallbacks.erase(msgId);
         }
     }
+}
+
+void MAClient::sendCommandRaw(const std::string& command, const Json& kwargs,
+                              MARawResponseCallback cb) {
+    std::string msgId = generateMessageId();
+
+    Json msg;
+    msg["message_id"] = Json(msgId);
+    msg["command"] = Json(command);
+    if (kwargs.type() == Json::OBJECT && kwargs.size() > 0) {
+        msg["args"] = kwargs;
+    }
+
+    if (cb) {
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_pendingRawCallbacks[msgId] = std::move(cb);
+    }
+
+    std::string json = msg.dump();
+    if (!sendRaw(json)) {
+        brls::Logger::error("MA: failed to send raw command: {}", command);
+        std::lock_guard<std::mutex> lock(m_callbackMutex);
+        m_pendingRawCallbacks.erase(msgId);
+    }
+}
+
+void MAClient::getLibraryItemsRaw(const std::string& mediaType, MARawResponseCallback cb,
+                                  const std::string& search, int limit, int offset) {
+    Json args;
+    if (!search.empty()) args["search"] = Json(search);
+    args["limit"] = Json(limit);
+    args["offset"] = Json(offset);
+    sendCommandRaw("music/" + mediaType + "/library_items", args, std::move(cb));
 }
 
 void MAClient::flushPreAuthQueue() {
