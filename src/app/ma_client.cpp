@@ -3,6 +3,7 @@
 #include <borealis.hpp>
 #include <cstring>
 #include <sstream>
+#include <chrono>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -366,7 +367,17 @@ bool MAClient::isConnected() const {
 }
 
 void MAClient::onMessage(const std::string& message) {
+    // Time the JSON parse for large responses so we can tell whether a slow
+    // library load is server/network (message arrives late) or on-device parse
+    // (message is big and parse is slow).
+    auto parseT0 = std::chrono::steady_clock::now();
     Json msg = Json::parse(message);
+    if (message.size() > 100000) {
+        auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - parseT0).count();
+        brls::Logger::info("MA: parsed {} KB response in {}ms",
+                           (long)(message.size() / 1024), (long)parseMs);
+    }
 
     // Check if this is the initial server info message
     if (msg.has("server_id")) {

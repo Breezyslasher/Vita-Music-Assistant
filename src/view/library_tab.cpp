@@ -292,9 +292,13 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
             case MusicCategory::PLAYLISTS: expectedType = MediaType::PLAYLIST; break;
         }
 
+        auto parseT0 = std::chrono::steady_clock::now();
         std::vector<MusicItem> items = parseMusicItems(result, expectedType);
         int count = (int)items.size();
-        brls::Logger::info("LibraryTab: Got {} {} items (offset {})", count, categoryName(category), m_offset);
+        auto parseMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - parseT0).count();
+        brls::Logger::info("LibraryTab: Got {} {} items (offset {}) - parseMusicItems {}ms",
+                           count, categoryName(category), m_offset, (long)parseMs);
 
         brls::sync([this, items, count, aliveWeak, loadGen]() {
             auto alive = aliveWeak.lock();
