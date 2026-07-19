@@ -15,10 +15,54 @@
 #include <chrono>
 #include <cstdlib>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
 
 namespace vita_ma {
 
 // MusicCategory is defined in library_tab.hpp.
+
+namespace {
+// Serialize all library parsing onto ONE persistent background thread. Rapidly
+// scrolling the sidebar used to spawn a detached parse thread per tab - each
+// parsing 1000+ items and allocating thousands of std::strings. A dozen of them
+// running at once exhausted/fragmented the heap and crashed the UI thread mid
+// std::string construction (data abort, freed-memory poison in the registers).
+// A single worker bounds peak memory to one parse at a time; tasks for tabs that
+// were destroyed while queued are dropped before the expensive parse runs.
+class LibraryParseExecutor {
+public:
+    static LibraryParseExecutor& instance() {
+        static LibraryParseExecutor inst;
+        return inst;
+    }
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lk(m_mtx);
+            m_tasks.push(std::move(task));
+        }
+        m_cv.notify_one();
+    }
+private:
+    LibraryParseExecutor() { std::thread([this]() { run(); }).detach(); }
+    void run() {
+        for (;;) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lk(m_mtx);
+                m_cv.wait(lk, [this]() { return !m_tasks.empty(); });
+                task = std::move(m_tasks.front());
+                m_tasks.pop();
+            }
+            task();
+        }
+    }
+    std::mutex m_mtx;
+    std::condition_variable m_cv;
+    std::queue<std::function<void()>> m_tasks;
+};
+} // namespace
 
 static const char* categoryName(MusicCategory cat) {
     switch (cat) {
@@ -295,7 +339,14 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
         // rawResult is a temporary that won't outlive this call, so copy it for
         // the worker; apply the parsed items back on the main thread.
         std::string raw = rawResult;
-        std::thread([this, raw = std::move(raw), expectedType, category, aliveWeak, loadGen]() {
+        LibraryParseExecutor::instance().post([this, raw = std::move(raw), expectedType, category, aliveWeak, loadGen]() {
+            // Drop work for a tab that was destroyed/hidden while this task sat in
+            // the queue (rapid sidebar browsing) before the expensive parse. If we
+            // skip, m_loaded stays false so re-focusing the tab reloads it.
+            {
+                auto alive = aliveWeak.lock();
+                if (!alive || !*alive) return;
+            }
             auto parseT0 = std::chrono::steady_clock::now();
             std::vector<MusicItem> items = parseMusicItemsRaw(raw, expectedType);
             int count = (int)items.size();
@@ -331,7 +382,7 @@ void LibraryTab::loadCategoryContent(MusicCategory category) {
                 brls::Logger::info("LibraryTab: applied page ({} items, total {}) on UI thread in {}ms",
                                    count, (int)m_items.size(), (long)ms);
             });
-        }).detach();
+        });
     };
 
     // Set up pagination callback
