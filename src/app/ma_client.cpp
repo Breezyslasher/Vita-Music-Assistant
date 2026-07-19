@@ -25,7 +25,19 @@ std::string Json::parseString(const std::string& str, size_t& pos) {
     if (pos >= str.size() || str[pos] != '"') return "";
     pos++; // skip opening quote
 
-    std::string result;
+    // Fast path: most JSON strings have no escape sequences. Scan for the
+    // closing quote and copy the whole span in one substr() instead of
+    // appending 2 MB of characters one at a time (the parse hot spot).
+    size_t start = pos;
+    while (pos < str.size() && str[pos] != '"' && str[pos] != '\\') pos++;
+    if (pos < str.size() && str[pos] == '"') {
+        std::string result = str.substr(start, pos - start);
+        pos++; // skip closing quote
+        return result;
+    }
+
+    // Slow path: string contains escape(s). Resume from the first backslash.
+    std::string result = str.substr(start, pos - start);
     while (pos < str.size() && str[pos] != '"') {
         if (str[pos] == '\\' && pos + 1 < str.size()) {
             pos++;
@@ -75,9 +87,11 @@ Json Json::parseNumber(const std::string& str, size_t& pos) {
         while (pos < str.size() && str[pos] >= '0' && str[pos] <= '9') pos++;
     }
 
-    std::string numStr = str.substr(start, pos - start);
+    // strtod stops at the first non-numeric char, which is exactly where our
+    // scan ended - so parse straight off the buffer with no substr allocation.
     Json j(NUMBER);
-    j.m_numVal = strtod(numStr.c_str(), nullptr);
+    j.m_numVal = strtod(str.c_str() + start, nullptr);
+    (void)isFloat;
     return j;
 }
 
@@ -133,13 +147,13 @@ Json Json::parseValue(const std::string& str, size_t& pos) {
         case '{': return parseObject(str, pos);
         case '[': return parseArray(str, pos);
         case 't':
-            if (str.substr(pos, 4) == "true") { pos += 4; return Json(true); }
+            if (str.compare(pos, 4, "true") == 0) { pos += 4; return Json(true); }
             break;
         case 'f':
-            if (str.substr(pos, 5) == "false") { pos += 5; return Json(false); }
+            if (str.compare(pos, 5, "false") == 0) { pos += 5; return Json(false); }
             break;
         case 'n':
-            if (str.substr(pos, 4) == "null") { pos += 4; return Json(NULL_TYPE); }
+            if (str.compare(pos, 4, "null") == 0) { pos += 4; return Json(NULL_TYPE); }
             break;
         default:
             if (str[pos] == '-' || (str[pos] >= '0' && str[pos] <= '9')) {

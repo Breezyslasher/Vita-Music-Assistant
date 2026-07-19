@@ -25,6 +25,14 @@ public:
     Json(double n) : m_type(NUMBER), m_numVal(n) {}
     Json(bool b) : m_type(BOOL), m_boolVal(b) {}
 
+    // Explicitly keep copies AND (noexcept) moves so building the parse tree
+    // moves subtrees instead of deep-copying them - and so std::vector<Json>
+    // reallocation uses the move ctor rather than the copy ctor.
+    Json(const Json&) = default;
+    Json& operator=(const Json&) = default;
+    Json(Json&&) noexcept = default;
+    Json& operator=(Json&&) noexcept = default;
+
     static Json parse(const std::string& str);
     std::string dump() const;
 
