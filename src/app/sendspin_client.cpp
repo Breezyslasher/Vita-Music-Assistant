@@ -288,9 +288,16 @@ void SendspinClient::onTextMessage(const std::string& message) {
     }
     else if (type == "stream/end") {
         brls::Logger::info("Sendspin: stream/end");
-        // Signal that no more data will arrive for this stream
+        // Tear down immediately rather than draining the buffered backlog.
+        // The server pushes audio faster than real time, so several seconds can
+        // be buffered ahead; stream/end is sent on pause/stop, and playing that
+        // backlog out would delay the pause by seconds. Because Sendspin text
+        // messages are dispatched on the UI thread, a drain-and-join here would
+        // also freeze the UI for that whole time. stop() discards the buffers
+        // and exits the audio threads at once; on resume the server restreams
+        // from the paused position with a fresh stream/start.
         if (m_localPlayback) {
-            NativeAudioPlayer::instance().endStream();
+            NativeAudioPlayer::instance().stop();
         }
 
         if (m_state.load() == SendspinState::STREAMING ||
