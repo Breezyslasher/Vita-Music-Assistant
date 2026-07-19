@@ -101,8 +101,6 @@ static const char* categoryName(MusicCategory cat) {
 static std::vector<MusicItem> parseMusicItemsRaw(const std::string& rawArray,
                                                  MediaType expectedType) {
     std::vector<MusicItem> items;
-    std::vector<std::string> objs = MAClient::rawSplitArrayObjects(rawArray);
-    items.reserve(objs.size());
 
     auto applyImage = [](const std::string& io, MusicItem& item) -> bool {
         if (io.empty()) return false;
@@ -119,41 +117,62 @@ static std::vector<MusicItem> parseMusicItemsRaw(const std::string& rawArray,
         return true;
     };
 
-    for (const auto& o : objs) {
+    // Single pass: find each top-level object's [objStart, objEnd) once (no
+    // per-object substring copies), then extract fields directly from that byte
+    // range of the original string. Only the field values we keep get allocated.
+    const char* d = rawArray.data();
+    const size_t n = rawArray.size();
+    size_t i = 0;
+    while (i < n && d[i] != '[') i++;
+    if (i < n) i++;  // step past '['
+    items.reserve(1024);
+
+    while (i < n) {
+        while (i < n && d[i] != '{') { if (d[i] == ']') { i = n; break; } i++; }
+        if (i >= n) break;
+        size_t objStart = i;
+        int depth = 1;
+        bool inStr = false;
+        i++;
+        while (i < n && depth > 0) {
+            char ch = d[i];
+            if (ch == '"' && d[i - 1] != '\\') inStr = !inStr;
+            else if (!inStr) { if (ch == '{') depth++; else if (ch == '}') depth--; }
+            i++;
+        }
+        size_t objEnd = i;  // one past the object's closing '}'
+
         MusicItem item;
         std::string s;
-        item.itemId    = MAClient::rawExtractField(o, "item_id");
-        item.name      = MAClient::rawExtractField(o, "name");
-        item.sortName  = MAClient::rawExtractField(o, "sort_name");
-        item.uri       = MAClient::rawExtractField(o, "uri");
+        item.itemId    = MAClient::rawExtractFieldIn(rawArray, "item_id", objStart, objEnd);
+        item.name      = MAClient::rawExtractFieldIn(rawArray, "name", objStart, objEnd);
+        item.sortName  = MAClient::rawExtractFieldIn(rawArray, "sort_name", objStart, objEnd);
+        item.uri       = MAClient::rawExtractFieldIn(rawArray, "uri", objStart, objEnd);
         item.mediaType = expectedType;
-        s = MAClient::rawExtractField(o, "favorite"); if (!s.empty()) item.favorite = (s == "true");
-        s = MAClient::rawExtractField(o, "provider"); if (!s.empty()) item.provider = s;
+        s = MAClient::rawExtractFieldIn(rawArray, "favorite", objStart, objEnd); if (!s.empty()) item.favorite = (s == "true");
+        s = MAClient::rawExtractFieldIn(rawArray, "provider", objStart, objEnd); if (!s.empty()) item.provider = s;
 
-        // Image: prefer a top-level "image" object; else the (metadata) "images"
-        // array found directly - no need to extract the large metadata object.
-        if (!applyImage(MAClient::rawExtractField(o, "image"), item)) {
-            std::string imagesArr = MAClient::rawExtractField(o, "images");
+        // Image: a top-level "image" object, else the first of (metadata) "images".
+        if (!applyImage(MAClient::rawExtractFieldIn(rawArray, "image", objStart, objEnd), item)) {
+            std::string imagesArr = MAClient::rawExtractFieldIn(rawArray, "images", objStart, objEnd);
             if (!imagesArr.empty()) {
                 auto imgs = MAClient::rawSplitArrayObjects(imagesArr);
                 if (!imgs.empty()) applyImage(imgs[0], item);
             }
         }
 
-        // Only scan for fields that can exist for this media type (skips ~5-8
-        // guaranteed-absent full-object scans per item).
         if (expectedType == MediaType::TRACK) {
-            s = MAClient::rawExtractField(o, "artist_name");  if (!s.empty()) item.artistName = s;
-            s = MAClient::rawExtractField(o, "album_name");   if (!s.empty()) item.albumName = s;
-            s = MAClient::rawExtractField(o, "track_number"); if (!s.empty()) item.trackNumber = atoi(s.c_str());
-            s = MAClient::rawExtractField(o, "disc_number");  if (!s.empty()) item.discNumber = atoi(s.c_str());
-            s = MAClient::rawExtractField(o, "duration");     if (!s.empty()) item.duration = atoi(s.c_str());
+            s = MAClient::rawExtractFieldIn(rawArray, "artist_name", objStart, objEnd);  if (!s.empty()) item.artistName = s;
+            s = MAClient::rawExtractFieldIn(rawArray, "album_name", objStart, objEnd);   if (!s.empty()) item.albumName = s;
+            s = MAClient::rawExtractFieldIn(rawArray, "track_number", objStart, objEnd); if (!s.empty()) item.trackNumber = atoi(s.c_str());
+            s = MAClient::rawExtractFieldIn(rawArray, "disc_number", objStart, objEnd);  if (!s.empty()) item.discNumber = atoi(s.c_str());
+            s = MAClient::rawExtractFieldIn(rawArray, "duration", objStart, objEnd);     if (!s.empty()) item.duration = atoi(s.c_str());
         } else if (expectedType == MediaType::ALBUM) {
-            s = MAClient::rawExtractField(o, "year");         if (!s.empty()) item.year = atoi(s.c_str());
-            s = MAClient::rawExtractField(o, "version");      if (!s.empty()) item.version = s;
+            s = MAClient::rawExtractFieldIn(rawArray, "year", objStart, objEnd);         if (!s.empty()) item.year = atoi(s.c_str());
+            s = MAClient::rawExtractFieldIn(rawArray, "version", objStart, objEnd);      if (!s.empty()) item.version = s;
         } else if (expectedType == MediaType::PLAYLIST) {
-            s = MAClient::rawExtractField(o, "item_count");   if (!s.empty()) item.itemCount = atoi(s.c_str());
-            s = MAClient::rawExtractField(o, "is_editable");  if (!s.empty()) item.isEditable = (s == "true");
+            s = MAClient::rawExtractFieldIn(rawArray, "item_count", objStart, objEnd);   if (!s.empty()) item.itemCount = atoi(s.c_str());
+            s = MAClient::rawExtractFieldIn(rawArray, "is_editable", objStart, objEnd);  if (!s.empty()) item.isEditable = (s == "true");
         }
 
         items.push_back(std::move(item));

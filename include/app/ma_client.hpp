@@ -292,6 +292,11 @@ public:
     // objects/arrays returned whole, brace/bracket-aware). rawSplitArrayObjects
     // splits a top-level JSON array of objects into per-object substrings.
     static std::string rawExtractField(const std::string& json, const std::string& key);
+    // Bounded variant: search only within json[begin, end). Lets a caller walk a
+    // big array once, note each object's byte range, and extract fields straight
+    // from the original string with no per-object substring copies.
+    static std::string rawExtractFieldIn(const std::string& json, const std::string& key,
+                                         size_t begin, size_t end);
     static std::vector<std::string> rawSplitArrayObjects(const std::string& arrayJson);
 
 private:

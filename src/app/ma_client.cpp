@@ -271,21 +271,20 @@ size_t Json::size() const {
 // DOM-free JSON extraction (Vita_Suwayomi style) for very large responses
 // ============================================================================
 
-std::string MAClient::rawExtractField(const std::string& json, const std::string& key) {
-    const char* d = json.data();
-    const size_t n = json.size();
+// Core extractor over d[begin, end). Finds the quoted key token "<key>" with
+// memchr (jump quote-to-quote) + memcmp - far faster than std::string::find's
+// naive substring scan, which dominated the parse. Returns the value; objects/
+// arrays are returned whole (brace/bracket-aware), strings unquoted.
+static std::string rawExtractFieldImpl(const char* d, size_t begin, size_t end,
+                                       const std::string& key) {
     const size_t klen = key.size();
-
-    // Find the quoted key token "<key>" using memchr to jump between quotes,
-    // then memcmp - far faster than std::string::find's naive substring scan,
-    // which dominated the parse when called ~15x per object over 1028 objects.
     size_t keyPos = std::string::npos;
-    size_t p = 0;
-    while (p < n) {
-        const void* q = memchr(d + p, '"', n - p);
+    size_t p = begin;
+    while (p < end) {
+        const void* q = memchr(d + p, '"', end - p);
         if (!q) break;
         size_t qi = static_cast<size_t>(static_cast<const char*>(q) - d);
-        if (qi + 1 + klen < n && d[qi + 1 + klen] == '"' &&
+        if (qi + 1 + klen < end && d[qi + 1 + klen] == '"' &&
             memcmp(d + qi + 1, key.data(), klen) == 0) {
             keyPos = qi;
             break;
@@ -294,48 +293,51 @@ std::string MAClient::rawExtractField(const std::string& json, const std::string
     }
     if (keyPos == std::string::npos) return "";
 
-    // Skip past the key's closing quote to the ':' and the value start.
-    size_t vs = keyPos + 1 + klen + 1;
-    while (vs < n && d[vs] != ':') vs++;
-    if (vs >= n) return "";
+    size_t vs = keyPos + 1 + klen + 1;   // past the key's closing quote
+    while (vs < end && d[vs] != ':') vs++;
+    if (vs >= end) return "";
     vs++;
-    while (vs < n && (d[vs] == ' ' || d[vs] == '\t' || d[vs] == '\n' || d[vs] == '\r')) vs++;
-    if (vs >= n) return "";
+    while (vs < end && (d[vs] == ' ' || d[vs] == '\t' || d[vs] == '\n' || d[vs] == '\r')) vs++;
+    if (vs >= end) return "";
 
     char c = d[vs];
     if (c == '"') {
-        // String value: copy contents, honoring escaped quotes.
         size_t e = vs + 1;
-        while (e < json.size()) {
-            if (json[e] == '"' && json[e - 1] != '\\') break;
-            e++;
-        }
-        return json.substr(vs + 1, e - vs - 1);
+        while (e < end) { if (d[e] == '"' && d[e - 1] != '\\') break; e++; }
+        return std::string(d + vs + 1, e - vs - 1);
     } else if (c == '[' || c == '{') {
-        // Object/array: return the whole balanced span.
         char open = c, close = (c == '[') ? ']' : '}';
         int depth = 1;
         bool inStr = false;
         size_t e = vs + 1;
-        while (e < json.size() && depth > 0) {
-            char ch = json[e];
-            if (ch == '"' && json[e - 1] != '\\') inStr = !inStr;
+        while (e < end && depth > 0) {
+            char ch = d[e];
+            if (ch == '"' && d[e - 1] != '\\') inStr = !inStr;
             else if (!inStr) { if (ch == open) depth++; else if (ch == close) depth--; }
             e++;
         }
-        return json.substr(vs, e - vs);
-    } else if (json.compare(vs, 4, "null") == 0) {
+        return std::string(d + vs, e - vs);
+    } else if (end - vs >= 4 && memcmp(d + vs, "null", 4) == 0) {
         return "";
     } else {
-        // Number / bool: up to the next delimiter.
-        size_t e = json.find_first_of(",}]", vs);
-        if (e == std::string::npos) return "";
-        std::string v = json.substr(vs, e - vs);
-        while (!v.empty() && (v.back() == ' ' || v.back() == '\t' ||
-                              v.back() == '\n' || v.back() == '\r'))
-            v.pop_back();
-        return v;
+        size_t e = vs;
+        while (e < end && d[e] != ',' && d[e] != '}' && d[e] != ']') e++;
+        size_t z = e;
+        while (z > vs && (d[z - 1] == ' ' || d[z - 1] == '\t' ||
+                          d[z - 1] == '\n' || d[z - 1] == '\r')) z--;
+        return std::string(d + vs, z - vs);
     }
+}
+
+std::string MAClient::rawExtractField(const std::string& json, const std::string& key) {
+    return rawExtractFieldImpl(json.data(), 0, json.size(), key);
+}
+
+std::string MAClient::rawExtractFieldIn(const std::string& json, const std::string& key,
+                                        size_t begin, size_t end) {
+    if (end > json.size()) end = json.size();
+    if (begin > end) return "";
+    return rawExtractFieldImpl(json.data(), begin, end, key);
 }
 
 std::vector<std::string> MAClient::rawSplitArrayObjects(const std::string& arrayJson) {
