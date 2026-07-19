@@ -86,7 +86,13 @@ void MainActivity::onContentAvailable() {
                 if (item == "home") {
                     tabFrame->addTab("Home", []() { return new HomeTab(); });
                 } else if (item == "library") {
-                    tabFrame->addTab("Library", []() { return new LibraryTab(); });
+                    // One sidebar entry per library category (no wrapper tab).
+                    tabFrame->addTab("Albums",     []() { return new LibraryTab(MusicCategory::ALBUMS, false); });
+                    tabFrame->addTab("Tracks",     []() { return new LibraryTab(MusicCategory::TRACKS, false); });
+                    tabFrame->addTab("Playlists",  []() { return new LibraryTab(MusicCategory::PLAYLISTS, false); });
+                    tabFrame->addTab("Podcasts",   []() { return new LibraryTab(MusicCategory::PODCASTS, false); });
+                    tabFrame->addTab("Audiobooks", []() { return new LibraryTab(MusicCategory::AUDIOBOOKS, false); });
+                    tabFrame->addTab("Radio",      []() { return new LibraryTab(MusicCategory::RADIOS, false); });
                 } else if (item == "search") {
                     tabFrame->addTab("Search", []() { return new SearchTab(); });
                 }

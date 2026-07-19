@@ -12,8 +12,16 @@
 
 namespace vita_ma {
 
-// Forward declaration - defined in library_tab.cpp
-enum class MusicCategory;
+// Music library categories.
+enum class MusicCategory {
+    ARTISTS,
+    ALBUMS,
+    TRACKS,
+    PLAYLISTS,
+    PODCASTS,
+    AUDIOBOOKS,
+    RADIOS
+};
 
 // View mode for library tab browsing
 enum class LibraryTabViewMode {
@@ -23,7 +31,10 @@ enum class LibraryTabViewMode {
 
 class LibraryTab : public brls::Box {
 public:
-    LibraryTab();
+    // showSwitcher=false makes this a single-category browser (one sidebar tab
+    // per category); the top category-switch row is hidden.
+    explicit LibraryTab(MusicCategory category = MusicCategory::ALBUMS,
+                        bool showSwitcher = true);
     ~LibraryTab();
 
     void onFocusGained() override;

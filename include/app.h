@@ -41,7 +41,9 @@ enum class MediaType {
     ALBUM,
     TRACK,
     PLAYLIST,
-    RADIO
+    RADIO,
+    PODCAST,
+    AUDIOBOOK
 };
 
 // Music item info (unified structure for all music types)
