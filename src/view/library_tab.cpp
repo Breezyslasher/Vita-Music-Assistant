@@ -120,36 +120,40 @@ static std::vector<MusicItem> parseMusicItemsRaw(const std::string& rawArray,
 
     for (const auto& o : objs) {
         MusicItem item;
+        std::string s;
         item.itemId    = MAClient::rawExtractField(o, "item_id");
         item.name      = MAClient::rawExtractField(o, "name");
         item.sortName  = MAClient::rawExtractField(o, "sort_name");
         item.uri       = MAClient::rawExtractField(o, "uri");
         item.mediaType = expectedType;
+        s = MAClient::rawExtractField(o, "favorite"); if (!s.empty()) item.favorite = (s == "true");
+        s = MAClient::rawExtractField(o, "provider"); if (!s.empty()) item.provider = s;
 
-        // Image: prefer a top-level "image" object, else metadata.images[0].
+        // Image: prefer a top-level "image" object; else the (metadata) "images"
+        // array found directly - no need to extract the large metadata object.
         if (!applyImage(MAClient::rawExtractField(o, "image"), item)) {
-            std::string meta = MAClient::rawExtractField(o, "metadata");
-            if (!meta.empty()) {
-                std::string imagesArr = MAClient::rawExtractField(meta, "images");
-                if (!imagesArr.empty()) {
-                    auto imgs = MAClient::rawSplitArrayObjects(imagesArr);
-                    if (!imgs.empty()) applyImage(imgs[0], item);
-                }
+            std::string imagesArr = MAClient::rawExtractField(o, "images");
+            if (!imagesArr.empty()) {
+                auto imgs = MAClient::rawSplitArrayObjects(imagesArr);
+                if (!imgs.empty()) applyImage(imgs[0], item);
             }
         }
 
-        std::string s;
-        s = MAClient::rawExtractField(o, "artist_name");  if (!s.empty()) item.artistName = s;
-        s = MAClient::rawExtractField(o, "album_name");   if (!s.empty()) item.albumName = s;
-        s = MAClient::rawExtractField(o, "track_number"); if (!s.empty()) item.trackNumber = atoi(s.c_str());
-        s = MAClient::rawExtractField(o, "disc_number");  if (!s.empty()) item.discNumber = atoi(s.c_str());
-        s = MAClient::rawExtractField(o, "duration");     if (!s.empty()) item.duration = atoi(s.c_str());
-        s = MAClient::rawExtractField(o, "year");         if (!s.empty()) item.year = atoi(s.c_str());
-        s = MAClient::rawExtractField(o, "version");      if (!s.empty()) item.version = s;
-        s = MAClient::rawExtractField(o, "item_count");   if (!s.empty()) item.itemCount = atoi(s.c_str());
-        s = MAClient::rawExtractField(o, "is_editable");  if (!s.empty()) item.isEditable = (s == "true");
-        s = MAClient::rawExtractField(o, "favorite");     if (!s.empty()) item.favorite = (s == "true");
-        s = MAClient::rawExtractField(o, "provider");     if (!s.empty()) item.provider = s;
+        // Only scan for fields that can exist for this media type (skips ~5-8
+        // guaranteed-absent full-object scans per item).
+        if (expectedType == MediaType::TRACK) {
+            s = MAClient::rawExtractField(o, "artist_name");  if (!s.empty()) item.artistName = s;
+            s = MAClient::rawExtractField(o, "album_name");   if (!s.empty()) item.albumName = s;
+            s = MAClient::rawExtractField(o, "track_number"); if (!s.empty()) item.trackNumber = atoi(s.c_str());
+            s = MAClient::rawExtractField(o, "disc_number");  if (!s.empty()) item.discNumber = atoi(s.c_str());
+            s = MAClient::rawExtractField(o, "duration");     if (!s.empty()) item.duration = atoi(s.c_str());
+        } else if (expectedType == MediaType::ALBUM) {
+            s = MAClient::rawExtractField(o, "year");         if (!s.empty()) item.year = atoi(s.c_str());
+            s = MAClient::rawExtractField(o, "version");      if (!s.empty()) item.version = s;
+        } else if (expectedType == MediaType::PLAYLIST) {
+            s = MAClient::rawExtractField(o, "item_count");   if (!s.empty()) item.itemCount = atoi(s.c_str());
+            s = MAClient::rawExtractField(o, "is_editable");  if (!s.empty()) item.isEditable = (s == "true");
+        }
 
         items.push_back(std::move(item));
     }

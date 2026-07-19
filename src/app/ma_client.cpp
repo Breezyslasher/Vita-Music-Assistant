@@ -272,15 +272,37 @@ size_t Json::size() const {
 // ============================================================================
 
 std::string MAClient::rawExtractField(const std::string& json, const std::string& key) {
-    std::string searchKey = "\"" + key + "\"";
-    size_t keyPos = json.find(searchKey);
-    if (keyPos == std::string::npos) return "";
-    size_t colon = json.find(':', keyPos + searchKey.size());
-    if (colon == std::string::npos) return "";
-    size_t vs = json.find_first_not_of(" \t\n\r", colon + 1);
-    if (vs == std::string::npos) return "";
+    const char* d = json.data();
+    const size_t n = json.size();
+    const size_t klen = key.size();
 
-    char c = json[vs];
+    // Find the quoted key token "<key>" using memchr to jump between quotes,
+    // then memcmp - far faster than std::string::find's naive substring scan,
+    // which dominated the parse when called ~15x per object over 1028 objects.
+    size_t keyPos = std::string::npos;
+    size_t p = 0;
+    while (p < n) {
+        const void* q = memchr(d + p, '"', n - p);
+        if (!q) break;
+        size_t qi = static_cast<size_t>(static_cast<const char*>(q) - d);
+        if (qi + 1 + klen < n && d[qi + 1 + klen] == '"' &&
+            memcmp(d + qi + 1, key.data(), klen) == 0) {
+            keyPos = qi;
+            break;
+        }
+        p = qi + 1;
+    }
+    if (keyPos == std::string::npos) return "";
+
+    // Skip past the key's closing quote to the ':' and the value start.
+    size_t vs = keyPos + 1 + klen + 1;
+    while (vs < n && d[vs] != ':') vs++;
+    if (vs >= n) return "";
+    vs++;
+    while (vs < n && (d[vs] == ' ' || d[vs] == '\t' || d[vs] == '\n' || d[vs] == '\r')) vs++;
+    if (vs >= n) return "";
+
+    char c = d[vs];
     if (c == '"') {
         // String value: copy contents, honoring escaped quotes.
         size_t e = vs + 1;
