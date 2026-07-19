@@ -5,7 +5,6 @@
 #include "activity/main_activity.hpp"
 #include "view/home_tab.hpp"
 #include "view/library_tab.hpp"
-#include "view/library_section_tab.hpp"
 #include "view/search_tab.hpp"
 #include "view/settings_tab.hpp"
 #include "view/debug_tab.hpp"
