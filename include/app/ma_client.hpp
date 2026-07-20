@@ -196,8 +196,11 @@ public:
     void getLibraryRadios(MAResponseCallback cb, const std::string& search = "",
                           int limit = 500, int offset = 0);
 
-    // Search
-    void search(const std::string& query, MAResponseCallback cb, int limit = 25);
+    // Search. mediaTypes filters which media types the server returns (MA enum
+    // strings: track/album/artist/playlist/radio/audiobook/podcast); empty =
+    // all supported types.
+    void search(const std::string& query, const std::vector<std::string>& mediaTypes,
+                MAResponseCallback cb, int limit = 25);
 
     // Browse
     void browse(const std::string& path, MAResponseCallback cb);
