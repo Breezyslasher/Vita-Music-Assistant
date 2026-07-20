@@ -1,7 +1,7 @@
 /**
  * Vita Music Assistant - Login Activity
  * "Focused card" design (1c): one centered glass card on a dark backdrop.
- * Supports Music Assistant, Home Assistant, and Remote (WebRTC) sign-in.
+ * Supports Music Assistant (username/password) and Remote (WebRTC) sign-in.
  */
 
 #pragma once
@@ -14,7 +14,6 @@ namespace vita_ma {
 
 enum class AuthMode {
     MUSIC_ASSISTANT,   // Direct MA server login (username/password)
-    HOME_ASSISTANT,    // HA instance login (HA credentials forwarded to MA)
     REMOTE             // Remote access via WebRTC (Remote ID + saved token)
 };
 
@@ -38,9 +37,6 @@ private:
     void loginWithMA(const std::string& serverUrl,
                      const std::string& username,
                      const std::string& password);
-    void loginWithHA(const std::string& serverUrl,
-                     const std::string& username,
-                     const std::string& password);
 
     // After getting a token, connect the WebSocket
     void connectWithToken(const std::string& serverUrl,
@@ -53,13 +49,11 @@ private:
 
     // Segmented mode switch
     BRLS_BIND(brls::Box, segMa, "login/seg_ma");
-    BRLS_BIND(brls::Box, segHa, "login/seg_ha");
     BRLS_BIND(brls::Box, segRemote, "login/seg_remote");
     BRLS_BIND(brls::Label, segMaLabel, "login/seg_ma_label");
-    BRLS_BIND(brls::Label, segHaLabel, "login/seg_ha_label");
     BRLS_BIND(brls::Label, segRemoteLabel, "login/seg_remote_label");
 
-    // Credential fields (MA / HA modes)
+    // Credential fields (Music Assistant mode)
     BRLS_BIND(brls::Box, fieldsCredentials, "login/fields_credentials");
     BRLS_BIND(brls::Label, serverCaption, "login/server_caption");
     BRLS_BIND(brls::Box, serverField, "login/server_field");
