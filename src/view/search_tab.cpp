@@ -303,6 +303,8 @@ void SearchTab::performSearch(const std::string& query) {
     int gen = ++m_loadGeneration;
     std::weak_ptr<bool> aliveWeak = m_alive;
 
+    // Larger page than the default so each rail has depth to scroll (the
+    // official app uses 200; keep it lower for the Vita's memory).
     MAClient::instance().search(query, mediaTypes, m_libraryOnly,
         [this, gen, aliveWeak](bool success, const Json& result) {
         brls::sync([this, success, result, gen, aliveWeak]() {
@@ -336,7 +338,7 @@ void SearchTab::performSearch(const std::string& query) {
             m_resultsLabel->setText("Found " + std::to_string(total));
             rebuildRails();
         });
-    });
+    }, 50);
 }
 
 void SearchTab::rebuildRails() {
