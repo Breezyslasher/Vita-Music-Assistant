@@ -75,20 +75,24 @@ void HomeTab::populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>
         });
         cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
 
-        // Register START button context menus for artists and albums
-        if (capturedItem.mediaType == MediaType::ARTIST) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showArtistContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::ALBUM) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showAlbumContextMenuStatic(capturedItem);
-                    return true;
-                });
-        }
+        // START opens a context menu for every item, dispatched by type (the
+        // same mapping LibraryTab uses). Previously only artists and albums got
+        // a menu, so tracks/playlists/stations had no Options action at all.
+        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+            [capturedItem](brls::View* view) {
+                switch (capturedItem.mediaType) {
+                    case MediaType::ARTIST:
+                        MediaDetailView::showArtistContextMenuStatic(capturedItem);
+                        break;
+                    case MediaType::TRACK:
+                        MediaDetailView::performTrackActionStatic(capturedItem);
+                        break;
+                    default:  // albums, playlists, stations, podcasts, audiobooks
+                        MediaDetailView::showAlbumContextMenuStatic(capturedItem);
+                        break;
+                }
+                return true;
+            });
 
         row->addView(cell);
     }
@@ -159,12 +163,19 @@ void HomeTab::loadContent() {
         }
 
         std::string mt = obj.has("media_type") ? obj["media_type"].str() : "";
-        if      (mt == "track")    item.mediaType = MediaType::TRACK;
-        else if (mt == "album")    item.mediaType = MediaType::ALBUM;
-        else if (mt == "artist")   item.mediaType = MediaType::ARTIST;
-        else if (mt == "playlist") item.mediaType = MediaType::PLAYLIST;
-        else if (mt == "radio")    item.mediaType = MediaType::RADIO;
-        else                       item.mediaType = MediaType::TRACK;
+        if      (mt == "track")             item.mediaType = MediaType::TRACK;
+        else if (mt == "album")             item.mediaType = MediaType::ALBUM;
+        else if (mt == "artist")            item.mediaType = MediaType::ARTIST;
+        else if (mt == "playlist")          item.mediaType = MediaType::PLAYLIST;
+        else if (mt == "radio")             item.mediaType = MediaType::RADIO;
+        else if (mt == "podcast")           item.mediaType = MediaType::PODCAST;
+        else if (mt == "audiobook")         item.mediaType = MediaType::AUDIOBOOK;
+        // Episodes/chapters are individually playable, like tracks.
+        else if (mt == "podcast_episode")   item.mediaType = MediaType::TRACK;
+        else if (mt == "audiobook_chapter") item.mediaType = MediaType::TRACK;
+        // folder / flow_stream / anything new the server adds: don't guess it's
+        // a track (that would try to play it) - mark UNKNOWN and handle safely.
+        else                                item.mediaType = MediaType::UNKNOWN;
 
         if (obj.has("artist_name")) item.artistName = obj["artist_name"].str();
         if (obj.has("album_name"))  item.albumName  = obj["album_name"].str();
@@ -245,15 +256,34 @@ void HomeTab::loadContent() {
 }
 
 void HomeTab::onItemSelected(const MusicItem& item) {
-    // For tracks, play directly instead of showing detail view
-    if (item.mediaType == MediaType::TRACK) {
-        Application::getInstance().pushPlayerActivity(item.itemId);
-        return;
-    }
+    switch (item.mediaType) {
+        // Playable items (tracks, stations, episodes/chapters mapped to TRACK)
+        // start immediately. A station has no track list, so opening a detail
+        // view for it (which fetches album/artist/playlist tracks) came up
+        // broken - play it instead.
+        case MediaType::TRACK:
+        case MediaType::RADIO:
+            Application::getInstance().pushPlayerActivity(item.itemId);
+            return;
 
-    // Show media detail view for other types (artists, albums)
-    auto* detailView = new MediaDetailView(item);
-    brls::Application::pushActivity(new brls::Activity(detailView));
+        // Browsable containers open a detail view (its track/episode list).
+        case MediaType::ARTIST:
+        case MediaType::ALBUM:
+        case MediaType::PLAYLIST:
+        case MediaType::PODCAST:
+        case MediaType::AUDIOBOOK: {
+            auto* detailView = new MediaDetailView(item);
+            brls::Application::pushActivity(new brls::Activity(detailView));
+            return;
+        }
+
+        // Unrecognised type (e.g. a folder, or something the server adds
+        // later): do nothing rather than play or open a broken page.
+        case MediaType::UNKNOWN:
+        default:
+            brls::Logger::warning("HomeTab: unsupported item type for '{}', ignoring", item.name);
+            return;
+    }
 }
 
 } // namespace vita_ma
