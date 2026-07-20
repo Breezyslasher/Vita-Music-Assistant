@@ -1,5 +1,11 @@
 /**
  * Vita Music Assistant - Search Tab implementation
+ *
+ * Results are shown as home-style horizontal rails, one per media type, in a
+ * fixed order. A horizontally-scrolling chip row above the rails multi-selects
+ * which media types to search: none selected searches (and shows) every type,
+ * otherwise only the selected type(s). The chip selection maps directly to the
+ * search media_types parameter.
  */
 
 #include "view/search_tab.hpp"
@@ -11,13 +17,37 @@
 
 namespace vita_ma {
 
+// Media types shown as chips and rails, in display order. jsonKey is the field
+// name in the MA SearchResults response (note: radio results are under
+// "radios"). api is the MediaType enum string passed in media_types.
+namespace {
+struct TypeDef {
+    const char* label;
+    MediaType   type;
+    const char* api;
+    const char* jsonKey;
+};
+const TypeDef TYPES[] = {
+    {"Tracks",     MediaType::TRACK,     "track",     "tracks"},
+    {"Albums",     MediaType::ALBUM,     "album",     "albums"},
+    {"Artists",    MediaType::ARTIST,    "artist",    "artists"},
+    {"Playlists",  MediaType::PLAYLIST,  "playlist",  "playlists"},
+    {"Radio",      MediaType::RADIO,     "radio",     "radios"},
+    {"Audiobooks", MediaType::AUDIOBOOK, "audiobook", "audiobooks"},
+    {"Podcasts",   MediaType::PODCAST,   "podcast",   "podcasts"},
+};
+constexpr int NUM_TYPES = sizeof(TYPES) / sizeof(TYPES[0]);
+} // namespace
+
 // Helper: parse a media_type string to MediaType enum
 static MediaType parseMediaType(const std::string& s) {
-    if (s == "track")    return MediaType::TRACK;
-    if (s == "album")    return MediaType::ALBUM;
-    if (s == "artist")   return MediaType::ARTIST;
-    if (s == "playlist") return MediaType::PLAYLIST;
-    if (s == "radio")    return MediaType::RADIO;
+    if (s == "track")     return MediaType::TRACK;
+    if (s == "album")     return MediaType::ALBUM;
+    if (s == "artist")    return MediaType::ARTIST;
+    if (s == "playlist")  return MediaType::PLAYLIST;
+    if (s == "radio")     return MediaType::RADIO;
+    if (s == "audiobook") return MediaType::AUDIOBOOK;
+    if (s == "podcast")   return MediaType::PODCAST;
     return MediaType::UNKNOWN;
 }
 
@@ -75,15 +105,6 @@ static MusicItem musicItemFromJson(const Json& j) {
     return item;
 }
 
-// Helper: parse a JSON array into a vector of MusicItems
-static std::vector<MusicItem> musicItemsFromJsonArray(const Json& arr) {
-    std::vector<MusicItem> items;
-    for (size_t i = 0; i < arr.size(); i++) {
-        items.push_back(musicItemFromJson(arr[i]));
-    }
-    return items;
-}
-
 SearchTab::SearchTab() {
     this->setAxis(brls::Axis::COLUMN);
     this->setJustifyContent(brls::JustifyContent::FLEX_START);
@@ -95,36 +116,39 @@ SearchTab::SearchTab() {
     m_titleLabel = new brls::Label();
     m_titleLabel->setText("Search");
     m_titleLabel->setFontSize(28);
-    m_titleLabel->setMarginBottom(20);
+    m_titleLabel->setMarginBottom(14);
     this->addView(m_titleLabel);
 
-    // Search input label (acts as button to open keyboard)
+    // Search bar (tap to open the Vita IME)
     m_searchLabel = new brls::Label();
-    m_searchLabel->setText("Tap to search...");
+    m_searchLabel->setText("  Tap to search...");
     m_searchLabel->setFontSize(20);
     m_searchLabel->setMarginBottom(10);
     m_searchLabel->setFocusable(true);
-
     m_searchLabel->registerClickAction([this](brls::View* view) {
         brls::Application::getImeManager()->openForText([this](std::string text) {
             m_searchQuery = text;
-            m_searchLabel->setText(std::string("Search: ") + text);
+            m_searchLabel->setText(text.empty() ? "  Tap to search..."
+                                                : std::string("  ") + text);
             performSearch(text);
         }, "Search", "Enter search query", 256, m_searchQuery);
         return true;
     });
     m_searchLabel->addGestureRecognizer(new brls::TapGestureRecognizer(m_searchLabel));
-
     this->addView(m_searchLabel);
 
-    // Results label
+    // Filter-chip row (multi-select media-type filter)
+    buildChipRow();
+
+    // Result count
     m_resultsLabel = new brls::Label();
     m_resultsLabel->setText("");
-    m_resultsLabel->setFontSize(18);
-    m_resultsLabel->setMarginBottom(10);
+    m_resultsLabel->setFontSize(15);
+    m_resultsLabel->setTextColor(nvgRGB(0xa9, 0xb4, 0xc0));
+    m_resultsLabel->setMarginBottom(8);
     this->addView(m_resultsLabel);
 
-    // Scrollable content for results
+    // Vertical scroll holding the rails
     m_scrollView = new brls::ScrollingFrame();
     m_scrollView->setGrow(1.0f);
     m_scrollView->setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
@@ -134,36 +158,10 @@ SearchTab::SearchTab() {
     m_scrollContent->setJustifyContent(brls::JustifyContent::FLEX_START);
     m_scrollContent->setAlignItems(brls::AlignItems::STRETCH);
 
-    // Albums row
-    m_albumsLabel = new brls::Label();
-    m_albumsLabel->setText("Albums");
-    m_albumsLabel->setFontSize(20);
-    m_albumsLabel->setMarginBottom(10);
-    m_albumsLabel->setVisibility(brls::Visibility::GONE);
-    m_scrollContent->addView(m_albumsLabel);
-
-    m_albumsRow = new HorizontalScrollRow();
-    m_albumsRow->setHeight(160);
-    m_albumsRow->setMarginBottom(15);
-    m_albumsRow->setVisibility(brls::Visibility::GONE);
-    m_scrollContent->addView(m_albumsRow);
-
-    // Tracks row
-    m_tracksLabel = new brls::Label();
-    m_tracksLabel->setText("Tracks");
-    m_tracksLabel->setFontSize(20);
-    m_tracksLabel->setMarginBottom(10);
-    m_tracksLabel->setVisibility(brls::Visibility::GONE);
-    m_scrollContent->addView(m_tracksLabel);
-
-    m_tracksRow = new HorizontalScrollRow();
-    m_tracksRow->setHeight(160);
-    m_tracksRow->setMarginBottom(15);
-    m_tracksRow->setVisibility(brls::Visibility::GONE);
-    m_scrollContent->addView(m_tracksRow);
-
     m_scrollView->setContentView(m_scrollContent);
     this->addView(m_scrollView);
+
+    m_grouped.resize(NUM_TYPES);
 }
 
 SearchTab::~SearchTab() {
@@ -181,16 +179,201 @@ void SearchTab::willDisappear(bool resetState) {
 void SearchTab::onFocusGained() {
     brls::Box::onFocusGained();
     m_alive = std::make_shared<bool>(true);
-
-    // Focus search label
     if (m_searchLabel) {
         brls::Application::giveFocus(m_searchLabel);
     }
 }
 
+void SearchTab::styleChip(brls::Box* chip, brls::Label* label, bool selected) {
+    if (!chip) return;
+    if (selected) {
+        chip->setBackgroundColor(nvgRGB(0x00, 0xbc, 0xee));
+        chip->setBorderThickness(0.0f);
+        if (label) label->setTextColor(nvgRGB(0x04, 0x22, 0x2e));
+    } else {
+        chip->setBackgroundColor(nvgRGB(0x16, 0x1b, 0x23));
+        chip->setBorderColor(nvgRGB(0x28, 0x32, 0x40));
+        chip->setBorderThickness(1.0f);
+        if (label) label->setTextColor(nvgRGB(0xa9, 0xb4, 0xc0));
+    }
+}
+
+void SearchTab::buildChipRow() {
+    m_chipRow = new HorizontalScrollRow();
+    m_chipRow->setHeight(44);
+    m_chipRow->setMarginBottom(10);
+
+    // Leading "In Library" source filter (separate from the media-type chips):
+    // on = search the local library only, off = search every provider.
+    m_libraryChip = new brls::Box();
+    m_libraryChip->setAxis(brls::Axis::ROW);
+    m_libraryChip->setJustifyContent(brls::JustifyContent::CENTER);
+    m_libraryChip->setAlignItems(brls::AlignItems::CENTER);
+    m_libraryChip->setHeight(32);
+    m_libraryChip->setPaddingLeft(14);
+    m_libraryChip->setPaddingRight(14);
+    m_libraryChip->setMarginRight(14);
+    m_libraryChip->setCornerRadius(16);
+    m_libraryChip->setFocusable(true);
+    m_libraryChipLabel = new brls::Label();
+    m_libraryChipLabel->setText("In Library");
+    m_libraryChipLabel->setFontSize(15);
+    m_libraryChip->addView(m_libraryChipLabel);
+    m_libraryChip->registerClickAction([this](brls::View* view) {
+        toggleLibraryOnly();
+        return true;
+    });
+    m_libraryChip->addGestureRecognizer(new brls::TapGestureRecognizer(m_libraryChip));
+    styleChip(m_libraryChip, m_libraryChipLabel, /*selected*/ false);
+    m_chipRow->addView(m_libraryChip);
+
+    m_chips.clear();
+    for (int i = 0; i < NUM_TYPES; i++) {
+        auto* chip = new brls::Box();
+        chip->setAxis(brls::Axis::ROW);
+        chip->setJustifyContent(brls::JustifyContent::CENTER);
+        chip->setAlignItems(brls::AlignItems::CENTER);
+        chip->setHeight(32);
+        chip->setPaddingLeft(14);
+        chip->setPaddingRight(14);
+        chip->setMarginRight(8);
+        chip->setCornerRadius(16);
+        chip->setFocusable(true);
+
+        auto* label = new brls::Label();
+        label->setText(TYPES[i].label);
+        label->setFontSize(15);
+        chip->addView(label);
+
+        std::string api = TYPES[i].api;
+        chip->registerClickAction([this, api](brls::View* view) {
+            toggleType(api);
+            return true;
+        });
+        chip->addGestureRecognizer(new brls::TapGestureRecognizer(chip));
+
+        styleChip(chip, label, /*selected*/ false);
+        m_chipRow->addView(chip);
+        m_chips.push_back({chip, label, api});
+    }
+
+    this->addView(m_chipRow);
+}
+
+void SearchTab::toggleType(const std::string& apiType) {
+    if (m_selectedTypes.count(apiType))
+        m_selectedTypes.erase(apiType);
+    else
+        m_selectedTypes.insert(apiType);
+
+    // Restyle chips to match the new selection.
+    for (auto& c : m_chips) {
+        styleChip(c.box, c.label, m_selectedTypes.count(c.apiType) > 0);
+    }
+
+    // The chip selection is the media_types filter: re-run the current query so
+    // the server returns only the selected type(s) (or every type when none are
+    // selected).
+    if (!m_searchQuery.empty()) {
+        performSearch(m_searchQuery);
+    }
+}
+
+void SearchTab::toggleLibraryOnly() {
+    m_libraryOnly = !m_libraryOnly;
+    styleChip(m_libraryChip, m_libraryChipLabel, m_libraryOnly);
+    if (!m_searchQuery.empty()) {
+        performSearch(m_searchQuery);
+    }
+}
+
+void SearchTab::performSearch(const std::string& query) {
+    if (query.empty()) {
+        m_resultsLabel->setText("");
+        for (auto& g : m_grouped) g.clear();
+        rebuildRails();
+        return;
+    }
+
+    m_resultsLabel->setText("Searching...");
+
+    // Build the media_types list from the selected chips (empty = all types).
+    std::vector<std::string> mediaTypes(m_selectedTypes.begin(), m_selectedTypes.end());
+
+    int gen = ++m_loadGeneration;
+    std::weak_ptr<bool> aliveWeak = m_alive;
+
+    MAClient::instance().search(query, mediaTypes, m_libraryOnly,
+        [this, gen, aliveWeak](bool success, const Json& result) {
+        brls::sync([this, success, result, gen, aliveWeak]() {
+            auto alive = aliveWeak.lock();
+            if (!alive || !*alive) return;
+            if (gen != m_loadGeneration) return;  // stale result
+
+            for (auto& g : m_grouped) g.clear();
+
+            if (!success) {
+                m_resultsLabel->setText("Search failed");
+                rebuildRails();
+                return;
+            }
+
+            // MA search returns an object of typed arrays; group each into its
+            // rail slot, forcing the media type so cells route correctly.
+            int total = 0;
+            for (int i = 0; i < NUM_TYPES; i++) {
+                if (!result.has(TYPES[i].jsonKey)) continue;
+                const Json& arr = result[TYPES[i].jsonKey];
+                if (arr.type() != Json::ARRAY) continue;
+                for (size_t k = 0; k < arr.size(); k++) {
+                    MusicItem item = musicItemFromJson(arr[k]);
+                    item.mediaType = TYPES[i].type;
+                    m_grouped[i].push_back(std::move(item));
+                }
+                total += (int)m_grouped[i].size();
+            }
+
+            m_resultsLabel->setText("Found " + std::to_string(total));
+            rebuildRails();
+        });
+    });
+}
+
+void SearchTab::rebuildRails() {
+    if (!m_scrollContent) return;
+    m_scrollContent->clearViews();
+
+    bool any = false;
+    for (int i = 0; i < NUM_TYPES; i++) {
+        if (m_grouped[i].empty()) continue;
+        any = true;
+
+        auto* lbl = new brls::Label();
+        lbl->setText(TYPES[i].label);
+        lbl->setFontSize(20);
+        lbl->setMarginTop(12);
+        lbl->setMarginBottom(8);
+        m_scrollContent->addView(lbl);
+
+        auto* row = new HorizontalScrollRow();
+        row->setHeight(210);
+        row->setMarginBottom(6);
+        m_scrollContent->addView(row);
+        populateRow(row, m_grouped[i]);
+    }
+
+    if (!any && !m_searchQuery.empty()) {
+        auto* empty = new brls::Label();
+        empty->setText("No results");
+        empty->setFontSize(16);
+        empty->setTextColor(nvgRGB(0x6b, 0x76, 0x84));
+        empty->setMarginTop(12);
+        m_scrollContent->addView(empty);
+    }
+}
+
 void SearchTab::populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>& items) {
     if (!row) return;
-
     row->clearViews();
 
     for (const auto& item : items) {
@@ -205,143 +388,35 @@ void SearchTab::populateRow(HorizontalScrollRow* row, const std::vector<MusicIte
         });
         cell->addGestureRecognizer(new brls::TapGestureRecognizer(cell));
 
-        // Register START button context menus for artists and albums
-        if (capturedItem.mediaType == MediaType::ARTIST) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showArtistContextMenuStatic(capturedItem);
-                    return true;
-                });
-        } else if (capturedItem.mediaType == MediaType::ALBUM) {
-            cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
-                [capturedItem](brls::View* view) {
-                    MediaDetailView::showAlbumContextMenuStatic(capturedItem);
-                    return true;
-                });
-        }
+        // START opens a context menu, dispatched by type (same mapping the
+        // home and library tabs use).
+        cell->registerAction("Options", brls::ControllerButton::BUTTON_START,
+            [capturedItem](brls::View* view) {
+                switch (capturedItem.mediaType) {
+                    case MediaType::ARTIST:
+                        MediaDetailView::showArtistContextMenuStatic(capturedItem);
+                        break;
+                    case MediaType::TRACK:
+                        MediaDetailView::performTrackActionStatic(capturedItem);
+                        break;
+                    default:
+                        MediaDetailView::showAlbumContextMenuStatic(capturedItem);
+                        break;
+                }
+                return true;
+            });
 
         row->addView(cell);
     }
 }
 
-void SearchTab::performSearch(const std::string& query) {
-    if (query.empty()) {
-        m_resultsLabel->setText("");
-        m_results.clear();
-        m_albums.clear();
-        m_tracks.clear();
-
-        // Hide all rows and labels
-        m_albumsLabel->setVisibility(brls::Visibility::GONE);
-        m_albumsRow->setVisibility(brls::Visibility::GONE);
-        m_tracksLabel->setVisibility(brls::Visibility::GONE);
-        m_tracksRow->setVisibility(brls::Visibility::GONE);
-        return;
-    }
-
-    m_resultsLabel->setText("Searching...");
-
-    // Run search async using MAClient async API
-    int gen = ++m_loadGeneration;
-    std::weak_ptr<bool> aliveWeak = m_alive;
-
-    MAClient::instance().search(query, [this, gen, aliveWeak](bool success, const Json& result) {
-        brls::sync([this, success, result, gen, aliveWeak]() {
-            auto alive = aliveWeak.lock();
-            if (!alive || !*alive) return;
-            if (gen != m_loadGeneration) return;  // Stale result
-
-            if (success) {
-                m_results.clear();
-                m_albums.clear();
-                m_tracks.clear();
-
-                // Music Assistant search returns an object with typed arrays:
-                //   { "artists": [...], "albums": [...], "tracks": [...], "playlists": [...] }
-                // Or it may return a flat array of items with "media_type" fields.
-
-                if (result.has("albums")) {
-                    auto albums = musicItemsFromJsonArray(result["albums"]);
-                    for (auto& a : albums) {
-                        if (a.mediaType == MediaType::UNKNOWN) a.mediaType = MediaType::ALBUM;
-                        m_albums.push_back(std::move(a));
-                    }
-                }
-
-                if (result.has("artists")) {
-                    auto artists = musicItemsFromJsonArray(result["artists"]);
-                    for (auto& a : artists) {
-                        if (a.mediaType == MediaType::UNKNOWN) a.mediaType = MediaType::ARTIST;
-                        // Artists go into the albums row alongside albums
-                        m_albums.push_back(std::move(a));
-                    }
-                }
-
-                if (result.has("tracks")) {
-                    auto tracks = musicItemsFromJsonArray(result["tracks"]);
-                    for (auto& t : tracks) {
-                        if (t.mediaType == MediaType::UNKNOWN) t.mediaType = MediaType::TRACK;
-                        m_tracks.push_back(std::move(t));
-                    }
-                }
-
-                // Handle flat array response (fallback)
-                if (result.type() == Json::ARRAY) {
-                    for (size_t i = 0; i < result.size(); i++) {
-                        MusicItem item = musicItemFromJson(result[i]);
-                        if (item.mediaType == MediaType::ALBUM ||
-                            item.mediaType == MediaType::ARTIST) {
-                            m_albums.push_back(std::move(item));
-                        } else if (item.mediaType == MediaType::TRACK) {
-                            m_tracks.push_back(std::move(item));
-                        }
-                    }
-                }
-
-                // Combine all parsed items into m_results for total count
-                m_results.insert(m_results.end(), m_albums.begin(), m_albums.end());
-                m_results.insert(m_results.end(), m_tracks.begin(), m_tracks.end());
-
-                m_resultsLabel->setText("Found " + std::to_string(m_results.size()) + " results");
-
-                // Update album/artist row
-                if (!m_albums.empty()) {
-                    m_albumsLabel->setText("Albums (" + std::to_string(m_albums.size()) + ")");
-                    m_albumsLabel->setVisibility(brls::Visibility::VISIBLE);
-                    m_albumsRow->setVisibility(brls::Visibility::VISIBLE);
-                    populateRow(m_albumsRow, m_albums);
-                } else {
-                    m_albumsLabel->setVisibility(brls::Visibility::GONE);
-                    m_albumsRow->setVisibility(brls::Visibility::GONE);
-                }
-
-                // Update tracks row
-                if (!m_tracks.empty()) {
-                    m_tracksLabel->setText("Tracks (" + std::to_string(m_tracks.size()) + ")");
-                    m_tracksLabel->setVisibility(brls::Visibility::VISIBLE);
-                    m_tracksRow->setVisibility(brls::Visibility::VISIBLE);
-                    populateRow(m_tracksRow, m_tracks);
-                } else {
-                    m_tracksLabel->setVisibility(brls::Visibility::GONE);
-                    m_tracksRow->setVisibility(brls::Visibility::GONE);
-                }
-
-            } else {
-                m_resultsLabel->setText("Search failed");
-                m_results.clear();
-            }
-        });
-    });
-}
-
 void SearchTab::onItemSelected(const MusicItem& item) {
-    // For tracks, follow the default track action setting
-    if (item.mediaType == MediaType::TRACK) {
-        MediaDetailView::performTrackActionStatic(item);
+    // Tracks and radio stations play immediately; browsable containers open a
+    // detail view.
+    if (item.mediaType == MediaType::TRACK || item.mediaType == MediaType::RADIO) {
+        Application::getInstance().pushPlayerActivity(item.itemId);
         return;
     }
-
-    // Show media detail view for other types
     auto* detailView = new MediaDetailView(item);
     brls::Application::pushActivity(new brls::Activity(detailView));
 }

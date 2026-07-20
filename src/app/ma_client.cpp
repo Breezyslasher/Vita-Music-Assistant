@@ -968,10 +968,25 @@ void MAClient::getLibraryRadios(MAResponseCallback cb, const std::string& search
     sendCommand("music/radios/library_items", args, std::move(cb));
 }
 
-void MAClient::search(const std::string& query, MAResponseCallback cb, int limit) {
+void MAClient::search(const std::string& query, const std::vector<std::string>& mediaTypes,
+                      bool libraryOnly, MAResponseCallback cb, int limit) {
     Json args;
     args["search_query"] = Json(query);
     args["limit"] = Json(limit);
+    // Only send media_types when the caller narrowed the set; omitting it lets
+    // the server search every supported type.
+    if (!mediaTypes.empty()) {
+        Json arr(Json::ARRAY);
+        for (const auto& t : mediaTypes) arr.push_back(Json(t));
+        args["media_types"] = arr;
+    }
+    // Restrict to the local library when requested; otherwise omit providers so
+    // the server searches the library and every available provider.
+    if (libraryOnly) {
+        Json provs(Json::ARRAY);
+        provs.push_back(Json(std::string("library")));
+        args["providers"] = provs;
+    }
     sendCommand("music/search", args, std::move(cb));
 }
 
