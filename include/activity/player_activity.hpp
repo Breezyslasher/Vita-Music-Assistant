@@ -43,6 +43,9 @@ public:
 private:
     void loadMedia();
     void loadFromQueue();           // Load current track from queue
+    // Show the album cover: a monogram placeholder first, then the real art when
+    // it loads. Empty resolvedUrl leaves the placeholder (no cover available).
+    void showAlbumCover(const std::string& resolvedUrl, const std::string& name);
     void updateProgress();
     void togglePlayPause();
     void seek(int seconds);
@@ -220,6 +223,8 @@ private:
     BRLS_BIND(brls::Box, controlsBox, "player/controls");
     BRLS_BIND(brls::Box, albumArtContainer, "player/album_art_container");
     BRLS_BIND(brls::Image, albumArt, "player/album_art");
+    BRLS_BIND(brls::Box, albumArtPlaceholder, "player/album_art_placeholder");
+    BRLS_BIND(brls::Label, albumArtInitial, "player/album_art_initial");
     BRLS_BIND(brls::Box, queueBtn, "player/queue_btn");
     BRLS_BIND(brls::Image, queueIcon, "player/queue_icon");
     BRLS_BIND(brls::Box, queueOverlay, "player/queue_overlay");
