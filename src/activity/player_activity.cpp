@@ -556,17 +556,11 @@ void PlayerActivity::loadFromQueue() {
         }
         updateQueueDisplay();
 
-        // Load album art from server
-        if (albumArt && !track->ratingKey.empty()) {
-            if (!track->thumb.empty()) {
-                MAClient& client = MAClient::instance();
-                std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
-                ImageLoader::setPaused(false);
-                ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                    img->setVisibility(brls::Visibility::VISIBLE);
-                }, albumArt, m_alive);
-                ImageLoader::setPaused(true);
-            }
+        // Load album art from server (placeholder tile if the track has none).
+        {
+            std::string url = track->thumb.empty() ? std::string()
+                : MAClient::instance().getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
+            showAlbumCover(url, track->title);
         }
 
         // Show music UI elements
@@ -610,15 +604,11 @@ void PlayerActivity::loadFromQueue() {
     m_isLocalFile = false;
     MAClient& client = MAClient::instance();
 
-    // Load album art from server
-    if (albumArt && !track->thumb.empty()) {
-        std::string thumbUrl = client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
-        ImageLoader::setPaused(false);
-        ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-            img->setVisibility(brls::Visibility::VISIBLE);
-        }, albumArt, m_alive);
-        ImageLoader::setPaused(true);
-        albumArt->setVisibility(brls::Visibility::VISIBLE);
+    // Load album art from server (placeholder tile if the track has none).
+    {
+        std::string url = track->thumb.empty() ? std::string()
+            : client.getThumbnailUrl(track->thumb, 300, 300, track->thumbProvider);
+        showAlbumCover(url, track->title);
     }
 
     // Use player_queues/play_media to play the track via Sendspin.
@@ -2213,6 +2203,32 @@ static std::string resolvePlayerImageUrl(const std::string& imageUrl) {
     return MAClient::instance().getThumbnailUrl(imageUrl, 300, 300, "");
 }
 
+void PlayerActivity::showAlbumCover(const std::string& resolvedUrl, const std::string& name) {
+    // Monogram placeholder up front (first alphanumeric char of the name), so a
+    // track with no cover shows a tile instead of a blank area. The real art,
+    // once loaded, hides the placeholder.
+    if (albumArtInitial) {
+        std::string mono;
+        for (char c : name) {
+            if (std::isalnum(static_cast<unsigned char>(c))) {
+                mono = std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+                break;
+            }
+        }
+        albumArtInitial->setText(mono.empty() ? "?" : mono);
+    }
+    if (albumArtPlaceholder) albumArtPlaceholder->setVisibility(brls::Visibility::VISIBLE);
+    if (albumArt) albumArt->setVisibility(brls::Visibility::GONE);
+
+    if (!albumArt || resolvedUrl.empty()) return;
+    ImageLoader::setPaused(false);
+    ImageLoader::loadAsync(resolvedUrl, [this](brls::Image* img) {
+        img->setVisibility(brls::Visibility::VISIBLE);
+        if (albumArtPlaceholder) albumArtPlaceholder->setVisibility(brls::Visibility::GONE);
+    }, albumArt, m_alive);
+    ImageLoader::setPaused(true);
+}
+
 void PlayerActivity::loadRemotePlayerState() {
     // Use the active player: a selected remote player, or - after a cold
     // restart while the Vita was already playing - our own resolved player_id.
@@ -2350,16 +2366,10 @@ void PlayerActivity::loadRemotePlayerState() {
                 if (timeRemainingLabel) timeRemainingLabel->setText(buf);
             }
 
-            // Load album art from image_url
-            if (albumArt && !currentImageUrl.empty()) {
-                std::string thumbUrl = resolvePlayerImageUrl(currentImageUrl);
-                ImageLoader::setPaused(false);
-                ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                    img->setVisibility(brls::Visibility::VISIBLE);
-                }, albumArt, m_alive);
-                ImageLoader::setPaused(true);
-                albumArt->setVisibility(brls::Visibility::VISIBLE);
-            }
+            // Load album art from image_url (placeholder tile if there is none).
+            showAlbumCover(currentImageUrl.empty() ? std::string()
+                                                   : resolvePlayerImageUrl(currentImageUrl),
+                           currentName);
         });
     });
 }
@@ -2448,16 +2458,10 @@ void PlayerActivity::pollRemotePlayerState() {
                     artistLabel->setVisibility(currentArtist.empty()
                         ? brls::Visibility::GONE : brls::Visibility::VISIBLE);
                 }
-                // Load new album art
-                if (albumArt && !currentImageUrl.empty()) {
-                    std::string thumbUrl = resolvePlayerImageUrl(currentImageUrl);
-                    ImageLoader::setPaused(false);
-                    ImageLoader::loadAsync(thumbUrl, [](brls::Image* img) {
-                        img->setVisibility(brls::Visibility::VISIBLE);
-                    }, albumArt, m_alive);
-                    ImageLoader::setPaused(true);
-                    albumArt->setVisibility(brls::Visibility::VISIBLE);
-                }
+                // Load new album art (placeholder tile if there is none).
+                showAlbumCover(currentImageUrl.empty() ? std::string()
+                                                       : resolvePlayerImageUrl(currentImageUrl),
+                               currentName);
             }
 
             // Update progress bar and time labels from the server's elapsed

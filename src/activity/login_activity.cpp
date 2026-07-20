@@ -1,6 +1,6 @@
 /**
  * Vita Music Assistant - Login Activity implementation
- * Supports Music Assistant (direct) and Home Assistant authentication
+ * Supports Music Assistant (direct) and Remote (WebRTC) authentication
  *
  * Auth flow:
  *   1. User enters server URL, username, password
@@ -97,7 +97,6 @@ void LoginActivity::onContentAvailable() {
         seg->addGestureRecognizer(new brls::TapGestureRecognizer(seg));
     };
     wireSegment(segMa, AuthMode::MUSIC_ASSISTANT);
-    wireSegment(segHa, AuthMode::HOME_ASSISTANT);
     wireSegment(segRemote, AuthMode::REMOTE);
 
     // Server URL input (click to edit via IME)
@@ -230,7 +229,6 @@ void LoginActivity::updateUIForMode() {
         if (label) label->setTextColor(active ? colCyanInk() : colMuted());
     };
     styleSegment(segMa, segMaLabel, m_authMode == AuthMode::MUSIC_ASSISTANT);
-    styleSegment(segHa, segHaLabel, m_authMode == AuthMode::HOME_ASSISTANT);
     styleSegment(segRemote, segRemoteLabel, m_authMode == AuthMode::REMOTE);
 
     bool remote = (m_authMode == AuthMode::REMOTE);
@@ -246,9 +244,9 @@ void LoginActivity::updateUIForMode() {
         fieldsRemote->setVisibility(remote ? brls::Visibility::VISIBLE
                                            : brls::Visibility::GONE);
     // A GONE section still leaves its interactive rows in the focus chain, so
-    // the Remote ID field / QR-scan button stayed reachable on the MA and HA
-    // login screens. Toggle focusability with the mode so they can't be focused
-    // unless Remote mode is active.
+    // the Remote ID field / QR-scan button stayed reachable on the Music
+    // Assistant login screen. Toggle focusability with the mode so they can't be
+    // focused unless Remote mode is active.
     if (remoteField)      remoteField->setFocusable(remote);
     if (remoteScanButton) remoteScanButton->setFocusable(remote);
 
@@ -257,9 +255,6 @@ void LoginActivity::updateUIForMode() {
     switch (m_authMode) {
         case AuthMode::MUSIC_ASSISTANT:
             setStatus("Enter your Music Assistant server credentials");
-            break;
-        case AuthMode::HOME_ASSISTANT:
-            setStatus("Enter your Home Assistant credentials");
             break;
         case AuthMode::REMOTE:
             setStatus("Connect from anywhere via secure WebRTC");
@@ -298,11 +293,7 @@ void LoginActivity::onConnectPressed() {
         return;
     }
 
-    if (m_authMode == AuthMode::MUSIC_ASSISTANT) {
-        loginWithMA(m_serverUrl, m_username, m_password);
-    } else {
-        loginWithHA(m_serverUrl, m_username, m_password);
-    }
+    loginWithMA(m_serverUrl, m_username, m_password);
 }
 
 void LoginActivity::onRemoteLoginPressed() {
@@ -463,113 +454,6 @@ void LoginActivity::loginWithMA(const std::string& serverUrl,
                 });
             } else {
                 progressDialog->setStatus("Connected to server but WebSocket auth failed");
-                if (statusLabel) statusLabel->setText("WebSocket connection failed");
-                brls::delay(2000, [progressDialog]() {
-                    progressDialog->dismiss();
-                });
-            }
-        });
-    });
-}
-
-void LoginActivity::loginWithHA(const std::string& serverUrl,
-                                 const std::string& username,
-                                 const std::string& password) {
-    auto* progressDialog = new ProgressDialog("Logging in");
-    progressDialog->setStatus("Authenticating with Home Assistant...");
-    progressDialog->show();
-
-    auto cancelled = std::make_shared<bool>(false);
-    progressDialog->setCancelCallback([cancelled]() {
-        *cancelled = true;
-    });
-
-    asyncRun([this, serverUrl, username, password, progressDialog, cancelled]() {
-        if (*cancelled) return;
-
-        // Build the auth URL with HA provider
-        std::string authUrl = serverUrl;
-        if (!authUrl.empty() && authUrl.back() == '/') authUrl.pop_back();
-        authUrl += "/auth/login";
-
-        // Build JSON body with HA provider
-        std::string body = "{\"provider_id\":\"homeassistant\","
-            "\"credentials\":{\"username\":\"" +
-            username + "\",\"password\":\"" + password + "\"}}";
-
-        brls::Logger::info("Login: POST {} (HA provider)", authUrl);
-
-        HttpClient http;
-        http.setTimeout(15);
-        HttpResponse resp = http.post(authUrl, body, "application/json");
-
-        if (*cancelled) return;
-
-        if (!resp.success || resp.statusCode != 200) {
-            brls::sync([this, progressDialog, resp]() {
-                std::string errMsg = "HA Login failed";
-                if (!resp.error.empty()) {
-                    errMsg += ": " + resp.error;
-                } else if (resp.statusCode == 401) {
-                    errMsg = "Invalid HA credentials";
-                } else if (resp.statusCode == 403) {
-                    errMsg = "Access denied - check HA permissions";
-                } else if (resp.statusCode > 0) {
-                    errMsg += " (HTTP " + std::to_string(resp.statusCode) + ")";
-                } else {
-                    errMsg += ": Could not reach server";
-                }
-                progressDialog->setStatus(errMsg);
-                if (statusLabel) statusLabel->setText(errMsg);
-                brls::delay(2000, [progressDialog]() {
-                    progressDialog->dismiss();
-                });
-            });
-            return;
-        }
-
-        // Parse response to extract token
-        Json result = Json::parse(resp.body);
-        std::string token;
-
-        if (result.has("token")) {
-            token = result["token"].str();
-        }
-
-        if (token.empty()) {
-            brls::sync([this, progressDialog]() {
-                progressDialog->setStatus("HA Login failed: no token received");
-                if (statusLabel) statusLabel->setText("HA Login failed: no token received");
-                brls::delay(2000, [progressDialog]() {
-                    progressDialog->dismiss();
-                });
-            });
-            return;
-        }
-
-        brls::Logger::info("Login: got HA token, connecting WebSocket...");
-
-        brls::sync([this, progressDialog]() {
-            progressDialog->setStatus("Connecting to server...");
-        });
-
-        connectWithToken(serverUrl, token, username);
-
-        brls::sync([this, progressDialog, serverUrl]() {
-            if (MAClient::instance().isConnected()) {
-                progressDialog->setStatus("Connected!");
-                progressDialog->setProgress(1.0f);
-
-                // Connect Sendspin for audio streaming
-                Application::getInstance().connectSendspin();
-                Application::getInstance().resolveOwnPlayerId();
-
-                brls::delay(500, [this, progressDialog]() {
-                    progressDialog->dismiss();
-                    Application::getInstance().pushMainActivity();
-                });
-            } else {
-                progressDialog->setStatus("WebSocket connection failed");
                 if (statusLabel) statusLabel->setText("WebSocket connection failed");
                 brls::delay(2000, [progressDialog]() {
                     progressDialog->dismiss();

@@ -9,6 +9,7 @@
 #include "utils/image_loader.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 
 namespace vita_ma {
 
@@ -134,12 +135,46 @@ void MediaItemCell::draw(NVGcontext* vg, float x, float y, float width, float he
     }
 }
 
-void MediaItemCell::drawCover(NVGcontext* vg) {
-    if (m_nvgCover == 0 || m_coverW <= 0 || m_coverH <= 0) return;
+void MediaItemCell::drawCoverPlaceholder(NVGcontext* vg, float x, float y, float size,
+                                         const MusicItem& item) {
+    // Tinted tile: derive a muted, dark colour from the name so cover-less items
+    // aren't all identical, while staying subdued next to real album art.
+    unsigned h = 2166136261u;
+    for (char c : item.name) { h ^= static_cast<unsigned char>(c); h *= 16777619u; }
+    int r = 34 + static_cast<int>(h & 31u);
+    int g = 40 + static_cast<int>((h >> 5) & 31u);
+    int b = 50 + static_cast<int>((h >> 10) & 31u);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x, y, size, size, 4.0f);
+    nvgFillColor(vg, nvgRGB(r, g, b));
+    nvgFill(vg);
 
+    // Monogram: the first alphanumeric character of the name (uppercased).
+    std::string mono;
+    for (char c : item.name) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            mono = std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+            break;
+        }
+    }
+    if (mono.empty()) mono = "?";
+    nvgFontFace(vg, "regular");
+    nvgFontSize(vg, size * 0.42f);
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgFillColor(vg, nvgRGBA(150, 162, 176, 235));
+    nvgText(vg, x + size * 0.5f, y + size * 0.5f, mono.c_str(), nullptr);
+}
+
+void MediaItemCell::drawCover(NVGcontext* vg) {
     float cw = COVER_SIZE, ch = COVER_SIZE;
     float cx = m_drawX + (m_drawW - cw) * 0.5f;
     float cy = m_drawY + CELL_PADDING;
+
+    // No cover art loaded: draw the fallback tile instead of an empty slot.
+    if (m_nvgCover == 0 || m_coverW <= 0 || m_coverH <= 0) {
+        drawCoverPlaceholder(vg, cx, cy, cw, m_item);
+        return;
+    }
 
     float scale = std::max(cw / static_cast<float>(m_coverW),
                            ch / static_cast<float>(m_coverH));

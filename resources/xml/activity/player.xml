@@ -23,6 +23,24 @@
             cornerRadius="14"
             visibility="gone"/>
 
+        <!-- Fallback tile shown when the current track has no cover art -->
+        <brls:Box
+            id="player/album_art_placeholder"
+            width="220"
+            height="220"
+            cornerRadius="14"
+            axis="column"
+            justifyContent="center"
+            alignItems="center"
+            backgroundColor="#1b212bff"
+            visibility="gone">
+            <brls:Label
+                id="player/album_art_initial"
+                text=""
+                fontSize="96"
+                textColor="#8a96a4ff"/>
+        </brls:Box>
+
     </brls:Box>
 
     <!-- Music info area: title + artist between album art and play controls -->

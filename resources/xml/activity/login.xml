@@ -55,7 +55,7 @@
             horizontalAlign="center"
             textColor="#93a0aeff"/>
 
-        <!-- Segmented mode switch: Music Assist. / Home Assist. / Remote -->
+        <!-- Segmented mode switch: Music Assist. / Remote -->
         <brls:Box
             id="login/seg_track"
             width="100%"
@@ -84,21 +84,6 @@
                     textColor="#04222eff"/>
             </brls:Box>
             <brls:Box
-                id="login/seg_ha"
-                grow="1"
-                axis="row"
-                justifyContent="center"
-                alignItems="center"
-                cornerRadius="8"
-                focusable="true"
-                highlightCornerRadius="8">
-                <brls:Label
-                    id="login/seg_ha_label"
-                    text="Home Assist."
-                    fontSize="12"
-                    textColor="#93a0aeff"/>
-            </brls:Box>
-            <brls:Box
                 id="login/seg_remote"
                 grow="1"
                 axis="row"
@@ -115,7 +100,7 @@
             </brls:Box>
         </brls:Box>
 
-        <!-- MA / HA credential fields -->
+        <!-- Music Assistant credential fields -->
         <brls:Box
             id="login/fields_credentials"
             width="100%"

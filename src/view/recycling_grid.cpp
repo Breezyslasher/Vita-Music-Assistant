@@ -228,16 +228,23 @@ void RecyclingGrid::draw(NVGcontext* vg, float x, float y, float width, float he
         for (int i = startIdx; i < endIdx; i++) {
             MediaItemCell* cell = m_cells[i];
             if (!cell) continue;
-            int img = cell->getCoverImage();
-            int iw = cell->getCoverWidth();
-            int ih = cell->getCoverHeight();
             float dw = cell->getDrawW();
-            if (img == 0 || iw <= 0 || ih <= 0 || dw <= 0.0f) continue;
+            if (dw <= 0.0f) continue;
 
             float cw = MediaItemCell::COVER_SIZE;
             float ch = MediaItemCell::COVER_SIZE;
             float cx = cell->getDrawX() + (dw - cw) * 0.5f;
             float cy = cell->getDrawY() + MediaItemCell::CELL_PADDING;
+
+            int img = cell->getCoverImage();
+            int iw = cell->getCoverWidth();
+            int ih = cell->getCoverHeight();
+            // No cover art: draw the shared fallback tile (tinted + initial).
+            if (img == 0 || iw <= 0 || ih <= 0) {
+                MediaItemCell::drawCoverPlaceholder(vg, cx, cy, cw, cell->getItem());
+                continue;
+            }
+
             float scale = std::max(cw / static_cast<float>(iw), ch / static_cast<float>(ih));
             float sw = static_cast<float>(iw) * scale;
             float sh = static_cast<float>(ih) * scale;
