@@ -67,6 +67,12 @@ public:
     static constexpr float COVER_SIZE = 110.0f;
     static constexpr float CELL_PADDING = 5.0f;
 
+    // Draw a fallback tile (tinted rounded square + the item's initial) for items
+    // with no cover art. Shared so both a standalone cell and the grid's batched
+    // pass render the same placeholder. size is the square edge length.
+    static void drawCoverPlaceholder(NVGcontext* vg, float x, float y, float size,
+                                     const MusicItem& item);
+
 private:
     void loadThumbnail();
     void drawCover(NVGcontext* vg);
