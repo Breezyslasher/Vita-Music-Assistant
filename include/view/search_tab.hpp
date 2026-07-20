@@ -28,6 +28,7 @@ private:
     void buildChipRow();
     void styleChip(brls::Box* chip, brls::Label* label, bool selected);
     void toggleType(const std::string& apiType);
+    void toggleLibraryOnly();
     void performSearch(const std::string& query);
     void rebuildRails();
     void populateRow(HorizontalScrollRow* row, const std::vector<MusicItem>& items);
@@ -44,6 +45,11 @@ private:
     // One chip per media type, parallel to the TYPES table in the .cpp.
     struct Chip { brls::Box* box = nullptr; brls::Label* label = nullptr; std::string apiType; };
     std::vector<Chip> m_chips;
+
+    // "In Library" source filter: on = library only, off = all providers.
+    brls::Box* m_libraryChip = nullptr;
+    brls::Label* m_libraryChipLabel = nullptr;
+    bool m_libraryOnly = false;
 
     // Selected media types (MA enum strings). Empty = show every type.
     std::set<std::string> m_selectedTypes;

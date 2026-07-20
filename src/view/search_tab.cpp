@@ -203,6 +203,30 @@ void SearchTab::buildChipRow() {
     m_chipRow->setHeight(44);
     m_chipRow->setMarginBottom(10);
 
+    // Leading "In Library" source filter (separate from the media-type chips):
+    // on = search the local library only, off = search every provider.
+    m_libraryChip = new brls::Box();
+    m_libraryChip->setAxis(brls::Axis::ROW);
+    m_libraryChip->setJustifyContent(brls::JustifyContent::CENTER);
+    m_libraryChip->setAlignItems(brls::AlignItems::CENTER);
+    m_libraryChip->setHeight(32);
+    m_libraryChip->setPaddingLeft(14);
+    m_libraryChip->setPaddingRight(14);
+    m_libraryChip->setMarginRight(14);
+    m_libraryChip->setCornerRadius(16);
+    m_libraryChip->setFocusable(true);
+    m_libraryChipLabel = new brls::Label();
+    m_libraryChipLabel->setText("In Library");
+    m_libraryChipLabel->setFontSize(15);
+    m_libraryChip->addView(m_libraryChipLabel);
+    m_libraryChip->registerClickAction([this](brls::View* view) {
+        toggleLibraryOnly();
+        return true;
+    });
+    m_libraryChip->addGestureRecognizer(new brls::TapGestureRecognizer(m_libraryChip));
+    styleChip(m_libraryChip, m_libraryChipLabel, /*selected*/ false);
+    m_chipRow->addView(m_libraryChip);
+
     m_chips.clear();
     for (int i = 0; i < NUM_TYPES; i++) {
         auto* chip = new brls::Box();
@@ -255,6 +279,14 @@ void SearchTab::toggleType(const std::string& apiType) {
     }
 }
 
+void SearchTab::toggleLibraryOnly() {
+    m_libraryOnly = !m_libraryOnly;
+    styleChip(m_libraryChip, m_libraryChipLabel, m_libraryOnly);
+    if (!m_searchQuery.empty()) {
+        performSearch(m_searchQuery);
+    }
+}
+
 void SearchTab::performSearch(const std::string& query) {
     if (query.empty()) {
         m_resultsLabel->setText("");
@@ -271,7 +303,7 @@ void SearchTab::performSearch(const std::string& query) {
     int gen = ++m_loadGeneration;
     std::weak_ptr<bool> aliveWeak = m_alive;
 
-    MAClient::instance().search(query, mediaTypes,
+    MAClient::instance().search(query, mediaTypes, m_libraryOnly,
         [this, gen, aliveWeak](bool success, const Json& result) {
         brls::sync([this, success, result, gen, aliveWeak]() {
             auto alive = aliveWeak.lock();

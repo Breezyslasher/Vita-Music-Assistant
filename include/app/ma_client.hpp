@@ -198,9 +198,10 @@ public:
 
     // Search. mediaTypes filters which media types the server returns (MA enum
     // strings: track/album/artist/playlist/radio/audiobook/podcast); empty =
-    // all supported types.
+    // all supported types. libraryOnly restricts results to the local library
+    // (providers=["library"]); false searches the library and all providers.
     void search(const std::string& query, const std::vector<std::string>& mediaTypes,
-                MAResponseCallback cb, int limit = 25);
+                bool libraryOnly, MAResponseCallback cb, int limit = 25);
 
     // Browse
     void browse(const std::string& path, MAResponseCallback cb);
