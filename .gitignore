@@ -22,3 +22,6 @@ Thumbs.db
 *.log
 psp2core-*
 *.psp2dmp*
+
+# SceShell plugin, fetched by CI from vita-shell-companion releases
+module/*.suprx

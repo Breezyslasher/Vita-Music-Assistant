@@ -360,6 +360,16 @@ void ImageLoader::processPendingCovers() {
     }
 }
 
+bool ImageLoader::fetchBytes(const std::string& url, std::vector<uint8_t>& out) {
+    if (url.empty()) return false;
+    if (cacheGetBytes(url, out)) return true;
+    HttpResponse resp = fetchImageBytes(url);
+    if (!resp.success || resp.body.empty()) return false;
+    out.assign(resp.body.begin(), resp.body.end());
+    cachePutBytes(url, out);
+    return true;
+}
+
 bool ImageLoader::loadFromFile(const std::string& path, brls::Image* target) {
     if (path.empty() || !target) return false;
 

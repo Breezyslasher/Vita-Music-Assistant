@@ -20,7 +20,7 @@ jobs:
       - name: Install build requirements
         run: |
           apk update
-          apk add cmake ninja git zstd tar pkgconf
+          apk add cmake ninja git zstd tar pkgconf curl
 
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -84,6 +84,20 @@ jobs:
           sed -i '/HAVE_PIPE2/d' lib/curl_config.h
           make -j$(nproc)
           make install
+
+      # The SceShell plugin VMA loads (vita-shell-companion), from that repo's
+      # latest release. Not fatal while no release exists: the VPK then ships
+      # without it and the app logs that the plugin could not be loaded.
+      - name: Fetch shell_companion.suprx (vita-shell-companion release)
+        run: |
+          mkdir -p module
+          if curl -fsSL --retry 3 -o module/shell_companion.suprx \
+               https://github.com/Breezyslasher/vita-shell-companion/releases/latest/download/shell_companion.suprx; then
+            echo "shell_companion.suprx: $(wc -c < module/shell_companion.suprx) bytes, sha256 $(sha256sum module/shell_companion.suprx | cut -d' ' -f1)"
+          else
+            rm -f module/shell_companion.suprx
+            echo "::warning::No shell_companion.suprx release asset found; building without the shell plugin"
+          fi
 
       - name: Build
         run: |

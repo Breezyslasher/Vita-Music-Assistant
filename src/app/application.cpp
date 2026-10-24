@@ -6,6 +6,7 @@
 #include "app/ma_client.hpp"
 #include "app/ma_types.hpp"
 #include "app/sendspin_client.hpp"
+#include "app/shell_companion_bridge.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -82,6 +83,10 @@ void Application::run() {
     brls::Logger::info("Application::run - isLoggedIn={}, serverUrl={}",
                        isLoggedIn(), m_serverUrl.empty() ? "(empty)" : m_serverUrl);
 
+    // Load the vita-shell-companion SceShell plugin (quick menu Music row).
+    // Independent of the server connection; logs what scOpen reports.
+    ShellCompanionBridge::instance().start();
+
     // Reconnect the way we last connected: over remote access when the last
     // session was remote (the saved server URL always keeps the direct
     // address), directly otherwise.
@@ -130,10 +135,13 @@ void Application::run() {
             sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
         }
 #endif
+        // Quick menu Music row: heartbeat, song/cover updates, button presses.
+        ShellCompanionBridge::instance().tick();
     }
 }
 
 void Application::shutdown() {
+    ShellCompanionBridge::instance().stop();
     SendspinClient::instance().disconnect();
     saveSettings();
     m_initialized = false;

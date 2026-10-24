@@ -42,6 +42,11 @@ public:
     // Returns true on success.
     static bool loadFromFile(const std::string& path, brls::Image* target);
 
+    // Fetch an image's encoded bytes (JPEG/PNG), from the byte cache or the
+    // network (server-relative paths go through the remote http-proxy tunnel).
+    // Blocks: call from a worker thread. Returns true with the bytes in out.
+    static bool fetchBytes(const std::string& url, std::vector<uint8_t>& out);
+
     // Clear image cache
     static void clearCache();
 

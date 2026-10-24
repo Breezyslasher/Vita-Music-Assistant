@@ -5,3 +5,6 @@
 [submodule "lib/libdatachannel"]
 	path = lib/libdatachannel
 	url = https://github.com/paullouisageneau/libdatachannel.git
+[submodule "lib/vita-shell-companion"]
+	path = lib/vita-shell-companion
+	url = https://github.com/Breezyslasher/vita-shell-companion

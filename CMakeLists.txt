@@ -27,7 +27,7 @@ include(${BOREALIS_LIBRARY}/cmake/commonOption.cmake)
 include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 
 # Project definition (AFTER toolchain include)
-project(VitaMusicAssistant VERSION 2.0.0 LANGUAGES C CXX)
+project(VitaMusicAssistant VERSION 2.0.0 LANGUAGES C CXX ASM)
 
 # C++17 required for Borealis
 set(CMAKE_CXX_STANDARD 17)
@@ -324,6 +324,15 @@ set(APP_SOURCES
     lib/quirc/decode.c
     lib/quirc/identify.c
     lib/quirc/version_db.c
+
+    # vita-shell-companion client: loads the SceShell plugin and drives the
+    # quick menu's Music row. sc_cover.c uses the stb_image that the patched
+    # nanovg.c already defines.
+    src/app/shell_companion_bridge.cpp
+    lib/vita-shell-companion/client/shell_companion.c
+    lib/vita-shell-companion/client/sc_files.c
+    lib/vita-shell-companion/client/sc_cover.c
+    lib/vita-shell-companion/client/sc_link_stub.S
 )
 
 # Include directories
@@ -333,7 +342,21 @@ set(APP_INCLUDES
     ${BOREALIS_LIBRARY}/include/borealis/extern
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/quirc
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/dr_libs
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/vita-shell-companion/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/vita-shell-companion/client
 )
+
+# The shell_companion.suprx plugin, downloaded by CI from vita-shell-companion's
+# latest release into module/. Packaged only when present, so a build without
+# it still works (the app then logs that the plugin could not be loaded).
+set(SC_PLUGIN_SUPRX ${CMAKE_CURRENT_SOURCE_DIR}/module/shell_companion.suprx)
+set(SC_VPK_FILES "")
+if(EXISTS ${SC_PLUGIN_SUPRX})
+    message(STATUS "Packaging shell_companion.suprx from ${SC_PLUGIN_SUPRX}")
+    list(APPEND SC_VPK_FILES FILE ${SC_PLUGIN_SUPRX} module/shell_companion.suprx)
+else()
+    message(WARNING "module/shell_companion.suprx not found: the VPK ships without the shell plugin")
+endif()
 
 # Create executable
 add_executable(${PROJECT_NAME} ${APP_SOURCES})
@@ -526,4 +549,7 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
     FILE resources/font/switch_font.ttf resources/font/switch_font.ttf
     FILE resources/font/switch_icons.ttf resources/font/switch_icons.ttf
     FILE resources/material/MaterialIcons-Regular.ttf resources/material/MaterialIcons-Regular.ttf
+
+    # SceShell plugin (vita-shell-companion), when downloaded
+    ${SC_VPK_FILES}
 )
