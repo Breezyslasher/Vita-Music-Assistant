@@ -59,7 +59,7 @@ jobs:
       - name: Rebuild mbedTLS with DTLS-SRTP support
         run: |
           cd /tmp
-          wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+          wget -q --tries=5 --waitretry=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
           tar xf mbedtls-3.6.7.tar.bz2
           cd mbedtls-3.6.7
           patch -p1 < "$GITHUB_WORKSPACE/patches/mbedtls_vitasdk.patch"
@@ -83,7 +83,7 @@ jobs:
       - name: Build curl against the rebuilt mbedTLS
         run: |
           cd /tmp
-          wget -q https://github.com/curl/curl/releases/download/curl-8_16_0/curl-8.16.0.tar.gz
+          wget -q --tries=5 --waitretry=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 https://github.com/curl/curl/releases/download/curl-8_16_0/curl-8.16.0.tar.gz
           tar xf curl-8.16.0.tar.gz
           cd curl-8.16.0
           mkdir build && cd build
