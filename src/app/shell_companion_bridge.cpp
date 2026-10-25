@@ -58,6 +58,36 @@ void ShellCompanionBridge::start() {
     brls::Logger::info("ShellCompanion: scOpen -> {} in {}ms: {}", r,
                        (long)((nowUs() - t0) / 1000), what);
     m_open = (r == 0);
+    if (!m_open) return;
+
+    ScPluginInfo info{};
+    if (scPluginInfo(&info) == 0) {
+        m_pluginInfo = true;
+        m_granted = info.granted;
+        brls::Logger::info("ShellCompanion: plugin {} ({}, protocol {}, written {}), "
+                           "features 0x{:x}, granted 0x{:x}, caps '{}'",
+                           info.version, info.versionCode, info.protocol, info.written,
+                           info.features, info.granted, info.caps);
+    } else {
+        // Another app loaded an older plugin first this boot; it stays in
+        // SceShell until the Vita restarts.
+        brls::Logger::warning("ShellCompanion: plugin never answered HELLO: older than 0.2.0 "
+                              "(loaded by another app?), restart the Vita to load ours");
+    }
+}
+
+int ShellCompanionBridge::probe(int mode) {
+    if (!m_open) {
+        brls::Logger::warning("ShellCompanion: probe {} not sent, plugin not open", mode);
+        return -1;
+    }
+    if (m_pluginInfo && !(m_granted & SC_FEAT_MUSIC)) {
+        brls::Logger::warning("ShellCompanion: probe {} not sent, Music not granted", mode);
+        return -2;
+    }
+    int r = scProbeStream(mode, nullptr);
+    brls::Logger::info("ShellCompanion: probe {} sent -> {}", mode, r);
+    return r;
 }
 
 void ShellCompanionBridge::tick() {

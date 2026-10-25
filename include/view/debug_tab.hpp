@@ -14,6 +14,7 @@ public:
     DebugTab();
 
 private:
+    void createShellCompanionSection();
     void createDialogSection();
     void createNotificationSection();
     void createCustomDialogSection();

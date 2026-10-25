@@ -101,13 +101,13 @@ jobs:
       # The SceShell plugin VMA loads (vita-shell-companion), from a pinned
       # release. Keep SC_PLUGIN_TAG on the same commit as the
       # lib/vita-shell-companion submodule so the plugin and the client code
-      # always match (Alpha-0.0.1 = 8d0106f). Pinned rather than
+      # always match (Alpha-0.0.2 = 2368cff). Pinned rather than
       # releases/latest, which skips pre-releases. Not fatal if the asset is
       # missing: the VPK then ships without it and the app logs that the
       # plugin could not be loaded.
       - name: Fetch shell_companion.suprx (vita-shell-companion release)
         env:
-          SC_PLUGIN_TAG: Alpha-0.0.1
+          SC_PLUGIN_TAG: Alpha-0.0.2
         run: |
           mkdir -p module
           if curl -fsSL --retry 3 -o module/shell_companion.suprx \

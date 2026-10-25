@@ -6,6 +6,9 @@
 #include "view/debug_tab.hpp"
 #include "view/progress_dialog.hpp"
 #include "view/overlay_dialog.hpp"
+#include "app/shell_companion_bridge.hpp"
+
+#include "sc_protocol.h"
 
 namespace vita_ma {
 
@@ -23,6 +26,7 @@ DebugTab::DebugTab() {
     m_contentBox->setPadding(20);
     m_contentBox->setGrow(1.0f);
 
+    createShellCompanionSection();
     createDialogSection();
     createNotificationSection();
     createOverlayDialogSection();
@@ -44,6 +48,37 @@ static brls::DetailCell* makeButton(const std::string& title, const std::string&
         return true;
     });
     return cell;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shell companion: stream probe (results in ux0:data/ShellCompanion/plugin.log)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void DebugTab::createShellCompanionSection() {
+    auto* header = new brls::Header();
+    header->setTitle("Shell Companion");
+    m_contentBox->addView(header);
+
+    // The probe's first file plays 10 s after the command, so there is time to
+    // close the app (an app holding audio may silence the shell's music).
+    m_contentBox->addView(makeButton("Start stream probe",
+                                     "Tone, all modes, ~4m20s. Close the app within 10 s",
+                                     []() {
+        int r = ShellCompanionBridge::instance().probe(SC_PROBE_ALL);
+        if (r == 0)
+            brls::Application::notify("Probe starts in 10 s: close the app now");
+        else if (r == -1)
+            brls::Application::notify("Shell plugin not loaded (see log)");
+        else if (r == -2)
+            brls::Application::notify("Shell plugin did not grant Music");
+        else
+            brls::Application::notify("Probe not sent (" + std::to_string(r) + ")");
+    }));
+
+    m_contentBox->addView(makeButton("Stop stream probe", "Stops a running probe", []() {
+        int r = ShellCompanionBridge::instance().probe(SC_PROBE_STOP);
+        brls::Application::notify(r == 0 ? "Probe stop sent" : "Probe stop not sent");
+    }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

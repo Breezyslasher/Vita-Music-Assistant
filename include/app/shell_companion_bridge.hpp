@@ -31,6 +31,13 @@ public:
     void stop();
 
     bool isOpen() const { return m_open; }
+    // Plugin answered HELLO (0.2.0+); its version is in the log.
+    bool hasPluginInfo() const { return m_pluginInfo; }
+
+    // Debug: start the plugin's stream probe (SC_PROBE_*, tone source) or
+    // stop it (SC_PROBE_STOP). Results land in the plugin's own log. 0 when
+    // sent, < 0 when the plugin is not open or did not grant Music.
+    int probe(int mode);
 
 private:
     ShellCompanionBridge() = default;
@@ -41,6 +48,8 @@ private:
     void maybeFetchCover();
 
     bool m_open = false;
+    bool m_pluginInfo = false;
+    uint32_t m_granted = 0;
     uint64_t m_lastPollUs = 0;
     uint64_t m_lastBeatUs = 0;
     bool m_stateInFlight = false;
