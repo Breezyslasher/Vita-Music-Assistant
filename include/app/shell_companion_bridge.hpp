@@ -6,8 +6,10 @@
  * play state and cover while it plays, and the row's ⏮ ⏯ ⏭ sent back to MA as
  * queue commands. The row is given back when playback stops.
  *
- * Everything runs from tick() on the main loop; the only other thread is a
- * short-lived cover fetch.
+ * State and presses run from tick() on the main loop. A heartbeat thread
+ * keeps the row ours while the app is left with PS (it keeps running as a
+ * non-game app, but the UI loop may not), and a short-lived thread fetches
+ * covers.
  */
 
 #pragma once
@@ -16,6 +18,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <thread>
 
 namespace vita_ma {
 
@@ -46,12 +49,16 @@ private:
     void applyRow();
     void handlePress(int press);
     void maybeFetchCover();
+    void heartbeat();
 
     bool m_open = false;
     bool m_pluginInfo = false;
     uint32_t m_granted = 0;
     uint64_t m_lastPollUs = 0;
     uint64_t m_lastBeatUs = 0;
+    std::atomic<uint64_t> m_lastTickUs{0};  // main loop's last tick(), for the heartbeat log
+    std::atomic<bool> m_heartbeatRun{false};
+    std::thread m_heartbeat;
     bool m_stateInFlight = false;
 
     // Our own player's now-playing state, from players/get (main thread).
@@ -60,7 +67,7 @@ private:
     std::string m_title, m_artist, m_album, m_imageUrl;
 
     // What the row was last given, to send only changes.
-    bool m_rowActive = false;
+    std::atomic<bool> m_rowActive{false};
     int m_sentPlaying = -1;
     std::string m_sentTitle, m_sentArtist, m_sentAlbum;
 

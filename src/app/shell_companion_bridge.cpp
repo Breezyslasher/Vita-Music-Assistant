@@ -12,6 +12,7 @@
 
 #include <borealis.hpp>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 
 #include <thread>
 #include <vector>
@@ -26,6 +27,7 @@ constexpr const char* SC_PLUGIN_PATH = "app0:module/shell_companion.suprx";
 
 constexpr uint64_t POLL_EVERY_US = 250 * 1000;   // row button presses
 constexpr uint64_t BEAT_EVERY_US = 1000 * 1000;  // heartbeat + state refresh
+constexpr int ALIVE_LOG_EVERY_S = 5;             // heartbeat thread's "alive" line
 
 uint64_t nowUs() { return sceKernelGetSystemTimeWide(); }
 
@@ -60,6 +62,9 @@ void ShellCompanionBridge::start() {
     m_open = (r == 0);
     if (!m_open) return;
 
+    m_heartbeatRun = true;
+    m_heartbeat = std::thread([this]() { heartbeat(); });
+
     ScPluginInfo info{};
     if (scPluginInfo(&info) == 0) {
         m_pluginInfo = true;
@@ -73,6 +78,25 @@ void ShellCompanionBridge::start() {
         // SceShell until the Vita restarts.
         brls::Logger::warning("ShellCompanion: plugin never answered HELLO: older than 0.2.0 "
                               "(loaded by another app?), restart the Vita to load ours");
+    }
+}
+
+// Runs whether or not the app is in front: re-sends the row's heartbeat every
+// second (the row is dropped after SC_ROW_TIMEOUT_S without one) and logs
+// every 5 s how long ago the main loop last ticked, which shows on the
+// console whether the app, and its UI loop, keep running after PS.
+void ShellCompanionBridge::heartbeat() {
+    int n = 0;
+    while (m_heartbeatRun) {
+        sceKernelDelayThread(1000 * 1000);
+        if (!m_heartbeatRun) break;
+        if (m_rowActive) scRowActivate();
+        if (++n % ALIVE_LOG_EVERY_S == 0) {
+            uint64_t last = m_lastTickUs.load();
+            brls::Logger::info("ShellCompanion: alive, row {}, main loop last ticked {}ms ago",
+                               m_rowActive ? "active" : "idle",
+                               last ? (long)((nowUs() - last) / 1000) : -1L);
+        }
     }
 }
 
@@ -93,6 +117,7 @@ int ShellCompanionBridge::probe(int mode) {
 void ShellCompanionBridge::tick() {
     if (!m_open) return;
     uint64_t now = nowUs();
+    m_lastTickUs = now;
 
     if (now - m_lastPollUs >= POLL_EVERY_US) {
         m_lastPollUs = now;
@@ -108,6 +133,10 @@ void ShellCompanionBridge::tick() {
 }
 
 void ShellCompanionBridge::stop() {
+    if (m_heartbeat.joinable()) {
+        m_heartbeatRun = false;
+        m_heartbeat.join();
+    }
     if (m_open && m_rowActive) {
         scRowRelease();
         m_rowActive = false;

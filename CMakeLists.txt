@@ -42,6 +42,10 @@ set(VITA_TITLEID "VMASS0001")
 set(VITA_VERSION "02.00")
 # ATTRIBUTE2=12 enables maximum heap size mode - CRITICAL for memory-intensive apps
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1 -d ATTRIBUTE2=12")
+# A non-game application (gdc) with ElevenMPV-A's attributes, so the system
+# lets the app play on and use the network once it is left with PS, where a
+# game is frozen (measured in VitaPlex's BG tests; its docs/DESIGN_NOTES.md).
+set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -s CATEGORY=gdc -d ATTRIBUTE=0x01089088 -d ATTRIBUTE_MINOR=16")
 
 # Apply patches to borealis before building
 # Fix: psv_platform.cpp uses wrong macro (__SDL2__ instead of BOREALIS_USE_GXM)
