@@ -24,6 +24,10 @@ constexpr const char* SC_TITLE_ID = "VMASS0001";
 constexpr const char* SC_DATA_DIR = "ux0:data/VitaMA";
 constexpr const char* SC_APP_NAME = "Music Assistant";
 constexpr const char* SC_PLUGIN_PATH = "app0:module/shell_companion.suprx";
+// The same file by its installed path. The plugin is loaded into SceShell's
+// process, where app0: may not be ours: on a console the app0: load failed
+// with 0x80010013 (ENODEV) while the file was there.
+constexpr const char* SC_PLUGIN_PATH_INSTALLED = "ux0:app/VMASS0001/module/shell_companion.suprx";
 
 constexpr uint64_t POLL_EVERY_US = 250 * 1000;   // row button presses
 constexpr uint64_t BEAT_EVERY_US = 1000 * 1000;  // heartbeat + state refresh
@@ -59,6 +63,15 @@ void ShellCompanionBridge::start() {
     r = scOpen(what, sizeof(what));
     brls::Logger::info("ShellCompanion: scOpen -> {} in {}ms: {}", r,
                        (long)((nowUs() - t0) / 1000), what);
+    if (r != 0) {
+        scInit(SC_TITLE_ID, SC_DATA_DIR, SC_APP_NAME, SC_FEAT_ROW | SC_FEAT_MUSIC,
+               SC_PLUGIN_PATH_INSTALLED);
+        what[0] = 0;
+        t0 = nowUs();
+        r = scOpen(what, sizeof(what));
+        brls::Logger::info("ShellCompanion: retry from installed path: scOpen -> {} in {}ms: {}",
+                           r, (long)((nowUs() - t0) / 1000), what);
+    }
     m_open = (r == 0);
     if (!m_open) return;
 
