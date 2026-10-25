@@ -17,10 +17,26 @@ jobs:
       image: vitasdk/vitasdk:latest
 
     steps:
+      # vitasdk/vitasdk:latest is no longer Alpine-based (apk: not found), so
+      # install with whichever package manager the image has.
       - name: Install build requirements
         run: |
-          apk update
-          apk add cmake ninja git zstd tar pkgconf curl
+          set -eu
+          if command -v apk >/dev/null 2>&1; then
+            apk update
+            apk add cmake ninja git zstd tar pkgconf curl wget python3 patch bzip2 xz
+          elif command -v apt-get >/dev/null 2>&1; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              cmake ninja-build git zstd tar pkg-config curl wget python3 patch bzip2 xz-utils ca-certificates
+          elif command -v pacman >/dev/null 2>&1; then
+            pacman -Sy --noconfirm --needed cmake ninja git zstd tar pkgconf curl wget python patch bzip2 xz
+          else
+            echo "::error::No supported package manager in the vitasdk image"; exit 1
+          fi
+          for tool in cmake ninja git curl wget python3 patch bzip2; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool missing"; exit 1; }
+          done
 
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -44,7 +60,6 @@ jobs:
       # same recipe as vitasdk/packages (source + vita patch + threading).
       - name: Rebuild mbedTLS with DTLS-SRTP support
         run: |
-          apk add python3 patch bzip2
           cd /tmp
           wget -q https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
           tar xf mbedtls-3.6.7.tar.bz2
@@ -85,18 +100,24 @@ jobs:
           make -j$(nproc)
           make install
 
-      # The SceShell plugin VMA loads (vita-shell-companion), from that repo's
-      # latest release. Not fatal while no release exists: the VPK then ships
-      # without it and the app logs that the plugin could not be loaded.
+      # The SceShell plugin VMA loads (vita-shell-companion), from a pinned
+      # release. Keep SC_PLUGIN_TAG on the same commit as the
+      # lib/vita-shell-companion submodule so the plugin and the client code
+      # always match (Alpha-0.0.1 = 8d0106f). Pinned rather than
+      # releases/latest, which skips pre-releases. Not fatal if the asset is
+      # missing: the VPK then ships without it and the app logs that the
+      # plugin could not be loaded.
       - name: Fetch shell_companion.suprx (vita-shell-companion release)
+        env:
+          SC_PLUGIN_TAG: Alpha-0.0.1
         run: |
           mkdir -p module
           if curl -fsSL --retry 3 -o module/shell_companion.suprx \
-               https://github.com/Breezyslasher/vita-shell-companion/releases/latest/download/shell_companion.suprx; then
-            echo "shell_companion.suprx: $(wc -c < module/shell_companion.suprx) bytes, sha256 $(sha256sum module/shell_companion.suprx | cut -d' ' -f1)"
+               "https://github.com/Breezyslasher/vita-shell-companion/releases/download/$SC_PLUGIN_TAG/shell_companion.suprx"; then
+            echo "shell_companion.suprx ($SC_PLUGIN_TAG): $(wc -c < module/shell_companion.suprx) bytes, sha256 $(sha256sum module/shell_companion.suprx | cut -d' ' -f1)"
           else
             rm -f module/shell_companion.suprx
-            echo "::warning::No shell_companion.suprx release asset found; building without the shell plugin"
+            echo "::warning::No shell_companion.suprx in release $SC_PLUGIN_TAG; building without the shell plugin"
           fi
 
       - name: Build
