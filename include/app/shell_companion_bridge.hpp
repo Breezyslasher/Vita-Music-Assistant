@@ -34,6 +34,12 @@ public:
     void stop();
 
     bool isOpen() const { return m_open; }
+    // The plugin is installing this app's update (scUpdateInProgress, checked
+    // in start() before scOpen): the app must say so and quit, as the update
+    // waits for it to close. updateState() the step, with its percent or -1.
+    bool updateInProgress() const { return m_updateInProgress; }
+    const std::string& updateState() const { return m_updateState; }
+    int updatePercent() const { return m_updatePercent; }
     // Plugin answered HELLO (0.2.0+); its version is in the log.
     bool hasPluginInfo() const { return m_pluginInfo; }
 
@@ -59,6 +65,9 @@ private:
 
     bool m_open = false;
     bool m_pluginInfo = false;
+    bool m_updateInProgress = false;
+    std::string m_updateState;
+    int m_updatePercent = -1;
     uint32_t m_granted = 0;
     std::string m_caps;  // ',' between, as the plugin sent them
     uint64_t m_lastPollUs = 0;

@@ -54,6 +54,19 @@ void ShellCompanionBridge::start() {
         brls::Logger::error("ShellCompanion: scInit failed ({})", r);
         return;
     }
+    // Before scOpen: an update of this app the plugin is installing waits for
+    // the app to close, so the app shouldn't open anything.
+    char state[16] = {0};
+    int percent = -1;
+    if (scUpdateInProgress(state, sizeof(state), &percent) == 1) {
+        m_updateInProgress = true;
+        m_updateState = state;
+        m_updatePercent = percent;
+        brls::Logger::info("ShellCompanion: the plugin is installing this app's update ({}, {}%), "
+                           "not opening it", state, percent);
+        return;
+    }
+
     char what[256] = {0};
     uint64_t t0 = nowUs();
     r = scOpen(what, sizeof(what));

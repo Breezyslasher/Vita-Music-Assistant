@@ -26,6 +26,8 @@ public:
     // Initialize and run the application
     bool init();
     void run();
+    // run() while the shell companion plugin installs this app's update.
+    void runWhileUpdating();
     void shutdown();
 
     // Navigation

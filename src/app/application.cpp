@@ -87,6 +87,10 @@ void Application::run() {
     // Load the vita-shell-companion SceShell plugin (quick menu Music row).
     // Independent of the server connection; logs what scOpen reports.
     ShellCompanionBridge::instance().start();
+    if (ShellCompanionBridge::instance().updateInProgress()) {
+        runWhileUpdating();
+        return;
+    }
     // An update the plugin installed as the app last quit; then look for a
     // newer one (on a worker, a few seconds in).
     app_update::afterStart();
@@ -142,6 +146,36 @@ void Application::run() {
 #endif
         // Quick menu Music row: heartbeat, song/cover updates, button presses.
         ShellCompanionBridge::instance().tick();
+    }
+}
+
+// Opened while the shell companion plugin installs this app's update: the
+// install waits for the app to close, so say so and quit after a moment,
+// without connecting to anything.
+void Application::runWhileUpdating() {
+    auto& bridge = ShellCompanionBridge::instance();
+    std::string step = bridge.updateState();
+    if (bridge.updatePercent() >= 0) step += " " + std::to_string(bridge.updatePercent()) + "%";
+
+    auto* box = new brls::Box();
+    box->setAxis(brls::Axis::COLUMN);
+    box->setJustifyContent(brls::JustifyContent::CENTER);
+    box->setAlignItems(brls::AlignItems::CENTER);
+    box->setGrow(1.0f);
+    auto* title = new brls::Label();
+    title->setText("Vita Music Assistant is being updated (" + step + ")");
+    title->setFontSize(24);
+    box->addView(title);
+    auto* sub = new brls::Label();
+    sub->setText("It closes now so the update can finish, and reopens by itself.");
+    sub->setFontSize(18);
+    sub->setMarginTop(12);
+    box->addView(sub);
+    brls::Application::pushActivity(new brls::Activity(box));
+
+    const uint64_t quitAt = sceKernelGetSystemTimeWide() + 4 * 1000 * 1000;
+    while (brls::Application::mainLoop()) {
+        if (sceKernelGetSystemTimeWide() >= quitAt) brls::Application::quit();
     }
 }
 
