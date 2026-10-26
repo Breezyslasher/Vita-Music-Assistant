@@ -9,8 +9,8 @@
 #include <vector>
 
 // Application version
-#define VMA_VERSION "2.0.0"
-#define VMA_VERSION_NUM 200
+#define VMA_VERSION "0.2.5"
+#define VMA_VERSION_NUM 25
 
 // Screen dimensions (PS Vita)
 #define SCREEN_WIDTH 960
@@ -184,6 +184,9 @@ struct AppSettings {
     // session restore then reconnects via the Remote ID instead of the
     // saved server URL (which always keeps the direct HTTP address).
     bool lastConnectionRemote = false;
+
+    // Updates: a release the user chose "Later" for, not offered at start-up.
+    std::string skippedUpdateVersion;
 };
 
 // Debug logging functions

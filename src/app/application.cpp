@@ -7,6 +7,7 @@
 #include "app/ma_types.hpp"
 #include "app/sendspin_client.hpp"
 #include "app/shell_companion_bridge.hpp"
+#include "utils/app_update.hpp"
 #include "activity/login_activity.hpp"
 #include "activity/main_activity.hpp"
 #include "activity/player_activity.hpp"
@@ -86,6 +87,10 @@ void Application::run() {
     // Load the vita-shell-companion SceShell plugin (quick menu Music row).
     // Independent of the server connection; logs what scOpen reports.
     ShellCompanionBridge::instance().start();
+    // An update the plugin installed as the app last quit; then look for a
+    // newer one (on a worker, a few seconds in).
+    app_update::afterStart();
+    app_update::checkForUpdates(false);
 
     // Reconnect the way we last connected: over remote access when the last
     // session was remote (the saved server URL always keeps the direct
@@ -445,6 +450,7 @@ bool Application::loadSettings() {
     m_settings.remoteId = extractString("remoteId");
     m_settings.remoteAccessEnabled = extractBool("remoteAccessEnabled", false);
     m_settings.lastConnectionRemote = extractBool("lastConnectionRemote", false);
+    m_settings.skippedUpdateVersion = extractString("skippedUpdateVersion");
 
     brls::Logger::info("Settings loaded successfully");
     return !m_authToken.empty();
@@ -504,7 +510,8 @@ bool Application::saveSettings() {
     json += "  \"selectedPlayerId\": \"" + m_settings.selectedPlayerId + "\",\n";
     json += "  \"remoteId\": \"" + m_settings.remoteId + "\",\n";
     json += "  \"remoteAccessEnabled\": " + std::string(m_settings.remoteAccessEnabled ? "true" : "false") + ",\n";
-    json += "  \"lastConnectionRemote\": " + std::string(m_settings.lastConnectionRemote ? "true" : "false") + "\n";
+    json += "  \"lastConnectionRemote\": " + std::string(m_settings.lastConnectionRemote ? "true" : "false") + ",\n";
+    json += "  \"skippedUpdateVersion\": \"" + m_settings.skippedUpdateVersion + "\"\n";
 
     json += "}\n";
 

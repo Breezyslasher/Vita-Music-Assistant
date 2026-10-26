@@ -27,7 +27,7 @@ include(${BOREALIS_LIBRARY}/cmake/commonOption.cmake)
 include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 
 # Project definition (AFTER toolchain include)
-project(VitaMusicAssistant VERSION 2.0.0 LANGUAGES C CXX ASM)
+project(VitaMusicAssistant VERSION 0.2.5 LANGUAGES C CXX ASM)
 
 # C++17 required for Borealis
 set(CMAKE_CXX_STANDARD 17)
@@ -39,6 +39,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti -fexceptions")
 # App metadata
 set(VITA_APP_NAME "Vita Music Assistant")
 set(VITA_TITLEID "VMASS0001")
+# APP_VER stays 02.00, what every release so far carried: the app version
+# (VMA_VERSION, 0.2.5) is what the updater compares with release tags.
 set(VITA_VERSION "02.00")
 # ATTRIBUTE2=12 enables maximum heap size mode - CRITICAL for memory-intensive apps
 set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d PARENTAL_LEVEL=1 -d ATTRIBUTE2=12")
@@ -333,6 +335,7 @@ set(APP_SOURCES
     # quick menu's Music row. sc_cover.c uses the stb_image that the patched
     # nanovg.c already defines.
     src/app/shell_companion_bridge.cpp
+    src/utils/app_update.cpp
     lib/vita-shell-companion/client/shell_companion.c
     lib/vita-shell-companion/client/sc_files.c
     lib/vita-shell-companion/client/sc_cover.c

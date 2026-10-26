@@ -42,6 +42,12 @@ public:
     // sent, < 0 when the plugin is not open or did not grant Music.
     int probe(int mode);
 
+    // The plugin's answer to HELLO lists cap (scPluginHas: "update.vpk", ...).
+    bool hasCap(const char* cap) const;
+    // Give the row back and hand the plugin a downloaded update VPK to
+    // install once the app has quit (scUpdateInstallVpk); the caller quits.
+    bool installUpdateVpk(const char* vpkPath);
+
 private:
     ShellCompanionBridge() = default;
 
@@ -54,6 +60,7 @@ private:
     bool m_open = false;
     bool m_pluginInfo = false;
     uint32_t m_granted = 0;
+    std::string m_caps;  // ',' between, as the plugin sent them
     uint64_t m_lastPollUs = 0;
     uint64_t m_lastBeatUs = 0;
     std::atomic<uint64_t> m_lastTickUs{0};  // main loop's last tick(), for the heartbeat log

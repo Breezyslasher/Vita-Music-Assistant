@@ -142,7 +142,7 @@ void SendspinClient::sendClientHello() {
     Json deviceInfo;
     deviceInfo["product_name"] = Json(std::string("PS Vita"));
     deviceInfo["manufacturer"] = Json(std::string("Sony"));
-    deviceInfo["software_version"] = Json(std::string("Vita Music Assistant 2.0.0"));
+    deviceInfo["software_version"] = Json(std::string("Vita Music Assistant " VMA_VERSION));
     payload["device_info"] = deviceInfo;
 
     // Supported roles - we are a player

@@ -9,6 +9,7 @@
 #include "app/ma_types.hpp"
 #include "activity/player_activity.hpp"
 #include "utils/http_client.hpp"
+#include "utils/app_update.hpp"
 #include <set>
 #include <chrono>
 #include <thread>
@@ -610,8 +611,17 @@ void SettingsTab::createAboutSection() {
     // Version info
     auto* versionCell = new brls::DetailCell();
     versionCell->setText("Version");
-    versionCell->setDetailText("Beta 0.2.3");
+    versionCell->setDetailText("Beta " VMA_VERSION);
     m_contentBox->addView(versionCell);
+
+    auto* updateCell = new brls::DetailCell();
+    updateCell->setText("Check for updates");
+    updateCell->setDetailText("GitHub releases");
+    updateCell->registerClickAction([](brls::View*) {
+        app_update::checkForUpdates(true);
+        return true;
+    });
+    m_contentBox->addView(updateCell);
 
     // App description
     auto* descLabel = new brls::Label();

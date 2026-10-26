@@ -82,6 +82,7 @@ void ShellCompanionBridge::start() {
     if (scPluginInfo(&info) == 0) {
         m_pluginInfo = true;
         m_granted = info.granted;
+        m_caps = info.caps;
         brls::Logger::info("ShellCompanion: plugin {} ({}, protocol {}, written {}), "
                            "features 0x{:x}, granted 0x{:x}, caps '{}'",
                            info.version, info.versionCode, info.protocol, info.written,
@@ -111,6 +112,31 @@ void ShellCompanionBridge::heartbeat() {
                                last ? (long)((nowUs() - last) / 1000) : -1L);
         }
     }
+}
+
+bool ShellCompanionBridge::hasCap(const char* cap) const {
+    if (!m_open || !m_pluginInfo) return false;
+    const std::string want(cap);
+    size_t at = 0;
+    while (at <= m_caps.size()) {
+        size_t end = m_caps.find(',', at);
+        if (end == std::string::npos) end = m_caps.size();
+        if (m_caps.compare(at, end - at, want) == 0 && end - at == want.size()) return true;
+        at = end + 1;
+    }
+    return false;
+}
+
+bool ShellCompanionBridge::installUpdateVpk(const char* vpkPath) {
+    if (!m_open) return false;
+    int r = scUpdateInstallVpk(vpkPath);
+    brls::Logger::info("ShellCompanion: update {} handed to the plugin -> {}", vpkPath, r);
+    if (r < 0) return false;
+    if (m_rowActive) {
+        scRowRelease();
+        m_rowActive = false;
+    }
+    return true;
 }
 
 int ShellCompanionBridge::probe(int mode) {
