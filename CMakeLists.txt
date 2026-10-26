@@ -379,6 +379,16 @@ target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--wrap=pthread_create")
 # residual duplicate libpthread members are identical, first-wins is correct.
 target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--allow-multiple-definition")
 
+# vita-elf-create appends the SCE module data (module info, import/export
+# tables: 3640 bytes as of writing) to the end of the first LOAD segment and
+# fails if that reaches the second ("Cannot allocate 3640 bytes for SCE data
+# at end of segment 0; segment 1 overlaps", run 388). The linker starts
+# segment 1 on the next 64 KiB boundary, so any change that moves the end of
+# the code can tip it. vitasdk's linker script adds __sce_headroom before
+# aligning the data segment: address space between the segments, not memory.
+# Same fix as VitaPlex.
+target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--defsym=__sce_headroom=0x4000")
+
 # Link libraries - borealis + app platform libs from toolchain
 # Order matters: libraries that PROVIDE symbols must come AFTER libraries that NEED them
 target_link_libraries(${PROJECT_NAME}
